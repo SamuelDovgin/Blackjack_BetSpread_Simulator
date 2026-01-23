@@ -41,6 +41,197 @@ const tcModes = [
 const tcRounding = ["nearest", "floor", "ceil"];
 const handPresets = [50_000, 200_000, 2_000_000];
 
+const builtInRampPresets: Preset[] = [
+  {
+    id: "builtin:bjinfo-1-8",
+    type: "ramp",
+    name: "BJInfo 1-8 Ramp",
+    tags: ["library", "1-8"],
+    created_at: "builtin",
+    updated_at: "builtin",
+    payload: {
+      bet_input_mode: "units",
+      bet_ramp: {
+        wong_out_below: null,
+        wong_out_policy: "anytime",
+        steps: [
+          { tc_floor: -1, units: 1 },
+          { tc_floor: 2, units: 2 },
+          { tc_floor: 3, units: 4 },
+          { tc_floor: 4, units: 6 },
+          { tc_floor: 5, units: 8 },
+        ],
+      },
+    },
+  },
+  {
+    id: "builtin:bjinfo-1-12",
+    type: "ramp",
+    name: "BJInfo 1-12 Ramp",
+    tags: ["library", "1-12"],
+    created_at: "builtin",
+    updated_at: "builtin",
+    payload: {
+      bet_input_mode: "units",
+      bet_ramp: {
+        wong_out_below: null,
+        wong_out_policy: "anytime",
+        steps: [
+          { tc_floor: -1, units: 1 },
+          { tc_floor: 2, units: 2 },
+          { tc_floor: 3, units: 4 },
+          { tc_floor: 4, units: 8 },
+          { tc_floor: 5, units: 10 },
+          { tc_floor: 6, units: 12 },
+        ],
+      },
+    },
+  },
+  {
+    id: "builtin:shoe-1-12-wong",
+    type: "ramp",
+    name: "Shoe 1-12 + Wong-out",
+    tags: ["library", "wong-out"],
+    created_at: "builtin",
+    updated_at: "builtin",
+    payload: {
+      bet_input_mode: "units",
+      bet_ramp: {
+        wong_out_below: -1,
+        wong_out_policy: "after_loss_only",
+        steps: [
+          { tc_floor: -1, units: 1 },
+          { tc_floor: 2, units: 2 },
+          { tc_floor: 3, units: 4 },
+          { tc_floor: 4, units: 8 },
+          { tc_floor: 5, units: 10 },
+          { tc_floor: 6, units: 12 },
+        ],
+      },
+    },
+  },
+  {
+    id: "builtin:single-1-4",
+    type: "ramp",
+    name: "Single-deck Starter 1-4",
+    tags: ["library", "single-deck"],
+    created_at: "builtin",
+    updated_at: "builtin",
+    payload: {
+      bet_input_mode: "units",
+      bet_ramp: {
+        wong_out_below: -1,
+        wong_out_policy: "anytime",
+        steps: [
+          { tc_floor: -1, units: 1 },
+          { tc_floor: 2, units: 2 },
+          { tc_floor: 3, units: 4 },
+        ],
+      },
+    },
+  },
+  {
+    id: "builtin:aggressive-1-15",
+    type: "ramp",
+    name: "Aggressive Shoe 1-15 Cap",
+    tags: ["library", "aggressive"],
+    created_at: "builtin",
+    updated_at: "builtin",
+    payload: {
+      bet_input_mode: "units",
+      bet_ramp: {
+        wong_out_below: -1,
+        wong_out_policy: "anytime",
+        steps: [
+          { tc_floor: -1, units: 1 },
+          { tc_floor: 2, units: 2 },
+          { tc_floor: 3, units: 4 },
+          { tc_floor: 4, units: 8 },
+          { tc_floor: 5, units: 12 },
+          { tc_floor: 6, units: 15 },
+        ],
+      },
+    },
+  },
+];
+
+const cardValue = (card: string) => {
+  if (card === "A") return 11;
+  if (["T", "J", "Q", "K"].includes(card)) return 10;
+  return Number(card);
+};
+
+const handValue = (cards: string[]) => {
+  let total = cards.reduce((sum, c) => sum + cardValue(c), 0);
+  let aces = cards.filter((c) => c === "A").length;
+  while (total > 21 && aces > 0) {
+    total -= 10;
+    aces -= 1;
+  }
+  const soft = aces > 0 && total <= 21;
+  return { total, soft };
+};
+
+const upcardKey = (card: string) => (["T", "J", "Q", "K"].includes(card) ? "T" : card);
+
+const basicStrategyAction = (cards: string[], dealerUp: string, rules: Rules) => {
+  const { total, soft } = handValue(cards);
+  const up = upcardKey(dealerUp);
+
+  if (rules.surrender) {
+    if (total === 16 && ["9", "T", "A"].includes(up)) return "R";
+    if (total === 15 && up === "T") return "R";
+  }
+
+  if (!soft) {
+    if (total >= 17) return "S";
+    if (total >= 13 && total <= 16) return ["2", "3", "4", "5", "6"].includes(up) ? "S" : "H";
+    if (total === 12) return ["4", "5", "6"].includes(up) ? "S" : "H";
+    if (total === 11) {
+      if (up === "A" && !rules.hit_soft_17) return "H";
+      return "DH";
+    }
+    if (total === 10) return !["T", "A"].includes(up) ? "DH" : "H";
+    if (total === 9) {
+      if (up === "2" && rules.hit_soft_17) return "DH";
+      return ["3", "4", "5", "6"].includes(up) ? "DH" : "H";
+    }
+    return "H";
+  }
+
+  if (total >= 19) return "S";
+  if (total === 18) {
+    if (up === "2") return rules.hit_soft_17 ? "DS" : "S";
+    if (["3", "4", "5", "6"].includes(up)) return "DS";
+    if (["7", "8"].includes(up)) return "S";
+    return "H";
+  }
+  if (total === 17) return ["3", "4", "5", "6"].includes(up) ? "DH" : "H";
+  if (total === 15 || total === 16) return ["4", "5", "6"].includes(up) ? "DH" : "H";
+  if (total === 13 || total === 14) return ["5", "6"].includes(up) ? "DH" : "H";
+  return "H";
+};
+
+const pairStrategyAction = (rank: string, dealerUp: string, rules: Rules) => {
+  const up = upcardKey(dealerUp);
+  if (rank === "A") return "P";
+  if (["T", "J", "Q", "K"].includes(rank)) return "S";
+  if (rank === "9") return ["2", "3", "4", "5", "6", "8", "9"].includes(up) ? "P" : "S";
+  if (rank === "8") return "P";
+  if (rank === "7") return ["2", "3", "4", "5", "6", "7"].includes(up) ? "P" : "H";
+  if (rank === "6") {
+    if (rules.double_after_split) return ["2", "3", "4", "5", "6"].includes(up) ? "P" : "H";
+    return ["3", "4", "5", "6"].includes(up) ? "P" : "H";
+  }
+  if (rank === "5") return ["2", "3", "4", "5", "6", "7", "8", "9"].includes(up) ? "D" : "H";
+  if (rank === "4") return rules.double_after_split && ["5", "6"].includes(up) ? "P" : "H";
+  if (rank === "3" || rank === "2") {
+    if (rules.double_after_split) return ["2", "3", "4", "5", "6", "7"].includes(up) ? "P" : "H";
+    return ["4", "5", "6", "7"].includes(up) ? "P" : "H";
+  }
+  return "H";
+};
+
 function loadPresets(): Preset[] {
   try {
     const raw = localStorage.getItem(PRESET_KEY);
@@ -216,20 +407,23 @@ function App() {
     if (!defaults) return;
     if (preset === "default") {
       setRules(defaults.rules);
+    } else if (preset === "s17") {
+      setRules({ ...defaults.rules, hit_soft_17: false });
     }
   };
 
   const rampPresets = useMemo(() => presets.filter((p) => p.type === "ramp"), [presets]);
   const deviationPresets = useMemo(() => presets.filter((p) => p.type === "deviations"), [presets]);
+  const allRampPresets = useMemo(() => [...builtInRampPresets, ...rampPresets], [rampPresets]);
 
   const applyRampPreset = (id: string) => {
-    const preset = rampPresets.find((p) => p.id === id);
+    const preset = allRampPresets.find((p) => p.id === id);
     if (preset) {
       if (preset.payload?.bet_ramp) {
-        setBetRamp(preset.payload.bet_ramp);
+        setBetRamp({ wong_out_policy: "anytime", ...preset.payload.bet_ramp });
         setUseCashBets(preset.payload.bet_input_mode === "cash");
       } else {
-        setBetRamp(preset.payload);
+        setBetRamp({ wong_out_policy: "anytime", ...preset.payload });
       }
       setRampPresetId(id);
     }
@@ -308,7 +502,7 @@ function App() {
         rules: runConfig.rules,
         counting_system: runConfig.counting_system,
         deviations: runConfig.deviations,
-        bet_ramp: runConfig.bet_ramp,
+        bet_ramp: { wong_out_policy: "anytime", ...runConfig.bet_ramp },
         unit_size: runConfig.settings.unit_size,
         bankroll: runConfig.settings.bankroll,
         hands: runConfig.settings.hands,
@@ -539,6 +733,74 @@ function App() {
     return { min, max, spread };
   }, [betRamp]);
 
+  const dealerUpcards = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "A"];
+  const pairRows = ["A", "T", "9", "8", "7", "6", "5", "4", "3", "2"];
+  const softRows = ["A,9", "A,8", "A,7", "A,6", "A,5", "A,4", "A,3", "A,2"];
+  const hardRows = [17, 16, 15, 14, 13, 12, 11, 10, 9, 8];
+
+  const pairCell = (rank: string, up: string) => {
+    if (!rules) return "-";
+    const withDas = pairStrategyAction(rank, up, { ...rules, double_after_split: true });
+    const withoutDas = pairStrategyAction(rank, up, { ...rules, double_after_split: false });
+    if (withDas !== withoutDas) return "Y/N";
+    return withDas === "P" ? "Y" : "N";
+  };
+
+  const softCell = (row: string, up: string) => {
+    if (!rules) return "-";
+    const cards = row.split(",").map((c) => c.trim());
+    const action = basicStrategyAction(cards, up, rules);
+    return action === "DH" ? "D" : action === "DS" ? "Ds" : action;
+  };
+
+  const hardCell = (total: number, up: string) => {
+    if (!rules) return "-";
+    const cards =
+      total === 17
+        ? ["10", "7"]
+        : total === 16
+          ? ["10", "6"]
+          : total === 15
+            ? ["10", "5"]
+            : total === 14
+              ? ["10", "4"]
+              : total === 13
+                ? ["10", "3"]
+                : total === 12
+                  ? ["10", "2"]
+                  : total === 11
+                    ? ["6", "5"]
+                    : total === 10
+                      ? ["6", "4"]
+                      : total === 9
+                        ? ["5", "4"]
+                        : ["5", "3"];
+    const action = basicStrategyAction(cards, up, rules);
+    return action === "DH" ? "D" : action === "DS" ? "Ds" : action;
+  };
+
+  const surrenderCell = (total: number, up: string) => {
+    if (!rules || !rules.surrender) return "-";
+    const cards = total === 16 ? ["10", "6"] : ["10", "5"];
+    const action = basicStrategyAction(cards, up, rules);
+    return action === "R" ? "SUR" : "-";
+  };
+
+  const pairClass = (value: string) => {
+    if (value === "Y") return "cell-split";
+    if (value === "Y/N") return "cell-split-conditional";
+    if (value === "N") return "cell-nosplit";
+    return "";
+  };
+
+  const actionClass = (value: string) => {
+    if (value === "D") return "cell-double";
+    if (value === "Ds") return "cell-double-stand";
+    if (value === "S") return "cell-stand";
+    if (value === "SUR" || value === "R") return "cell-surrender";
+    return "cell-hit";
+  };
+
   const formatHours = (hours?: number | null) => {
     if (hours === null || hours === undefined) return "n/a";
     const days = hours / 24;
@@ -735,6 +997,7 @@ function App() {
                     }}
                   >
                     <option value="default">6D H17 DAS LS (Midwest)</option>
+                    <option value="s17">6D S17 DAS LS (Midwest)</option>
                   </select>
                 </label>
                 <label>
@@ -813,6 +1076,117 @@ function App() {
                 </label>
               </div>
             )}
+            {rules && (
+              <details className="strategy-preview">
+                <summary className="card-title">Basic Strategy (preview)</summary>
+                <div className="strategy-section">
+                  <div className="strategy-title">Pair Splitting</div>
+                  <table className="strategy-table">
+                    <thead>
+                      <tr>
+                        <th>Pair</th>
+                        {dealerUpcards.map((up) => (
+                          <th key={up}>{up}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pairRows.map((rank) => (
+                        <tr key={rank}>
+                          <td>{rank},{rank}</td>
+                          {dealerUpcards.map((up) => (
+                            <td key={up} className={pairClass(pairCell(rank, up))}>
+                              {pairCell(rank, up)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="legend">Y = split, Y/N = split only with DAS, N = do not split</div>
+                </div>
+
+                <div className="strategy-section">
+                  <div className="strategy-title">Soft Totals</div>
+                  <table className="strategy-table">
+                    <thead>
+                      <tr>
+                        <th>Hand</th>
+                        {dealerUpcards.map((up) => (
+                          <th key={up}>{up}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {softRows.map((row) => (
+                        <tr key={row}>
+                          <td>{row}</td>
+                          {dealerUpcards.map((up) => (
+                            <td key={up} className={actionClass(softCell(row, up))}>
+                              {softCell(row, up)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="legend">H = hit, S = stand, D = double else hit, Ds = double else stand</div>
+                </div>
+
+                <div className="strategy-section">
+                  <div className="strategy-title">Hard Totals</div>
+                  <table className="strategy-table">
+                    <thead>
+                      <tr>
+                        <th>Total</th>
+                        {dealerUpcards.map((up) => (
+                          <th key={up}>{up}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hardRows.map((row) => (
+                        <tr key={row}>
+                          <td>{row}</td>
+                          {dealerUpcards.map((up) => (
+                            <td key={up} className={actionClass(hardCell(row, up))}>
+                              {hardCell(row, up)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="strategy-section">
+                  <div className="strategy-title">Late Surrender</div>
+                  <table className="strategy-table">
+                    <thead>
+                      <tr>
+                        <th>Total</th>
+                        {dealerUpcards.map((up) => (
+                          <th key={up}>{up}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[16, 15].map((row) => (
+                        <tr key={row}>
+                          <td>{row}</td>
+                          {dealerUpcards.map((up) => (
+                            <td key={up} className={actionClass(surrenderCell(row, up))}>
+                              {surrenderCell(row, up)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="legend">SUR = surrender (late surrender)</div>
+                </div>
+              </details>
+            )}
           </div>
 
           <div className="card">
@@ -876,11 +1250,20 @@ function App() {
                   onChange={(e) => applyRampPreset(e.target.value)}
                 >
                   <option value="">Select preset...</option>
-                  {rampPresets.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.name}
-                    </option>
-                  ))}
+                  <optgroup label="Library">
+                    {builtInRampPresets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="My presets">
+                    {rampPresets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
               </label>
               <div className="inline-actions">
@@ -904,7 +1287,7 @@ function App() {
                   className="btn ghost"
                   disabled={!rampPresetId}
                   onClick={() => {
-                    const preset = rampPresets.find((p) => p.id === rampPresetId);
+                    const preset = allRampPresets.find((p) => p.id === rampPresetId);
                     if (preset) duplicatePreset(preset);
                   }}
                 >
@@ -912,7 +1295,7 @@ function App() {
                 </button>
                 <button
                   className="btn ghost"
-                  disabled={!rampPresetId}
+                  disabled={!rampPresetId || rampPresetId.startsWith("builtin:")}
                   onClick={() => {
                     const preset = rampPresets.find((p) => p.id === rampPresetId);
                     if (preset) renamePreset(preset);
@@ -922,7 +1305,7 @@ function App() {
                 </button>
                 <button
                   className="btn ghost"
-                  disabled={!rampPresetId}
+                  disabled={!rampPresetId || rampPresetId.startsWith("builtin:")}
                   onClick={() => {
                     const preset = rampPresets.find((p) => p.id === rampPresetId);
                     if (preset) deletePreset(preset);
@@ -941,6 +1324,17 @@ function App() {
                 <label>
                   Wong out below TC
                   <input type="number" value={betRamp.wong_out_below ?? 0} onChange={(e) => setBetRamp({ ...betRamp, wong_out_below: Number(e.target.value) })} />
+                </label>
+                <label>
+                  Wong-out policy
+                  <select
+                    value={betRamp.wong_out_policy ?? "anytime"}
+                    onChange={(e) => setBetRamp({ ...betRamp, wong_out_policy: e.target.value })}
+                  >
+                    <option value="anytime">Anytime</option>
+                    <option value="after_loss_only">After loss only</option>
+                    <option value="after_hand_only">After hand only</option>
+                  </select>
                 </label>
                 <div className="ramp-table">
                   <div className="ramp-header">

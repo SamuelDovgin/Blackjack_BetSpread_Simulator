@@ -28,6 +28,7 @@ export interface BetRampEntry {
 export interface BetRamp {
   steps: BetRampEntry[];
   wong_out_below?: number | null;
+  wong_out_policy?: string;
 }
 
 export interface Deviation {

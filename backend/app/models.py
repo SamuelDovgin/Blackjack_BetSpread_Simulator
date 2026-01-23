@@ -51,6 +51,7 @@ class BetRampEntry(BaseModel):
 class BetRamp(BaseModel):
     steps: List[BetRampEntry]
     wong_out_below: Optional[int] = None  # TC below which we don't play
+    wong_out_policy: str = "anytime"  # anytime | after_loss_only | after_hand_only
 
     @validator("steps")
     def sort_and_unique(cls, steps: List[BetRampEntry]) -> List[BetRampEntry]:
