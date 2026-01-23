@@ -17,11 +17,11 @@
 3) Choose counting system (Hi-Lo now; extensible for future counts) and deviation set (Illustrious 18 + Fab 4 default; allow custom CSV upload).
 4) Define bet spread / ramp or ask optimizer to produce one under constraints (min/max bet, wonging, ramp smoothness, max RoR).
 5) Run simulation for N shoes or N hands (default 2,000,000 hands; allow smaller/larger) with seeded RNG, parallel chunks.
-6) View results: EV/100, stdev/100, TC distribution, DI, SCORE, N0, RoR given bankroll + unit size, optimal ramp (if requested).
+6) View results: EV/100, stdev/100, TC distribution, DI, SCORE, N0, RoR given bankroll + unit size, risk-of-ruin calculators (simple/trip), per-count EV/SE (IBA), and CVCX-style summary tables with optimal bet guidance.
 7) Compare scenarios side-by-side and export JSON/CSV.
 
 ## Defaults
-- **Rules preset**: 6D, H17, DAS, RSA allowed, late surrender, max splits 3 (4 hands total), hit split aces = false, peek on tens/aces, BJ pays 3:2, penetration default 75% (cut 1.5 decks), Midwest-style shoe.
+- **Rules preset**: 6D, H17, DAS, RSA allowed, surrender off by default, max splits 3 (4 hands total), hit split aces = false, peek on tens/aces, BJ pays 3:2, penetration default 75% (cut 1.5 decks), Midwest-style shoe.
 - **Count**: Hi-Lo only (2-6=+1, 7-9=0, T-A=-1). Architecture ready for additional counts later.
 - **Deviations**: Illustrious 18 + Fab 4 preloaded; user CSV upload to extend/override.
 - **Hands per run**: default 2,000,000; UI knob for 100k–10M with guardrails.

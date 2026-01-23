@@ -49,6 +49,8 @@ npm run dev
 
 Open the printed Vite URL (e.g., http://localhost:5173 or 5174) and start a sim.
 
+codex resume 019be7b7-1bd3-72d0-b692-4c34a47bc55c -s workspace-write -a never  --no-alt-screen
+
 ## Next Steps
 - Extend simulation: splits/more advanced rules, multiprocessing/Numba tuning, richer risk metrics (RoR).
 - Harden strategy tables and deviation coverage; allow CSV upload/validation.

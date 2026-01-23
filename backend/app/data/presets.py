@@ -1,7 +1,7 @@
 from app.models import BetRamp, BetRampEntry, CountingSystem, Deviation, Rules
 
-# Default Midwest-style 6D H17 DAS rules (75% penetration).
-DEFAULT_RULES = Rules()
+# Default Midwest-style 6D H17 DAS rules (75% penetration), surrender off.
+DEFAULT_RULES = Rules(surrender=False)
 
 # Hi-Lo counting system (extensible later).
 DEFAULT_COUNT = CountingSystem()

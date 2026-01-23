@@ -93,6 +93,15 @@ class SimulationStatus(BaseModel):
     avg_initial_bet_est: Optional[float] = None
 
 
+class TcTableEntry(BaseModel):
+    tc: int
+    n: int
+    freq: float
+    ev_pct: float
+    ev_se_pct: float
+    variance: float
+
+
 class SimulationResult(BaseModel):
     ev_per_100: float
     stdev_per_100: float
@@ -105,6 +114,7 @@ class SimulationResult(BaseModel):
     avg_initial_bet_units: Optional[float] = None
     tc_histogram: Dict[int, int] = Field(default_factory=dict)
     tc_histogram_est: Dict[int, int] = Field(default_factory=dict)
+    tc_table: List[TcTableEntry] = Field(default_factory=list)
     meta: Dict[str, str] = Field(default_factory=dict)
     hours_played: Optional[float] = None
     debug_hands: Optional[List[Dict[str, str]]] = None

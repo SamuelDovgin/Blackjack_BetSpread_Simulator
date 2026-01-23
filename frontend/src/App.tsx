@@ -283,12 +283,31 @@ function App() {
   const [showUnits, setShowUnits] = useState<boolean>(true);
   const [rulesPreset, setRulesPreset] = useState<string>("default");
   const [cutDecks, setCutDecks] = useState<number | null>(null);
-  const [sessionCount, setSessionCount] = useState<number>(3);
-  const [sessionSigma, setSessionSigma] = useState<number>(1);
-  const [sessionPoints, setSessionPoints] = useState<number>(80);
+  const [pathCount, setPathCount] = useState<number>(10);
+  const [tripHours, setTripHours] = useState<number>(4);
+  const [tripHandsPerHour, setTripHandsPerHour] = useState<number>(100);
+  const [tripSteps, setTripSteps] = useState<number>(120);
+  const [bandMode, setBandMode] = useState<"sigma" | "percentile">("sigma");
+  const [sigmaK, setSigmaK] = useState<number>(1);
+  const [startBankrollUnits, setStartBankrollUnits] = useState<number | null>(null);
+  const [stopLossUnits, setStopLossUnits] = useState<number | null>(null);
+  const [winGoalUnits, setWinGoalUnits] = useState<number | null>(null);
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
   const [rampPresetId, setRampPresetId] = useState<string>("");
   const [deviationPresetId, setDeviationPresetId] = useState<string>("");
+  const [rorMode, setRorMode] = useState<"simple" | "trip">("simple");
+  const [rorTripMode, setRorTripMode] = useState<"hands" | "hours">("hands");
+  const [rorTripValue, setRorTripValue] = useState<number>(2_000_000);
+  const [riskBankroll, setRiskBankroll] = useState<number | null>(null);
+  const [useSimBankroll, setUseSimBankroll] = useState<boolean>(true);
+  const [optMaxUnits, setOptMaxUnits] = useState<number>(12);
+  const [optKellyFraction, setOptKellyFraction] = useState<number>(1);
+  const [optBetIncrement, setOptBetIncrement] = useState<number>(1);
+  const [optSimplify, setOptSimplify] = useState<boolean>(true);
+  const [customHandsInput, setCustomHandsInput] = useState<string>("");
+  const [isAppending, setIsAppending] = useState<boolean>(false);
+  const [appendBase, setAppendBase] = useState<SimulationResult | null>(null);
+  const [hoverPoint, setHoverPoint] = useState<{ index: number; x: number; y: number } | null>(null);
 
   useEffect(() => {
     setPresets(loadPresets());
@@ -306,6 +325,14 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (useSimBankroll) setRiskBankroll(bankroll);
+  }, [useSimBankroll, bankroll]);
+
+  useEffect(() => {
+    setCustomHandsInput(hands.toString());
+  }, [hands]);
+
+  useEffect(() => {
     if (tcEstStep === 0) {
       setUseEstForBet(false);
       setUseEstForDev(false);
@@ -321,7 +348,13 @@ function App() {
         setProgress(stat);
         if (stat.status === "done" || stat.progress >= 1) {
           const data = await getSimulation(simId);
-          setResult(data);
+          if (isAppending && appendBase) {
+            setResult(combineResults(appendBase, data));
+            setIsAppending(false);
+            setAppendBase(null);
+          } else {
+            setResult(data);
+          }
           setStatus("done");
           clearInterval(timer);
         }
@@ -391,6 +424,20 @@ function App() {
   const normalizePenetration = (value: number) => {
     if (value > 1 && value <= 100) return value / 100;
     return value;
+  };
+
+  const parseHandsInput = (value: string) => {
+    const cleaned = value.replace(/,/g, "").trim();
+    const parsed = Number(cleaned);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return Math.floor(parsed);
+  };
+
+  const parseRoundsFromResult = (res: SimulationResult | null) => {
+    if (!res) return 0;
+    const raw = res.meta?.rounds_played ?? res.meta?.hands_played ?? "";
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   };
 
   const updatePenetrationFromCut = (decksCut: number) => {
@@ -491,6 +538,8 @@ function App() {
     if (!scenarioConfig) return;
     setError(null);
     setResult(null);
+    setAppendBase(null);
+    setIsAppending(false);
     try {
       const runSeed = randomizeSeedEachRun ? Math.floor(Math.random() * 1_000_000_000) : seed;
       if (randomizeSeedEachRun) setSeed(runSeed);
@@ -519,10 +568,149 @@ function App() {
       setSimId(id);
       setStatus("running");
       setProgress({ status: "running", progress: 0, hands_done: 0, hands_total: hands });
-      setLastRunConfig(JSON.stringify(runConfig));
+      setLastRunConfig(scenarioJson);
     } catch (err: any) {
       setError(err.message ?? "Failed to start simulation");
       setStatus("error");
+    }
+  };
+
+  const combineResults = (base: SimulationResult, next: SimulationResult): SimulationResult => {
+    const n1 = parseRoundsFromResult(base);
+    const n2 = parseRoundsFromResult(next);
+    const totalN = n1 + n2;
+
+    const mean1 = base.ev_per_100 / 100;
+    const mean2 = next.ev_per_100 / 100;
+    const var1 = base.variance_per_hand;
+    const var2 = next.variance_per_hand;
+    const sum1 = mean1 * n1;
+    const sum2 = mean2 * n2;
+    const sumSq1 = (var1 + mean1 * mean1) * n1;
+    const sumSq2 = (var2 + mean2 * mean2) * n2;
+
+    const sumTotal = sum1 + sum2;
+    const sumSqTotal = sumSq1 + sumSq2;
+    const meanTotal = totalN > 0 ? sumTotal / totalN : 0;
+    const varianceTotal = totalN > 0 ? Math.max(sumSqTotal / totalN - meanTotal * meanTotal, 0) : 0;
+    const stdevTotal = Math.sqrt(varianceTotal);
+
+    const avgBet1 = base.avg_initial_bet ?? null;
+    const avgBet2 = next.avg_initial_bet ?? null;
+    const betSum1 = avgBet1 !== null ? avgBet1 * n1 : null;
+    const betSum2 = avgBet2 !== null ? avgBet2 * n2 : null;
+    const betSumTotal = betSum1 !== null && betSum2 !== null ? betSum1 + betSum2 : null;
+    const avgInitialBet = betSumTotal !== null && totalN > 0 ? betSumTotal / totalN : null;
+
+    const mergeCounts = (a: Record<string, number> | Record<number, number> = {}, b: Record<string, number> | Record<number, number> = {}) => {
+      const out: Record<number, number> = {};
+      const add = (key: string, val: number) => {
+        const numKey = Number(key);
+        out[numKey] = (out[numKey] ?? 0) + val;
+      };
+      Object.entries(a).forEach(([k, v]) => add(k, v));
+      Object.entries(b).forEach(([k, v]) => add(k, v));
+      return out;
+    };
+
+    const combineTcTable = () => {
+      const map = new Map<number, { n: number; sumX: number; sumX2: number }>();
+      const addEntry = (entry: { tc: number; n: number; ev_pct: number; variance: number }) => {
+        const mean = entry.ev_pct / 100;
+        const sumX = mean * entry.n;
+        const sumX2 = (entry.variance + mean * mean) * entry.n;
+        const current = map.get(entry.tc) ?? { n: 0, sumX: 0, sumX2: 0 };
+        current.n += entry.n;
+        current.sumX += sumX;
+        current.sumX2 += sumX2;
+        map.set(entry.tc, current);
+      };
+      (base.tc_table ?? []).forEach(addEntry);
+      (next.tc_table ?? []).forEach(addEntry);
+      const combined: SimulationResult["tc_table"] = [];
+      map.forEach((value, tc) => {
+        if (value.n <= 0) return;
+        const mean = value.sumX / value.n;
+        const variance = Math.max(value.sumX2 / value.n - mean * mean, 0);
+        const se = Math.sqrt(variance / value.n);
+        combined.push({
+          tc,
+          n: value.n,
+          freq: totalN > 0 ? value.n / totalN : 0,
+          ev_pct: mean * 100,
+          ev_se_pct: se * 100,
+          variance,
+        });
+      });
+      combined.sort((a, b) => a.tc - b.tc);
+      return combined;
+    };
+
+    const ror = bankroll
+      ? meanTotal <= 0
+        ? 1.0
+        : varianceTotal > 0
+          ? Math.exp((-2 * meanTotal * bankroll) / varianceTotal)
+          : 0.0
+      : base.ror ?? next.ror ?? null;
+
+    return {
+      ev_per_100: meanTotal * 100,
+      stdev_per_100: stdevTotal * 10,
+      variance_per_hand: varianceTotal,
+      di: stdevTotal > 0 ? meanTotal / stdevTotal : 0,
+      score: varianceTotal > 0 ? (100 * meanTotal * meanTotal) / varianceTotal : 0,
+      n0_hands: meanTotal !== 0 ? varianceTotal / (meanTotal * meanTotal) : 0,
+      ror,
+      avg_initial_bet: avgInitialBet,
+      avg_initial_bet_units: avgInitialBet !== null ? avgInitialBet / unitSize : null,
+      tc_histogram: mergeCounts(base.tc_histogram ?? {}, next.tc_histogram ?? {}),
+      tc_histogram_est: mergeCounts(base.tc_histogram_est ?? {}, next.tc_histogram_est ?? {}),
+      tc_table: combineTcTable(),
+      meta: {
+        rounds_played: totalN.toString(),
+        note: "combined samples",
+      },
+      hours_played: handsPerHour > 0 ? totalN / handsPerHour : null,
+      debug_hands: base.debug_hands ?? next.debug_hands ?? undefined,
+    };
+  };
+
+  const handleAppendHands = async (addHands: number) => {
+    if (!scenarioConfig || !result || addHands <= 0) return;
+    setError(null);
+    setIsAppending(true);
+    setAppendBase(result);
+    try {
+      const runSeed = randomizeSeedEachRun ? Math.floor(Math.random() * 1_000_000_000) : seed;
+      if (randomizeSeedEachRun) setSeed(runSeed);
+      const payload = {
+        rules: scenarioConfig.rules,
+        counting_system: scenarioConfig.counting_system,
+        deviations: scenarioConfig.deviations,
+        bet_ramp: { wong_out_policy: "anytime", ...scenarioConfig.bet_ramp },
+        unit_size: scenarioConfig.settings.unit_size,
+        bankroll: scenarioConfig.settings.bankroll,
+        hands: addHands,
+        seed: runSeed,
+        debug_log: scenarioConfig.settings.debug_log,
+        debug_log_hands: scenarioConfig.settings.debug_log_hands,
+        deck_estimation_step: scenarioConfig.settings.deck_estimation_step,
+        deck_estimation_rounding: scenarioConfig.settings.deck_estimation_rounding,
+        use_estimated_tc_for_bet: scenarioConfig.settings.use_estimated_tc_for_bet,
+        use_estimated_tc_for_deviations: scenarioConfig.settings.use_estimated_tc_for_deviations,
+        hands_per_hour: scenarioConfig.settings.hands_per_hour,
+      };
+      const { id } = await startSimulation(payload);
+      setSimId(id);
+      setStatus("running");
+      setProgress({ status: "running", progress: 0, hands_done: 0, hands_total: addHands });
+      setLastRunConfig(scenarioJson);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to append simulation");
+      setStatus("error");
+      setIsAppending(false);
+      setAppendBase(null);
     }
   };
 
@@ -813,21 +1001,222 @@ function App() {
     return `${(ror * 100).toFixed(1)}%`;
   };
 
-  const evPer100 = result?.ev_per_100 ?? progress?.ev_per_100_est ?? null;
-  const stdevPer100 = result?.stdev_per_100 ?? progress?.stdev_per_100_est ?? null;
-  const avgInitialBet = result?.avg_initial_bet ?? progress?.avg_initial_bet_est ?? null;
+  const erf = (x: number) => {
+    const sign = x < 0 ? -1 : 1;
+    const abs = Math.abs(x);
+    const a1 = 0.254829592;
+    const a2 = -0.284496736;
+    const a3 = 1.421413741;
+    const a4 = -1.453152027;
+    const a5 = 1.061405429;
+    const p = 0.3275911;
+    const t = 1 / (1 + p * abs);
+    const y = 1 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-abs * abs);
+    return sign * y;
+  };
+
+  const normalCdf = (x: number) => 0.5 * (1 + erf(x / Math.SQRT2));
+  const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+  const formatNumber = (value: number | null, decimals = 2) => (value === null || Number.isNaN(value) ? "n/a" : value.toFixed(decimals));
+  const formatPercent = (value: number | null, decimals = 1) => (value === null || Number.isNaN(value) ? "n/a" : `${value.toFixed(decimals)}%`);
+
+  const appendLiveMetrics = useMemo(() => {
+    if (!isAppending || !appendBase || !progress) return null;
+    if (!progress.hands_done || progress.hands_done <= 0) return null;
+    if (progress.ev_per_100_est === null || progress.ev_per_100_est === undefined) return null;
+    if (progress.stdev_per_100_est === null || progress.stdev_per_100_est === undefined) return null;
+    const n1 = parseRoundsFromResult(appendBase);
+    const n2 = progress.hands_done;
+    const totalN = n1 + n2;
+    if (totalN <= 0) return null;
+    const mean1 = appendBase.ev_per_100 / 100;
+    const var1 = appendBase.variance_per_hand;
+    const mean2 = progress.ev_per_100_est / 100;
+    const var2 = Math.pow(progress.stdev_per_100_est / 10, 2);
+    const sum1 = mean1 * n1;
+    const sum2 = mean2 * n2;
+    const sumSq1 = (var1 + mean1 * mean1) * n1;
+    const sumSq2 = (var2 + mean2 * mean2) * n2;
+    const meanTotal = (sum1 + sum2) / totalN;
+    const varianceTotal = Math.max((sumSq1 + sumSq2) / totalN - meanTotal * meanTotal, 0);
+    const stdevTotal = Math.sqrt(varianceTotal);
+    const avgBet1 = appendBase.avg_initial_bet ?? null;
+    const avgBet2 = progress.avg_initial_bet_est ?? null;
+    const betSum1 = avgBet1 !== null ? avgBet1 * n1 : null;
+    const betSum2 = avgBet2 !== null ? avgBet2 * n2 : null;
+    const betSumTotal = betSum1 !== null && betSum2 !== null ? betSum1 + betSum2 : null;
+    const avgInitialBet = betSumTotal !== null ? betSumTotal / totalN : null;
+    return {
+      ev_per_100: meanTotal * 100,
+      stdev_per_100: stdevTotal * 10,
+      avg_initial_bet: avgInitialBet,
+    };
+  }, [isAppending, appendBase, progress]);
+
+  const liveMetrics = useMemo(() => {
+    if (status !== "running") return null;
+    if (appendLiveMetrics) return appendLiveMetrics;
+    if (!progress) return null;
+    return {
+      ev_per_100: progress.ev_per_100_est ?? null,
+      stdev_per_100: progress.stdev_per_100_est ?? null,
+      avg_initial_bet: progress.avg_initial_bet_est ?? null,
+    };
+  }, [status, progress, appendLiveMetrics]);
+
+  const progressHandsDone = useMemo(() => {
+    if (!progress) return 0;
+    if (isAppending && appendBase) {
+      return parseRoundsFromResult(appendBase) + (progress.hands_done ?? 0);
+    }
+    return progress.hands_done ?? 0;
+  }, [progress, isAppending, appendBase]);
+
+  const evPer100 = liveMetrics?.ev_per_100 ?? result?.ev_per_100 ?? null;
+  const stdevPer100 = liveMetrics?.stdev_per_100 ?? result?.stdev_per_100 ?? null;
+  const avgInitialBet = liveMetrics?.avg_initial_bet ?? result?.avg_initial_bet ?? null;
   const avgInitialBetUnits = avgInitialBet ? avgInitialBet / unitSize : null;
   const evPerRound = evPer100 !== null ? evPer100 / 100 : null;
   const winRateDollars = evPerRound !== null ? evPerRound * handsPerHour : null;
   const winRateUnits = winRateDollars !== null ? winRateDollars / unitSize : null;
+  const winLossPct = avgInitialBet && evPerRound !== null ? (evPerRound / avgInitialBet) * 100 : null;
+  const cScore = result?.di ? result.di * result.di : null;
+  const evPer100Units = evPer100 !== null && unitSize > 0 ? evPer100 / unitSize : null;
+  const stdevPer100Units = stdevPer100 !== null && unitSize > 0 ? stdevPer100 / unitSize : null;
+  const riskBankrollUnits = riskBankroll !== null && unitSize > 0 ? riskBankroll / unitSize : null;
 
-  const sessionChart = useMemo(() => {
-    if (evPer100 === null || stdevPer100 === null || !hands) return null;
-    const points = Math.max(10, Math.min(sessionPoints, 200));
-    const totalHands = hands;
+  const riskInputs = useMemo(() => {
+    if (evPer100 === null || stdevPer100 === null) return null;
+    const bankrollValue = riskBankroll ?? null;
+    if (bankrollValue === null) return null;
     const meanPerHand = evPer100 / 100;
     const stdevPerHand = stdevPer100 / 10;
-    const base = bankroll ?? 0;
+    if (stdevPerHand <= 0) return null;
+    return {
+      meanPerHand,
+      stdevPerHand,
+      variancePerHand: stdevPerHand * stdevPerHand,
+      bankroll: bankrollValue,
+    };
+  }, [evPer100, stdevPer100, riskBankroll]);
+
+  const tripHands = useMemo(() => {
+    if (!rorTripValue || Number.isNaN(rorTripValue)) return 0;
+    if (rorTripMode === "hours") return Math.max(0, rorTripValue * Math.max(handsPerHour, 0));
+    return Math.max(0, rorTripValue);
+  }, [rorTripMode, rorTripValue, handsPerHour]);
+
+  const rorSimple = useMemo(() => {
+    if (!riskInputs) return null;
+    const { meanPerHand, variancePerHand, bankroll } = riskInputs;
+    if (meanPerHand <= 0) return 1;
+    if (variancePerHand <= 0) return 0;
+    return clamp01(Math.exp((-2 * meanPerHand * bankroll) / variancePerHand));
+  }, [riskInputs]);
+
+  const rorTrip = useMemo(() => {
+    if (!riskInputs) return null;
+    if (!tripHands || tripHands <= 0) return null;
+    const { meanPerHand, stdevPerHand, bankroll } = riskInputs;
+    const sigma = stdevPerHand;
+    if (sigma <= 0) return null;
+    const sqrtT = Math.sqrt(tripHands);
+    const denom = sigma * sqrtT;
+    const z1 = (-bankroll - meanPerHand * tripHands) / denom;
+    const z2 = (-bankroll + meanPerHand * tripHands) / denom;
+    const term1 = normalCdf(z1);
+    const term2 = Math.exp((-2 * meanPerHand * bankroll) / (sigma * sigma)) * normalCdf(z2);
+    return clamp01(term1 + term2);
+  }, [riskInputs, tripHands]);
+
+  const tcSummary = useMemo(() => {
+    const table = result?.tc_table;
+    if (!table || table.length === 0) return null;
+    const buckets = [
+      { label: "<=-1", test: (tc: number) => tc <= -1 },
+      { label: "0", test: (tc: number) => tc === 0 },
+      { label: "1", test: (tc: number) => tc === 1 },
+      { label: "2", test: (tc: number) => tc === 2 },
+      { label: "3", test: (tc: number) => tc === 3 },
+      { label: "4", test: (tc: number) => tc === 4 },
+      { label: "5", test: (tc: number) => tc === 5 },
+      { label: "6", test: (tc: number) => tc === 6 },
+      { label: "7", test: (tc: number) => tc === 7 },
+      { label: "8", test: (tc: number) => tc === 8 },
+      { label: "9", test: (tc: number) => tc === 9 },
+      { label: "10", test: (tc: number) => tc === 10 },
+      { label: "11", test: (tc: number) => tc === 11 },
+      { label: ">=12", test: (tc: number) => tc >= 12 },
+    ];
+
+    const entries = table.map((entry) => {
+      const mean = entry.ev_pct / 100;
+      const sumX = mean * entry.n;
+      const sumX2 = (entry.variance + mean * mean) * entry.n;
+      return { ...entry, sumX, sumX2 };
+    });
+
+    const total = entries.reduce((sum, entry) => sum + entry.n, 0);
+    if (total === 0) return null;
+
+    const bankrollUnits = riskBankrollUnits ?? null;
+    const maxUnits = Math.max(0, optMaxUnits);
+    const increment = optBetIncrement > 0 ? optBetIncrement : 1;
+    const kelly = Math.max(0, optKellyFraction);
+
+    const rows = buckets.map((bucket) => {
+      const bucketEntries = entries.filter((entry) => bucket.test(entry.tc));
+      const n = bucketEntries.reduce((sum, entry) => sum + entry.n, 0);
+      const sumX = bucketEntries.reduce((sum, entry) => sum + entry.sumX, 0);
+      const sumX2 = bucketEntries.reduce((sum, entry) => sum + entry.sumX2, 0);
+      const mean = n > 0 ? sumX / n : 0;
+      const variance = n > 0 ? Math.max(sumX2 / n - mean * mean, 0) : 0;
+      const se = n > 0 ? Math.sqrt(variance / n) : 0;
+      let optExact: number | null = null;
+      let optChips: number | null = null;
+      if (bankrollUnits !== null && variance > 0 && mean > 0) {
+        optExact = (bankrollUnits * kelly * mean) / variance;
+        optExact = Math.max(0, Math.min(optExact, maxUnits));
+        optChips = Math.round(optExact / increment) * increment;
+        optChips = Math.max(0, Math.min(optChips, maxUnits));
+      }
+      return {
+        label: bucket.label,
+        n,
+        freq: n / total,
+        ev_pct: mean * 100,
+        ev_se_pct: se * 100,
+        variance,
+        opt_exact: optExact,
+        opt_chips: optChips,
+      };
+    });
+
+    if (optSimplify) {
+      let prev = 0;
+      rows.forEach((row) => {
+        if (row.opt_chips === null) return;
+        if (row.opt_chips < prev) row.opt_chips = prev;
+        prev = row.opt_chips;
+      });
+    }
+
+    return { rows, total };
+  }, [result, riskBankrollUnits, optMaxUnits, optBetIncrement, optKellyFraction, optSimplify]);
+
+  const sessionChart = useMemo(() => {
+    if (evPer100 === null || stdevPer100 === null) return null;
+    if (!tripHours || !tripHandsPerHour) return null;
+
+    const steps = Math.max(20, Math.min(tripSteps, 400));
+    const hours = Math.max(0.5, Math.min(tripHours, 72));
+    const hph = Math.max(30, Math.min(tripHandsPerHour, 300));
+    const totalHands = hours * hph;
+    const stepHands = totalHands / steps;
+    const unitScale = showUnits && unitSize > 0 ? 1 / unitSize : 1;
+    const meanPerHand = (evPer100 / 100) * unitScale;
+    const stdevPerHand = (stdevPer100 / 10) * unitScale;
+    const base = startBankrollUnits !== null ? startBankrollUnits * (showUnits ? 1 : unitSize) : 0;
 
     const mulberry32 = (seedValue: number) => {
       let t = seedValue;
@@ -847,51 +1236,102 @@ function App() {
       return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     };
 
+    const mean: number[] = [];
+    const sd: number[] = [];
+    const lower: number[] = [];
+    const upper: number[] = [];
+    const lowerInner: number[] = [];
+    const upperInner: number[] = [];
+
+    const zScores = {
+      p5: -1.64485,
+      p25: -0.67449,
+      p50: 0,
+      p75: 0.67449,
+      p95: 1.64485,
+    };
+
+    for (let i = 0; i <= steps; i += 1) {
+      const handsAtStep = i * stepHands;
+      const meanValue = base + handsAtStep * meanPerHand;
+      const sdValue = Math.sqrt(Math.max(handsAtStep, 0)) * stdevPerHand;
+      mean.push(meanValue);
+      sd.push(sdValue);
+      if (bandMode === "sigma") {
+        const band = sigmaK * sdValue;
+        lower.push(meanValue - band);
+        upper.push(meanValue + band);
+      } else {
+        lower.push(meanValue + zScores.p5 * sdValue);
+        upper.push(meanValue + zScores.p95 * sdValue);
+        lowerInner.push(meanValue + zScores.p25 * sdValue);
+        upperInner.push(meanValue + zScores.p75 * sdValue);
+      }
+    }
+
     const lines: number[][] = [];
-    for (let s = 0; s < sessionCount; s += 1) {
+    for (let s = 0; s < Math.max(1, Math.min(pathCount, 50)); s += 1) {
       const rng = mulberry32(seed + s * 9973);
       const values: number[] = [];
       let cumulative = 0;
-      let prevN = 0;
-      for (let i = 0; i <= points; i += 1) {
-        const n = Math.round((i / points) * totalHands);
-        const chunk = n - prevN;
-        if (chunk > 0) {
-          const mean = meanPerHand * chunk;
-          const stdev = stdevPerHand * Math.sqrt(chunk);
-          const increment = mean + stdev * randn(rng);
+      for (let i = 0; i <= steps; i += 1) {
+        if (i > 0) {
+          const increment = stepHands * meanPerHand + randn(rng) * stdevPerHand * Math.sqrt(stepHands);
           cumulative += increment;
-          prevN = n;
         }
         values.push(base + cumulative);
       }
       lines.push(values);
     }
 
-    const expected: number[] = [];
-    const upper: number[] = [];
-    const lower: number[] = [];
-    for (let i = 0; i <= points; i += 1) {
-      const n = Math.round((i / points) * totalHands);
-      const mean = base + meanPerHand * n;
-      const band = sessionSigma * stdevPerHand * Math.sqrt(n);
-      expected.push(mean);
-      upper.push(mean + band);
-      lower.push(mean - band);
-    }
-
-    return { lines, expected, upper, lower, points };
-  }, [evPer100, stdevPer100, hands, sessionCount, sessionSigma, sessionPoints, seed, bankroll]);
+    return {
+      steps,
+      hours,
+      hph,
+      totalHands,
+      mean,
+      lower,
+      upper,
+      lowerInner,
+      upperInner,
+      lines,
+      base,
+    };
+  }, [
+    evPer100,
+    stdevPer100,
+    tripHours,
+    tripHandsPerHour,
+    tripSteps,
+    pathCount,
+    sigmaK,
+    bandMode,
+    showUnits,
+    unitSize,
+    seed,
+    startBankrollUnits,
+  ]);
 
   const sessionSvg = useMemo(() => {
     if (!sessionChart) return null;
     const width = 900;
-    const height = 240;
-    const pad = 30;
+    const height = 260;
+    const margin = { top: 20, right: 20, bottom: 40, left: 52 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+
+    const extraLines: number[] = [0];
+    if (stopLossUnits !== null) extraLines.push(stopLossUnits * (showUnits ? 1 : unitSize));
+    if (winGoalUnits !== null) extraLines.push(winGoalUnits * (showUnits ? 1 : unitSize));
+
     const allValues = [
-      ...sessionChart.lines.flat(),
-      ...sessionChart.upper,
+      ...sessionChart.mean,
       ...sessionChart.lower,
+      ...sessionChart.upper,
+      ...sessionChart.lines.flat(),
+      ...sessionChart.lowerInner,
+      ...sessionChart.upperInner,
+      ...extraLines,
     ];
     let minY = Math.min(...allValues);
     let maxY = Math.max(...allValues);
@@ -903,26 +1343,51 @@ function App() {
     minY -= span * 0.1;
     maxY += span * 0.1;
 
-    const scaleX = (i: number) => pad + (i / sessionChart.points) * (width - pad * 2);
-    const scaleY = (value: number) => height - pad - ((value - minY) / (maxY - minY)) * (height - pad * 2);
+    const scaleX = (i: number) => margin.left + (i / sessionChart.steps) * plotWidth;
+    const scaleY = (value: number) => margin.top + (1 - (value - minY) / (maxY - minY)) * plotHeight;
 
     const buildPath = (values: number[]) =>
       values.map((v, i) => `${i === 0 ? "M" : "L"}${scaleX(i)},${scaleY(v)}`).join(" ");
 
-    const lowerPoints = sessionChart.lower.map((v, i) => `${scaleX(i)},${scaleY(v)}`);
-    const upperPoints = sessionChart.upper.map((v, i) => `${scaleX(i)},${scaleY(v)}`).reverse();
-    const bandPath = `M${lowerPoints[0]} L${lowerPoints.slice(1).join(" L")} L${upperPoints.join(" L")} Z`;
+    const bandPath = (lower: number[], upper: number[]) => {
+      const lowerPoints = lower.map((v, i) => `${scaleX(i)},${scaleY(v)}`);
+      const upperPoints = upper.map((v, i) => `${scaleX(i)},${scaleY(v)}`).reverse();
+      return `M${lowerPoints[0]} L${lowerPoints.slice(1).join(" L")} L${upperPoints.join(" L")} Z`;
+    };
+
+    const tickCount = 5;
+    const xTicks = Array.from({ length: tickCount }, (_, i) => {
+      const hours = (sessionChart.hours / (tickCount - 1)) * i;
+      const x = margin.left + (hours / sessionChart.hours) * plotWidth;
+      return { hours, hands: hours * sessionChart.hph, x };
+    });
+
+    const yTicks = Array.from({ length: tickCount }, (_, i) => {
+      const value = minY + (span / (tickCount - 1)) * i;
+      return { value, y: scaleY(value) };
+    });
+
+    const zeroY = scaleY(0);
 
     return {
       width,
       height,
-      bandPath,
-      expectedPath: buildPath(sessionChart.expected),
-      linePaths: sessionChart.lines.map(buildPath),
+      margin,
+      scaleX,
+      scaleY,
       minY,
       maxY,
+      plotWidth,
+      plotHeight,
+      xTicks,
+      yTicks,
+      zeroY,
+      meanPath: buildPath(sessionChart.mean),
+      bandOuter: bandPath(sessionChart.lower, sessionChart.upper),
+      bandInner: sessionChart.lowerInner.length ? bandPath(sessionChart.lowerInner, sessionChart.upperInner) : null,
+      linePaths: sessionChart.lines.map(buildPath),
     };
-  }, [sessionChart]);
+  }, [sessionChart, stopLossUnits, winGoalUnits, showUnits, unitSize]);
 
   return (
     <div className="app">
@@ -942,11 +1407,51 @@ function App() {
           <button className="btn" onClick={handleStop} disabled={status !== "running"}>
             Stop
           </button>
-          {handPresets.map((preset) => (
-            <button key={preset} className="btn ghost" onClick={() => setHands(preset)} disabled={status === "running"}>
-              {preset.toLocaleString()} hands
-            </button>
-          ))}
+          <div className="hands-controls">
+            <div className="hands-presets">
+              {handPresets.map((preset) => (
+                <button
+                  key={preset}
+                  className={`btn hand-btn ${hands === preset ? "active" : ""}`}
+                  onClick={() => setHands(preset)}
+                  disabled={status === "running"}
+                >
+                  {preset.toLocaleString()}
+                </button>
+              ))}
+            </div>
+            <div className="hands-custom">
+              <input
+                className="hands-input"
+                type="text"
+                value={customHandsInput}
+                onChange={(e) => setCustomHandsInput(e.target.value)}
+                placeholder="Custom hands"
+                disabled={status === "running"}
+              />
+              <button
+                className="btn ghost"
+                onClick={() => {
+                  const parsed = parseHandsInput(customHandsInput);
+                  if (parsed) setHands(parsed);
+                }}
+                disabled={status === "running"}
+              >
+                Set
+              </button>
+              <button
+                className="btn ghost"
+                onClick={() => {
+                  const parsed = parseHandsInput(customHandsInput);
+                  if (parsed) handleAppendHands(parsed);
+                }}
+                disabled={status === "running" || !result}
+                title={result ? "Append additional hands to the current results" : "Run a simulation first"}
+              >
+                + Add
+              </button>
+            </div>
+          </div>
           <button className="btn" onClick={() => setScenarioName(`${scenarioName} Copy`)}>
             Duplicate
           </button>
@@ -973,6 +1478,12 @@ function App() {
           <button className="link" onClick={handleRun}>
             Re-run
           </button>
+        </div>
+      )}
+
+      {isAppending && (
+        <div className="banner">
+          Appending additional hands… current results will update when the new batch completes.
         </div>
       )}
 
@@ -1650,9 +2161,10 @@ function App() {
                     <input type="checkbox" checked={showAdvanced} onChange={(e) => setShowAdvanced(e.target.checked)} />
                   </label>
                 </div>
-                {status === "running" && progress?.hands_done ? (
+                {status === "running" && progressHandsDone ? (
                   <div className="muted">
-                    Showing estimated metrics from {progress.hands_done.toLocaleString()} rounds.
+                    Showing estimated metrics from {progressHandsDone.toLocaleString()} rounds
+                    {isAppending ? " (including previous run)" : ""}.
                   </div>
                 ) : null}
               </>
@@ -1660,34 +2172,192 @@ function App() {
           </div>
 
           <div className="card">
-            <div className="card-title">Session Outcomes (simulated)</div>
+            <div className="card-title">Trip Outcomes (simulated)</div>
             <div className="session-controls">
               <label>
-                Sessions
-                <input type="number" min={1} max={5} value={sessionCount} onChange={(e) => setSessionCount(Number(e.target.value))} />
+                Paths shown
+                <input type="number" min={1} max={50} value={pathCount} onChange={(e) => setPathCount(Number(e.target.value))} />
               </label>
               <label>
-                Sigma band
-                <input type="number" step="0.5" min={0.5} max={3} value={sessionSigma} onChange={(e) => setSessionSigma(Number(e.target.value))} />
+                Trip length (hours)
+                <input type="number" min={0.5} max={72} step="0.5" value={tripHours} onChange={(e) => setTripHours(Number(e.target.value))} />
               </label>
               <label>
-                Points
-                <input type="number" min={20} max={200} value={sessionPoints} onChange={(e) => setSessionPoints(Number(e.target.value))} />
+                Hands per hour
+                <input type="number" min={30} max={300} value={tripHandsPerHour} onChange={(e) => setTripHandsPerHour(Number(e.target.value))} />
+              </label>
+              <label>
+                Steps
+                <input type="number" min={20} max={400} value={tripSteps} onChange={(e) => setTripSteps(Number(e.target.value))} />
+              </label>
+              <label>
+                Band mode
+                <select value={bandMode} onChange={(e) => setBandMode(e.target.value as "sigma" | "percentile")}>
+                  <option value="sigma">Sigma</option>
+                  <option value="percentile">Percentile</option>
+                </select>
+              </label>
+              {bandMode === "sigma" ? (
+                <label>
+                  Sigma K
+                  <input type="number" step="0.1" min={0.5} max={3} value={sigmaK} onChange={(e) => setSigmaK(Number(e.target.value))} />
+                </label>
+              ) : (
+                <div className="muted">Fan: 5 / 25 / 50 / 75 / 95</div>
+              )}
+              <label>
+                Starting bankroll (units)
+                <input
+                  type="number"
+                  min={0}
+                  value={startBankrollUnits ?? ""}
+                  onChange={(e) => setStartBankrollUnits(e.target.value ? Number(e.target.value) : null)}
+                />
+              </label>
+              <label>
+                Stop-loss (units)
+                <input
+                  type="number"
+                  min={0}
+                  value={stopLossUnits ?? ""}
+                  onChange={(e) => setStopLossUnits(e.target.value ? Number(e.target.value) : null)}
+                />
+              </label>
+              <label>
+                Win goal (units)
+                <input
+                  type="number"
+                  min={0}
+                  value={winGoalUnits ?? ""}
+                  onChange={(e) => setWinGoalUnits(e.target.value ? Number(e.target.value) : null)}
+                />
               </label>
             </div>
-            {!sessionSvg ? (
-              <div className="muted">Run a simulation to generate session paths.</div>
+            {!sessionSvg || !sessionChart ? (
+              <div className="muted">Run a simulation to generate trip paths.</div>
             ) : (
-              <svg viewBox={`0 0 ${sessionSvg.width} ${sessionSvg.height}`} className="session-chart">
-                <path d={sessionSvg.bandPath} fill="rgba(31, 138, 112, 0.18)" stroke="none" />
-                <path d={sessionSvg.expectedPath} fill="none" stroke="rgba(31, 138, 112, 0.9)" strokeWidth="2" />
-                {sessionSvg.linePaths.map((path, idx) => (
-                  <path key={idx} d={path} fill="none" stroke="rgba(225, 107, 59, 0.7)" strokeWidth="1.5" />
-                ))}
-              </svg>
+              <div className="chart-wrap">
+                <svg
+                  viewBox={`0 0 ${sessionSvg.width} ${sessionSvg.height}`}
+                  className="session-chart"
+                  onMouseLeave={() => setHoverPoint(null)}
+                  onMouseMove={(event) => {
+                    const target = event.currentTarget;
+                    const rect = target.getBoundingClientRect();
+                    const x = event.clientX - rect.left;
+                    const y = event.clientY - rect.top;
+                    const plotX = x - sessionSvg.margin.left;
+                    if (plotX < 0 || plotX > sessionSvg.plotWidth) {
+                      setHoverPoint(null);
+                      return;
+                    }
+                    const ratio = plotX / sessionSvg.plotWidth;
+                    const rawIndex = Math.round(ratio * sessionChart.steps);
+                    const index = Math.max(0, Math.min(sessionChart.steps, rawIndex));
+                    setHoverPoint({ index, x, y });
+                  }}
+                >
+                  <g className="chart-grid">
+                    {sessionSvg.xTicks.map((tick) => (
+                      <line key={`x-${tick.x}`} x1={tick.x} x2={tick.x} y1={sessionSvg.margin.top} y2={sessionSvg.margin.top + sessionSvg.plotHeight} />
+                    ))}
+                    {sessionSvg.yTicks.map((tick) => (
+                      <line key={`y-${tick.y}`} x1={sessionSvg.margin.left} x2={sessionSvg.margin.left + sessionSvg.plotWidth} y1={tick.y} y2={tick.y} />
+                    ))}
+                  </g>
+                  <g className="chart-axis">
+                    <line x1={sessionSvg.margin.left} x2={sessionSvg.margin.left} y1={sessionSvg.margin.top} y2={sessionSvg.margin.top + sessionSvg.plotHeight} />
+                    <line
+                      x1={sessionSvg.margin.left}
+                      x2={sessionSvg.margin.left + sessionSvg.plotWidth}
+                      y1={sessionSvg.margin.top + sessionSvg.plotHeight}
+                      y2={sessionSvg.margin.top + sessionSvg.plotHeight}
+                    />
+                  </g>
+                  <g className="chart-ticks">
+                    {sessionSvg.xTicks.map((tick) => (
+                      <text key={`xt-${tick.x}`} x={tick.x} y={sessionSvg.margin.top + sessionSvg.plotHeight + 16} textAnchor="middle">
+                        <tspan>{tick.hours.toFixed(1)}h</tspan>
+                        <tspan x={tick.x} dy="12">{Math.round(tick.hands).toLocaleString()} hands</tspan>
+                      </text>
+                    ))}
+                    {sessionSvg.yTicks.map((tick) => (
+                      <text key={`yt-${tick.y}`} x={sessionSvg.margin.left - 8} y={tick.y + 4} textAnchor="end">
+                        {showUnits ? tick.value.toFixed(2) + " u" : "$" + tick.value.toFixed(0)}
+                      </text>
+                    ))}
+                    <text
+                      x={sessionSvg.margin.left + sessionSvg.plotWidth / 2}
+                      y={sessionSvg.height - 6}
+                      textAnchor="middle"
+                      className="axis-label"
+                    >
+                      Trip time (hours)
+                    </text>
+                    <text
+                      x={12}
+                      y={sessionSvg.margin.top + sessionSvg.plotHeight / 2}
+                      textAnchor="middle"
+                      transform={`rotate(-90 12 ${sessionSvg.margin.top + sessionSvg.plotHeight / 2})`}
+                      className="axis-label"
+                    >
+                      {showUnits ? "Profit (u)" : "Profit ($)"}
+                    </text>
+                  </g>
+                  <line className="chart-baseline" x1={sessionSvg.margin.left} x2={sessionSvg.margin.left + sessionSvg.plotWidth} y1={sessionSvg.zeroY} y2={sessionSvg.zeroY} />
+                  {stopLossUnits !== null && (
+                    <line
+                      className="chart-threshold stop"
+                      x1={sessionSvg.margin.left}
+                      x2={sessionSvg.margin.left + sessionSvg.plotWidth}
+                      y1={sessionSvg.scaleY(stopLossUnits * (showUnits ? 1 : unitSize))}
+                      y2={sessionSvg.scaleY(stopLossUnits * (showUnits ? 1 : unitSize))}
+                    />
+                  )}
+                  {winGoalUnits !== null && (
+                    <line
+                      className="chart-threshold goal"
+                      x1={sessionSvg.margin.left}
+                      x2={sessionSvg.margin.left + sessionSvg.plotWidth}
+                      y1={sessionSvg.scaleY(winGoalUnits * (showUnits ? 1 : unitSize))}
+                      y2={sessionSvg.scaleY(winGoalUnits * (showUnits ? 1 : unitSize))}
+                    />
+                  )}
+                  <path d={sessionSvg.bandOuter} className="chart-band-outer" />
+                  {sessionSvg.bandInner && <path d={sessionSvg.bandInner} className="chart-band-inner" />}
+                  <path d={sessionSvg.meanPath} className="chart-mean" />
+                  {sessionSvg.linePaths.map((path, idx) => (
+                    <path key={idx} d={path} className="chart-path" />
+                  ))}
+                </svg>
+                {hoverPoint && sessionChart && (
+                  <div className="chart-tooltip" style={{ left: hoverPoint.x + 12, top: hoverPoint.y + 12 }}>
+                    <div className="tooltip-title">
+                      {((hoverPoint.index / sessionChart.steps) * sessionChart.hours).toFixed(2)}h •{" "}
+                      {Math.round((hoverPoint.index / sessionChart.steps) * sessionChart.totalHands).toLocaleString()} hands
+                    </div>
+                    <div>
+                      Mean:{" "}
+                      {showUnits
+                        ? sessionChart.mean[hoverPoint.index].toFixed(2) + " u"
+                        : "$" + sessionChart.mean[hoverPoint.index].toFixed(2)}
+                    </div>
+                    <div>
+                      Band:{" "}
+                      {showUnits
+                        ? sessionChart.lower[hoverPoint.index].toFixed(2) + " u"
+                        : "$" + sessionChart.lower[hoverPoint.index].toFixed(2)}{" "}
+                      to{" "}
+                      {showUnits
+                        ? sessionChart.upper[hoverPoint.index].toFixed(2) + " u"
+                        : "$" + sessionChart.upper[hoverPoint.index].toFixed(2)}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
             <div className="muted">
-              Simulated paths use a normal approximation based on EV and SD; the shaded band shows +/- {sessionSigma} SD around expected value.
+              EV/SD are applied per hand. Band mode uses {bandMode === "sigma" ? `${sigmaK}σ` : "percentile fan (5–95 and 25–75)"}.
             </div>
           </div>
 
@@ -1699,6 +2369,255 @@ function App() {
                 renderHistogram(result.tc_histogram_est, "TC Histogram (estimated)")}
             </div>
           </details>
+
+          <div className="card">
+            <div className="card-title">Risk of Ruin (calculator)</div>
+            <div className="risk-grid">
+              <label>
+                Mode
+                <select value={rorMode} onChange={(e) => setRorMode(e.target.value as "simple" | "trip")}>
+                  <option value="simple">Simple (infinite)</option>
+                  <option value="trip">Trip (finite)</option>
+                </select>
+              </label>
+              {rorMode === "trip" && (
+                <label>
+                  Trip input
+                  <select value={rorTripMode} onChange={(e) => setRorTripMode(e.target.value as "hands" | "hours")}>
+                    <option value="hands">Hands</option>
+                    <option value="hours">Hours</option>
+                  </select>
+                </label>
+              )}
+              {rorMode === "trip" && (
+                <label>
+                  Trip {rorTripMode}
+                  <input
+                    type="number"
+                    min={0}
+                    value={rorTripValue}
+                    onChange={(e) => setRorTripValue(Number(e.target.value))}
+                  />
+                </label>
+              )}
+              {rorMode === "trip" && (
+                <div className="inline-actions">
+                  <button
+                    className="btn ghost"
+                    type="button"
+                    onClick={() => {
+                      setRorTripMode("hands");
+                      setRorTripValue(hands);
+                    }}
+                  >
+                    Use sim hands
+                  </button>
+                </div>
+              )}
+              <label>
+                Bankroll ($)
+                <input
+                  type="number"
+                  value={riskBankroll ?? ""}
+                  onChange={(e) => setRiskBankroll(e.target.value ? Number(e.target.value) : null)}
+                  disabled={useSimBankroll}
+                />
+              </label>
+              <label className="toggle">
+                Use simulation bankroll
+                <input type="checkbox" checked={useSimBankroll} onChange={(e) => setUseSimBankroll(e.target.checked)} />
+              </label>
+            </div>
+            {riskInputs ? (
+              <>
+                <div className="risk-output">
+                  <div>
+                    <div className="label">Simple RoR</div>
+                    <div className="risk-value">{formatRor(rorSimple)}</div>
+                  </div>
+                  {rorMode === "trip" && (
+                    <div>
+                      <div className="label">Trip RoR</div>
+                      <div className="risk-value">{formatRor(rorTrip)}</div>
+                      <div className="muted">
+                        {tripHands.toLocaleString()} hands ({handsPerHour > 0 ? (tripHands / handsPerHour).toFixed(1) : "n/a"} hrs)
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="muted">
+                  Uses EV/100{" "}
+                  {evPer100 === null
+                    ? "n/a"
+                    : showUnits
+                      ? evPer100Units === null
+                        ? "n/a"
+                        : `${formatNumber(evPer100Units)} u`
+                      : `$${formatNumber(evPer100)}`}{" "}
+                  and SD/100{" "}
+                  {stdevPer100 === null
+                    ? "n/a"
+                    : showUnits
+                      ? stdevPer100Units === null
+                        ? "n/a"
+                        : `${formatNumber(stdevPer100Units)} u`
+                      : `$${formatNumber(stdevPer100)}`}{" "}
+                  from the current run. Bankroll: {riskBankroll !== null ? `$${riskBankroll.toFixed(2)}` : "n/a"} (
+                  {riskBankrollUnits !== null ? riskBankrollUnits.toFixed(1) + " u" : "n/a"}).
+                </div>
+              </>
+            ) : (
+              <div className="muted">Run a simulation and set a bankroll to estimate RoR.</div>
+            )}
+          </div>
+
+          <div className="card">
+            <div className="card-title">Performance Tables</div>
+            {!result && !progress?.ev_per_100_est ? (
+              <div className="muted">Run a simulation to populate tables.</div>
+            ) : (
+              <>
+                <div className="opt-controls">
+                  <label>
+                    Kelly fraction
+                    <input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      value={optKellyFraction}
+                      onChange={(e) => setOptKellyFraction(Number(e.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Max units
+                    <input
+                      type="number"
+                      min={0}
+                      value={optMaxUnits}
+                      onChange={(e) => setOptMaxUnits(Number(e.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Bet increment (units)
+                    <input
+                      type="number"
+                      step="0.1"
+                      min={0.01}
+                      value={optBetIncrement}
+                      onChange={(e) => setOptBetIncrement(Number(e.target.value))}
+                    />
+                  </label>
+                  <label className="toggle">
+                    Simplify
+                    <input type="checkbox" checked={optSimplify} onChange={(e) => setOptSimplify(e.target.checked)} />
+                  </label>
+                </div>
+                <div className="muted">
+                  Optimal bets use EV/variance per TC with a Kelly-style formula and the bankroll from the RoR widget (currently{" "}
+                  {riskBankrollUnits !== null ? `${riskBankrollUnits.toFixed(1)} u` : "n/a"}).
+                </div>
+                <div className="table-scroll">
+                  <table className="data-table wide">
+                    <thead>
+                      <tr>
+                        <th title="Average initial bet before doubles/splits/surrender/insurance.">Bet Average (u)</th>
+                        <th title="EV per 100 rounds.">Results</th>
+                        <th title="Standard deviation per 100 rounds.">Std Dev</th>
+                        <th>Risk of Ruin</th>
+                        <th title="Score (EV/Var proxy).">Performance</th>
+                        <th title="EV per hand divided by average initial bet.">%W/L</th>
+                        <th>Win Rate</th>
+                        <th>$/Hr</th>
+                        <th>Hand/Hr</th>
+                        <th>DI</th>
+                        <th>c-SCORE</th>
+                        <th>CE</th>
+                        <th>CE/WR</th>
+                        <th>N0</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>{avgInitialBetUnits !== null ? avgInitialBetUnits.toFixed(2) : "n/a"}</td>
+                        <td>
+                          {evPer100 === null
+                            ? "n/a"
+                            : showUnits
+                              ? evPer100Units === null
+                                ? "n/a"
+                                : `${formatNumber(evPer100Units)} u`
+                              : `$${formatNumber(evPer100)}`}
+                        </td>
+                        <td>
+                          {stdevPer100 === null
+                            ? "n/a"
+                            : showUnits
+                              ? stdevPer100Units === null
+                                ? "n/a"
+                                : `${formatNumber(stdevPer100Units)} u`
+                              : `$${formatNumber(stdevPer100)}`}
+                        </td>
+                        <td>{formatRor(rorSimple ?? result?.ror)}</td>
+                        <td>{result ? result.score.toFixed(4) : "n/a"}</td>
+                        <td>{formatPercent(winLossPct, 2)}</td>
+                        <td>{winRateUnits !== null ? `${winRateUnits.toFixed(2)} u/hr` : "n/a"}</td>
+                        <td>{winRateDollars !== null ? `$${winRateDollars.toFixed(2)}` : "n/a"}</td>
+                        <td>{handsPerHour}</td>
+                        <td>{result ? result.di.toFixed(4) : "n/a"}</td>
+                        <td>{cScore !== null ? cScore.toFixed(4) : "n/a"}</td>
+                        <td className="muted">n/a</td>
+                        <td className="muted">n/a</td>
+                        <td>{result ? result.n0_hands.toFixed(0) : "n/a"}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="table-note muted">
+                  Bet Average is the initial bet in units before doubles/splits/surrender/insurance. CE and CE/WR are not yet implemented.
+                </div>
+                <div className="table-scroll">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Count</th>
+                        <th>Freq.</th>
+                        <th>N</th>
+                        <th>EV% (IBA)</th>
+                        <th>Std Err%</th>
+                        <th>Optimal Bet Exact (u)</th>
+                        <th>Optimal Bet Chips (u)</th>
+                        <th>Optimal Bet Chips ($)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tcSummary?.rows.map((row) => (
+                        <tr key={row.label}>
+                          <td>{row.label}</td>
+                          <td>{formatPercent(row.freq * 100, 2)}</td>
+                          <td>{row.n}</td>
+                          <td>{formatPercent(row.ev_pct, 2)}</td>
+                          <td>{formatPercent(row.ev_se_pct, 2)}</td>
+                          <td>{row.opt_exact !== null ? row.opt_exact.toFixed(2) : "n/a"}</td>
+                          <td>{row.opt_chips !== null ? row.opt_chips.toFixed(2) : "n/a"}</td>
+                          <td>{row.opt_chips !== null ? "$" + (row.opt_chips * unitSize).toFixed(2) : "n/a"}</td>
+                        </tr>
+                      ))}
+                      {!tcSummary && (
+                        <tr>
+                          <td colSpan={8} className="muted">
+                            No per-count data yet. Run a simulation with the updated backend.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="table-note muted">
+                  Per-count EV and standard error use IBA (profit per initial bet). Optimal bets are Kelly-style and rounded by the bet increment.
+                </div>
+              </>
+            )}
+          </div>
 
           {result?.debug_hands && (
             <details className="card">
@@ -1763,6 +2682,7 @@ function App() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

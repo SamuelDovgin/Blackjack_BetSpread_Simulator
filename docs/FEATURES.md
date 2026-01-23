@@ -22,20 +22,26 @@
 
 - **Frontend (Vite/React/TS)**
   - Top bar with scenario name + unsaved dot, Run/Stop/Duplicate/Save/Load/Export, and status chip.
+  - Hands selector with active presets, custom input, and append mode to add hands to existing results.
   - Sticky input sidebar (rules, counting/TC estimation, ramp, simulation settings, deviations) including optional cut-decks input for penetration.
   - Basic strategy preview tables for the active rules preset (pairs/soft/hard/surrender).
   - Strategy tables are color-coded (hit, stand, double, double-stand, split, split-conditional).
-  - Rules preset includes both `6D H17 DAS LS` and `6D S17 DAS LS`.
+  - Rules preset includes both `6D H17 DAS` and `6D S17 DAS` (surrender off by default).
   - Results pane with primary metrics cards, unit toggle, and TC histograms (raw + estimated).
   - Metrics include Bet Average (units), win rate (units/hour + $/hour), RoR percent, and equivalent table time.
-  - Session outcomes chart with simulated paths and variance band (normal approximation).
+  - Trip outcomes chart with simulated paths, axes/gridlines, and sigma/percentile bands (normal approximation).
+  - Risk of Ruin calculator widget (simple + trip) under histograms, driven by EV/SD from the current run (trip uses Brownian/normal approximation) with a toggle to use simulation bankroll.
+  - CVCX-style performance tables (bet average, EV/100, SD/100, RoR, DI, c-SCORE, N0) and count frequency table (raw TC).
+  - Per-count EV/SE (IBA) table using played-round TC buckets (tc_for_bet).
+  - Optimal bet tables (Kelly-style exact + chips rounding with bet increment and simplify toggle).
   - Preset save/load modals with localStorage persistence for rules/ramp/deviations/scenarios, plus duplicate/rename/delete and JSON import/export.
   - Ramp preview de-dupes TC steps for a clean mini chart.
   - Built-in ramp library presets (BJInfo 1-8, BJInfo 1-12, shoe 1-12 + wong-out, single-deck 1-4, aggressive shoe 1-15).
   - Deviation search + filters + action dropdowns; auto-disable surrender deviations when surrender is off.
+  - Deviation toolbar and rows wrap and stay within the card on narrow widths.
   - Progress bar and run details panel with debug log.
   - RoR displayed as percent; raw RoR available in Run Details. Equivalent table time shown with hours + days + 4h sessions.
-  - Estimated metrics update during running sims (EV/SD/bet average).
+  - Estimated metrics update during running sims (EV/SD/bet average), including append runs (combined with prior results).
   - Seed randomizes each run by default with a toggle to lock a fixed seed.
 
 - **Configuration**
@@ -52,6 +58,7 @@
 - Strategy coverage: basic pair/soft/hard tables are simplified; expand for full rule sets and validate against known benchmarks.
 - Wong-out table consumption: add configurable table hand count to burn cards when sitting out.
 - UI: add EV vs TC and bet-distribution charts; add CSV import/export for deviations; add scenario compare view.
+- Per-count optimal bet rounding is currently basic monotonic smoothing; improve rational/simplify logic.
 - Presets: add tags/search drawer improvements and validation warnings for incompatible presets.
 - Deviations: conflict detection, override layers, and rule compatibility badges.
 - Sessions: optional bankroll-path simulation using full hand outcomes (beyond normal approximation).
