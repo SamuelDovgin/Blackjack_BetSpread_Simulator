@@ -60,5 +60,6 @@ def test_rounds_played_and_histograms():
     # Histograms should be populated
     assert len(res.tc_histogram) > 0
     assert len(res.tc_histogram_est) > 0
+    assert len(res.tc_table) > 0
     assert res.hours_played is not None and res.hours_played > 0
     assert res.avg_initial_bet is not None and res.avg_initial_bet > 0

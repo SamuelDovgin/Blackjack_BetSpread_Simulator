@@ -4,7 +4,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from app.models import Deviation, Rules, SimulationRequest, SimulationResult
+from app.models import Deviation, Rules, SimulationRequest, SimulationResult, TcTableEntry
 
 CARD_ORDER = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"]
 CARD_VALUES = {**{str(i): i for i in range(2, 10)}, "T": 10, "J": 10, "Q": 10, "K": 10, "A": 11}
@@ -222,6 +222,7 @@ def run_simulation(
     rounds_played = 0
     tc_histogram: Dict[int, int] = {}
     tc_histogram_est: Dict[int, int] = {}
+    tc_stats: Dict[int, Dict[str, float]] = {}
     debug_logs: List[Dict[str, str]] = []
     last_round_result: Optional[str] = None
     last_round_played = False
@@ -278,6 +279,7 @@ def run_simulation(
                     continue
 
         bet = choose_bet(tc_for_bet, ramp_steps, request.unit_size)
+        round_tc_bucket = math.floor(tc_for_bet)
         total_initial_bet += bet
 
         # Initial deal
@@ -307,6 +309,12 @@ def run_simulation(
                 profit -= bet
             total_profit += profit
             total_sq_profit += profit * profit
+            if bet > 0:
+                stat = tc_stats.setdefault(round_tc_bucket, {"n": 0.0, "sum_x": 0.0, "sum_x2": 0.0})
+                stat["n"] += 1.0
+                x = profit / bet
+                stat["sum_x"] += x
+                stat["sum_x2"] += x * x
             rounds_played += 1
             last_round_result = "win" if profit > 0 else "loss" if profit < 0 else "push"
             last_round_played = True
@@ -480,6 +488,12 @@ def run_simulation(
                     }
                 )
 
+        if bet > 0:
+            stat = tc_stats.setdefault(round_tc_bucket, {"n": 0.0, "sum_x": 0.0, "sum_x2": 0.0})
+            stat["n"] += 1.0
+            x = round_profit / bet
+            stat["sum_x"] += x
+            stat["sum_x2"] += x * x
         rounds_played += 1
         last_round_result = "win" if round_profit > 0 else "loss" if round_profit < 0 else "push"
         last_round_played = True
@@ -534,6 +548,26 @@ def run_simulation(
     avg_initial_bet = total_initial_bet / rounds_played if rounds_played > 0 else None
     avg_initial_bet_units = avg_initial_bet / request.unit_size if avg_initial_bet is not None else None
 
+    tc_table: List[TcTableEntry] = []
+    for tc_bucket, stat in sorted(tc_stats.items(), key=lambda item: item[0]):
+        n = int(stat["n"])
+        if n <= 0:
+            continue
+        mean_x = stat["sum_x"] / n
+        var_x = max(stat["sum_x2"] / n - mean_x * mean_x, 0.0)
+        se_x = math.sqrt(var_x / n) if n > 0 else 0.0
+        freq = n / rounds_played if rounds_played > 0 else 0.0
+        tc_table.append(
+            TcTableEntry(
+                tc=tc_bucket,
+                n=n,
+                freq=freq,
+                ev_pct=mean_x * 100,
+                ev_se_pct=se_x * 100,
+                variance=var_x,
+            )
+        )
+
     return SimulationResult(
         ev_per_100=ev_per_100,
         stdev_per_100=stdev_per_100,
@@ -546,6 +580,7 @@ def run_simulation(
         avg_initial_bet_units=avg_initial_bet_units,
         tc_histogram=tc_histogram,
         tc_histogram_est=tc_histogram_est,
+        tc_table=tc_table,
         meta=meta,
         hours_played=hours_played,
         debug_hands=debug_logs if request.debug_log else None,

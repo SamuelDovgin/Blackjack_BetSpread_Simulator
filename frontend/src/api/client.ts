@@ -74,6 +74,14 @@ export interface SimulationResult {
   avg_initial_bet_units?: number | null;
   tc_histogram: Record<string, number>;
   tc_histogram_est?: Record<string, number>;
+  tc_table?: Array<{
+    tc: number;
+    n: number;
+    freq: number;
+    ev_pct: number;
+    ev_se_pct: number;
+    variance: number;
+  }>;
   meta?: Record<string, string>;
   hours_played?: number | null;
   debug_hands?: Array<Record<string, string>>;

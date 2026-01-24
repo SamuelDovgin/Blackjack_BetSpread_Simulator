@@ -8,6 +8,14 @@
   --accent: #1f8a70;
   --accent-2: #e16b3b;
   --shadow: rgba(28, 25, 18, 0.12);
+  --chart-path: #e16b3b;
+  --chart-mean: #1f8a70;
+  --chart-band-outer: rgba(31, 138, 112, 0.18);
+  --chart-band-inner: rgba(31, 138, 112, 0.32);
+  --chart-grid: rgba(29, 27, 22, 0.12);
+  --chart-axis: rgba(29, 27, 22, 0.4);
+  --chart-baseline: rgba(29, 27, 22, 0.55);
+  --chart-threshold: rgba(225, 107, 59, 0.7);
 }
 
 * {
@@ -70,6 +78,45 @@ body {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.hands-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hands-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  background: var(--bg-accent);
+  padding: 4px;
+  border-radius: 999px;
+}
+
+.hand-btn {
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-weight: 600;
+}
+
+.hand-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.hands-custom {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.hands-input {
+  min-width: 140px;
 }
 
 .status-chip {
@@ -220,9 +267,22 @@ select {
 .ramp-header,
 .ramp-row {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
+}
+
+.ramp-row input {
+  width: 100%;
+  min-width: 0;
+}
+
+.ramp-row .btn {
+  white-space: nowrap;
+}
+
+.ramp-table {
+  overflow-x: auto;
 }
 
 .ramp-chart {
@@ -248,7 +308,16 @@ select {
 .deviation-toolbar {
   display: grid;
   gap: 8px;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+}
+
+.deviation-toolbar > * {
+  min-width: 0;
+}
+
+.deviation-toolbar .btn {
+  width: 100%;
 }
 
 .deviation-table {
@@ -260,13 +329,27 @@ select {
 .deviation-header,
 .deviation-row {
   display: grid;
-  grid-template-columns: 1.2fr 0.6fr 0.6fr auto;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.6fr) minmax(0, 0.6fr) auto;
   gap: 8px;
   align-items: center;
 }
 
 .deviation-row.disabled {
   opacity: 0.5;
+}
+
+.deviation-table {
+  overflow-x: auto;
+}
+
+.deviation-row input,
+.deviation-row select {
+  width: 100%;
+  min-width: 0;
+}
+
+.deviation-row .btn {
+  white-space: nowrap;
 }
 
 .status-card .status-row {
@@ -433,8 +516,9 @@ select {
 .session-controls {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   margin-bottom: 8px;
+  align-items: end;
 }
 
 .session-chart {
@@ -443,6 +527,87 @@ select {
   background: var(--bg-accent);
   border-radius: 12px;
   margin-bottom: 8px;
+}
+
+.chart-wrap {
+  position: relative;
+}
+
+.chart-grid line {
+  stroke: var(--chart-grid);
+  stroke-width: 1;
+}
+
+.chart-axis line {
+  stroke: var(--chart-axis);
+  stroke-width: 1.2;
+}
+
+.chart-ticks text {
+  fill: var(--muted);
+  font-size: 0.65rem;
+}
+
+.axis-label {
+  fill: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.chart-band-outer {
+  fill: var(--chart-band-outer);
+  stroke: none;
+}
+
+.chart-band-inner {
+  fill: var(--chart-band-inner);
+  stroke: none;
+}
+
+.chart-mean {
+  fill: none;
+  stroke: var(--chart-mean);
+  stroke-width: 2;
+}
+
+.chart-path {
+  fill: none;
+  stroke: var(--chart-path);
+  stroke-width: 1.4;
+  opacity: 0.7;
+}
+
+.chart-baseline {
+  stroke: var(--chart-baseline);
+  stroke-width: 1.2;
+  stroke-dasharray: 4 4;
+}
+
+.chart-threshold {
+  stroke: var(--chart-threshold);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+}
+
+.chart-threshold.goal {
+  stroke: var(--accent);
+}
+
+.chart-tooltip {
+  position: absolute;
+  background: #12110f;
+  color: #f7f1e8;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  pointer-events: none;
+  box-shadow: 0 6px 18px var(--shadow);
+  min-width: 180px;
+}
+
+.tooltip-title {
+  font-weight: 700;
+  margin-bottom: 4px;
 }
 .seed-row {
   display: flex;
@@ -514,4 +679,67 @@ select {
 
 .strategy-table td.cell-nosplit {
   background: transparent;
+}
+
+.risk-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+}
+
+.risk-output {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-top: 8px;
+}
+
+.risk-output .label {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.risk-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.data-table.wide {
+  min-width: 920px;
+}
+
+.data-table th,
+.data-table td {
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.data-table th {
+  background: var(--bg-accent);
+  font-weight: 700;
+}
+
+.table-note {
+  margin-top: 6px;
+}
+
+.opt-controls {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin-bottom: 8px;
 }

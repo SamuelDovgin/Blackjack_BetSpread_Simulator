@@ -10,6 +10,7 @@
   - Scenario name (editable) + unsaved changes dot.
   - Buttons: Run, Stop, Duplicate, Save preset, Load preset, Export JSON.
   - Status chip: Idle / Running (xx%) / Complete / Error.
+  - Hands selector: quick presets with active state, custom input, and an append mode to add hands.
 - **Two-column main layout:**
   - Left: Inputs (sticky sidebar, grouped cards/accordions).
   - Right: Results (cards + charts, scrollable).
@@ -20,7 +21,7 @@
    - Penetration slider + numeric box (0.50–0.95) with auto-normalize if user enters 75 → 0.75.
    - Optional cut-decks input (converted to penetration).
    - Grouped toggles: dealer (H17/S17, peek, BJ payout), doubling (DA2, DAS), surrender (LS/ES), splits (max splits, RSA, hit split aces).
-   - Rules presets dropdown (e.g., 6D H17 DAS LS, 6D S17 DAS LS) that fills defaults but remains editable.
+   - Rules presets dropdown (e.g., 6D H17 DAS, 6D S17 DAS) that fills defaults but remains editable.
    - Read-only basic strategy preview tables (pairs/soft/hard/surrender) for the selected rules.
    - Inline warnings for invalid combos; no blocking input.
 
@@ -55,10 +56,12 @@
 - **Primary metrics row:** EV/100, EV/round, SD/100, N0, SCORE (with tooltip), RoR as %, equivalent table time (hours + days + 4h sessions).
 - **Additional metrics:** Bet Average (units), win rate (units/hour + $/hour).
 - **Units toggle:** show $ and units.
-- **Charts:** Session outcomes chart (multiple simulated paths + variance band); TC histogram (raw + estimated) in collapsible section; bet distribution (future), bankroll path (future).
+- **Charts:** Trip outcomes chart (paths + axes + sigma/percentile bands); TC histogram (raw + estimated) in collapsible section; per-count EV/SE tables; bet distribution (future), bankroll path (future).
 - **Run details:** collapsible meta (seed, rounds, rules hash, ramp hash, deviation set).
 - **Stale results banner:** show when inputs change after a run.
 - **Live estimates:** show partial EV/SD/bet average while run is in progress.
+- **Risk of Ruin widget:** simple + trip calculators below TC histograms, driven by current EV/SD and bankroll.
+- **Performance tables:** CVCX-style summary row and count-frequency table plus per-count EV/SE (IBA) and optimal bet tables.
 
 ## Presets Strategy (Local-first)
 - Store presets in localStorage (future: IndexedDB + API sync).
