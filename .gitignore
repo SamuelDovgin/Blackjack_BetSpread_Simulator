@@ -1,0 +1,97 @@
+############################################
+# OS / Editor
+############################################
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+.vscode/
+.idea/
+*.swp
+
+############################################
+# Secrets / env files
+############################################
+.env
+.env.*
+!.env.example
+!.env.template
+
+############################################
+# Python (backend)
+############################################
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+backend/.venv/
+backend/venv/
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Test / typecheck / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.pyre/
+.ruff_cache/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+############################################
+# FastAPI / Uvicorn local stuff
+############################################
+backend/app/*.log
+backend/app/**/*.log
+
+############################################
+# Node / React / Vite (frontend)
+############################################
+node_modules/
+frontend/node_modules/
+
+# Builds
+dist/
+frontend/dist/
+
+# Vite cache
+frontend/.vite/
+.vite/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+############################################
+# Optional: common local artifacts
+############################################
+*.sqlite
+*.sqlite3
+*.db
+
+# If you generate sim outputs locally, keep them out of git:
+results/
+output/
+outputs/
+tmp/
+temp/
