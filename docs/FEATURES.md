@@ -3,8 +3,10 @@
 ## Implemented Features
 - **Core engine**
   - Full hand-by-hand simulation with Hi-Lo counting.
+  - Basic strategy logic switches key decisions based on H17 vs S17 (e.g., A7v2 and 11vA).
   - Splits with queue-based resolution respecting: max splits, resplit aces, hit-split-aces toggle, double-after-split, double-any-two, surrender, insurance, H17/S17.
   - Bet ramp with wong-out and optional cash or unit entry.
+  - Wong-out policy: anytime / after loss only / after hand only.
   - Deviations (Illustrious 18 + Fab 4 preset) applied to actions and insurance.
   - True count histogram (raw) and estimated TC histogram (if deck estimation is enabled).
   - Deck estimation: perfect (0), half-deck, or full-deck quantization with rounding (nearest/floor/ceil) and toggles for using estimated TC for betting and deviations. Defaults to full-deck + floor.
@@ -21,11 +23,15 @@
 - **Frontend (Vite/React/TS)**
   - Top bar with scenario name + unsaved dot, Run/Stop/Duplicate/Save/Load/Export, and status chip.
   - Sticky input sidebar (rules, counting/TC estimation, ramp, simulation settings, deviations) including optional cut-decks input for penetration.
+  - Basic strategy preview tables for the active rules preset (pairs/soft/hard/surrender).
+  - Strategy tables are color-coded (hit, stand, double, double-stand, split, split-conditional).
+  - Rules preset includes both `6D H17 DAS LS` and `6D S17 DAS LS`.
   - Results pane with primary metrics cards, unit toggle, and TC histograms (raw + estimated).
   - Metrics include Bet Average (units), win rate (units/hour + $/hour), RoR percent, and equivalent table time.
   - Session outcomes chart with simulated paths and variance band (normal approximation).
   - Preset save/load modals with localStorage persistence for rules/ramp/deviations/scenarios, plus duplicate/rename/delete and JSON import/export.
   - Ramp preview de-dupes TC steps for a clean mini chart.
+  - Built-in ramp library presets (BJInfo 1-8, BJInfo 1-12, shoe 1-12 + wong-out, single-deck 1-4, aggressive shoe 1-15).
   - Deviation search + filters + action dropdowns; auto-disable surrender deviations when surrender is off.
   - Progress bar and run details panel with debug log.
   - RoR displayed as percent; raw RoR available in Run Details. Equivalent table time shown with hours + days + 4h sessions.

@@ -20,7 +20,8 @@
    - Penetration slider + numeric box (0.50–0.95) with auto-normalize if user enters 75 → 0.75.
    - Optional cut-decks input (converted to penetration).
    - Grouped toggles: dealer (H17/S17, peek, BJ payout), doubling (DA2, DAS), surrender (LS/ES), splits (max splits, RSA, hit split aces).
-   - Rules presets dropdown (e.g., 6D H17 DAS LS) that fills defaults but remains editable.
+   - Rules presets dropdown (e.g., 6D H17 DAS LS, 6D S17 DAS LS) that fills defaults but remains editable.
+   - Read-only basic strategy preview tables (pairs/soft/hard/surrender) for the selected rules.
    - Inline warnings for invalid combos; no blocking input.
 
 2) **Counting & TC estimation**
@@ -33,8 +34,10 @@
    - Table: TC floor | Units (or $) | Remove.
    - Input mode toggle: Units / Dollars (show $ conversion inline).
    - Wong-out below TC + shaded region on mini chart.
+   - Wong-out policy selector: anytime / after loss only / after hand only.
    - Add row, sort by TC, clamp actions.
    - Mini chart: X=TC, Y=bet units.
+   - Built-in ramp library with common presets; user presets saved locally.
 
 4) **Deviations**
    - Deviation sets with presets: I18 + Fab 4.

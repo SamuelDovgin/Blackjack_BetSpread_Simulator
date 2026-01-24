@@ -58,12 +58,16 @@ def apply_deviation(hand_key: str, true_count: float, deviations: Dict[str, List
     return ""
 
 
-def basic_strategy_action(player: List[str], dealer_up: str, soft: bool, rules_surrender: bool) -> str:
-    total, _ = hand_value(player)
+def basic_strategy_action(player: List[str], dealer_up: str, rules: Rules) -> str:
+    """
+    Returns one of: H, S, R, DH (double else hit), DS (double else stand).
+    The caller should resolve DH/DS based on whether doubling is actually allowed.
+    """
+    total, soft = hand_value(player)
     up = upcard_key(dealer_up)
 
-    # Surrender shortcuts
-    if rules_surrender:
+    # Surrender shortcuts (late surrender)
+    if rules.surrender:
         if total == 16 and up in {"9", "T", "A"}:
             return "R"
         if total == 15 and up == "T":
@@ -78,33 +82,42 @@ def basic_strategy_action(player: List[str], dealer_up: str, soft: bool, rules_s
         if total == 12:
             return "S" if up in {"4", "5", "6"} else "H"
         if total == 11:
-            return "D"
+            # H17: double 11vA, S17: hit 11vA
+            if up == "A" and not rules.hit_soft_17:
+                return "H"
+            return "DH"
         if total == 10:
-            return "D" if up not in {"T", "A"} else "H"
+            return "DH" if up not in {"T", "A"} else "H"
         if total == 9:
-            return "D" if up in {"3", "4", "5", "6"} else "H"
+            # H17: double 9v2; S17: hit 9v2
+            if up == "2" and rules.hit_soft_17:
+                return "DH"
+            return "DH" if up in {"3", "4", "5", "6"} else "H"
         return "H"
-    else:
-        # Soft totals
-        if total >= 19:
+
+    # Soft totals
+    if total >= 19:
+        return "S"
+    if total == 18:
+        # A7 vs 2 differs: H17 = DS, S17 = S
+        if up == "2":
+            return "DS" if rules.hit_soft_17 else "S"
+        if up in {"3", "4", "5", "6"}:
+            return "DS"
+        if up in {"7", "8"}:
             return "S"
-        if total == 18:
-            if up in {"2", "7", "8"}:
-                return "S"
-            if up in {"3", "4", "5", "6"}:
-                return "D"
-            return "H"
-        if total == 17:
-            return "D" if up in {"3", "4", "5", "6"} else "H"
-        if total in {15, 16}:
-            return "D" if up in {"4", "5", "6"} else "H"
-        if total in {13, 14}:
-            return "D" if up in {"5", "6"} else "H"
+        return "H"
+    if total == 17:
+        return "DH" if up in {"3", "4", "5", "6"} else "H"
+    if total in {15, 16}:
+        return "DH" if up in {"4", "5", "6"} else "H"
+    if total in {13, 14}:
+        return "DH" if up in {"5", "6"} else "H"
     return "H"
 
 
 def pair_strategy_action(rank: str, dealer_up: str, rules: Rules) -> str:
-    """Very basic pair strategy for H17 DAS-style games."""
+    """Pair splitting strategy with DAS-aware spots."""
     up = upcard_key(dealer_up)
     if rank == "A":
         return "P"
@@ -113,17 +126,21 @@ def pair_strategy_action(rank: str, dealer_up: str, rules: Rules) -> str:
     if rank == "9":
         return "P" if up in {"2", "3", "4", "5", "6", "8", "9"} else "S"
     if rank == "8":
-        return "P" if up != "A" else "P" if rules.surrender is False else "P"
+        return "P"
     if rank == "7":
         return "P" if up in {"2", "3", "4", "5", "6", "7"} else "H"
     if rank == "6":
-        return "P" if up in {"2", "3", "4", "5", "6"} else "H"
+        if rules.double_after_split:
+            return "P" if up in {"2", "3", "4", "5", "6"} else "H"
+        return "P" if up in {"3", "4", "5", "6"} else "H"
     if rank == "5":
         return "D" if up in {"2", "3", "4", "5", "6", "7", "8", "9"} else "H"
     if rank == "4":
-        return "P" if up in {"5", "6"} else "H"
+        return "P" if rules.double_after_split and up in {"5", "6"} else "H"
     if rank in {"2", "3"}:
-        return "P" if up in {"2", "3", "4", "5", "6", "7"} else "H"
+        if rules.double_after_split:
+            return "P" if up in {"2", "3", "4", "5", "6", "7"} else "H"
+        return "P" if up in {"4", "5", "6", "7"} else "H"
     return "H"
 
 
@@ -141,15 +158,29 @@ def estimate_decks(remaining_cards: int, step: float, rounding: str) -> float:
     return max(est, step)
 
 
-def choose_action(player: List[str], dealer_up: str, true_count: float, deviations: Dict[str, List[Deviation]], rules_surrender: bool) -> str:
+def choose_action(
+    player: List[str],
+    dealer_up: str,
+    true_count: float,
+    deviations: Dict[str, List[Deviation]],
+    rules: Rules,
+    can_double: bool,
+) -> str:
     total, soft = hand_value(player)
     hand_key = f"{total}{'s' if soft else ''}v{upcard_key(dealer_up)}"
     # Try deviation first
     dev_action = apply_deviation(hand_key, true_count, deviations)
     if dev_action:
+        if dev_action == "D" and not can_double:
+            return "H"
         return dev_action
     # Fallback to basic strategy
-    return basic_strategy_action(player, dealer_up, soft, rules_surrender)
+    action = basic_strategy_action(player, dealer_up, rules)
+    if action == "DH":
+        return "D" if can_double else "H"
+    if action == "DS":
+        return "D" if can_double else "S"
+    return action
 
 
 def choose_bet(true_count: float, ramp_steps: List, unit_size: float) -> float:
@@ -192,6 +223,9 @@ def run_simulation(
     tc_histogram: Dict[int, int] = {}
     tc_histogram_est: Dict[int, int] = {}
     debug_logs: List[Dict[str, str]] = []
+    last_round_result: Optional[str] = None
+    last_round_played = False
+    is_wonged_out = False
 
     def draw_card() -> str:
         nonlocal pointer, shoe, running_count, cut_card
@@ -224,12 +258,24 @@ def run_simulation(
         tc_histogram_est[est_floor] = tc_histogram_est.get(est_floor, 0) + 1
 
         # Bet decision
-        wong_out = request.bet_ramp.wong_out_below is not None and math.floor(tc_for_bet) < request.bet_ramp.wong_out_below
-        if wong_out:
-            # Burn a few cards to advance shoe realistically
-            draw_card()
-            draw_card()
-            continue
+        if request.bet_ramp.wong_out_below is not None:
+            if math.floor(tc_for_bet) >= request.bet_ramp.wong_out_below:
+                is_wonged_out = False
+            else:
+                if not is_wonged_out:
+                    policy = request.bet_ramp.wong_out_policy or "anytime"
+                    if policy == "anytime":
+                        is_wonged_out = True
+                    elif policy == "after_loss_only":
+                        is_wonged_out = last_round_result == "loss"
+                    elif policy == "after_hand_only":
+                        is_wonged_out = last_round_played
+                if is_wonged_out:
+                    # Burn a few cards to advance shoe realistically
+                    draw_card()
+                    draw_card()
+                    last_round_played = False
+                    continue
 
         bet = choose_bet(tc_for_bet, ramp_steps, request.unit_size)
         total_initial_bet += bet
@@ -262,6 +308,8 @@ def run_simulation(
             total_profit += profit
             total_sq_profit += profit * profit
             rounds_played += 1
+            last_round_result = "win" if profit > 0 else "loss" if profit < 0 else "push"
+            last_round_played = True
             if request.debug_log and len(debug_logs) < request.debug_log_hands:
                 debug_logs.append(
                     {
@@ -328,7 +376,7 @@ def run_simulation(
                         queue.insert(0, left)
                         break
 
-                action = choose_action(hand.cards, dealer[0], tc_for_dev, dev_index, rules.surrender)
+                action = choose_action(hand.cards, dealer[0], tc_for_dev, dev_index, rules, hand.can_double)
                 surrendered = False
                 doubled = False
 
@@ -389,6 +437,7 @@ def run_simulation(
             dealer_total, dealer_soft = hand_value(dealer)
 
         # Resolve all hands
+        round_profit = 0.0
         for fh in finished_hands:
             bet_amt = fh["bet"]
             surrendered = fh.get("surrendered", False)
@@ -412,6 +461,7 @@ def run_simulation(
 
             total_profit += profit
             total_sq_profit += profit * profit
+            round_profit += profit
 
             if request.debug_log and len(debug_logs) < request.debug_log_hands:
                 debug_logs.append(
@@ -431,6 +481,8 @@ def run_simulation(
                 )
 
         rounds_played += 1
+        last_round_result = "win" if round_profit > 0 else "loss" if round_profit < 0 else "push"
+        last_round_played = True
         if progress_cb and rounds_played % progress_interval == 0:
             progress_cb(rounds_played, target_rounds, total_profit, total_sq_profit, total_initial_bet)
 
