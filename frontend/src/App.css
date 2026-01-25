@@ -16,6 +16,15 @@
   --chart-axis: rgba(29, 27, 22, 0.4);
   --chart-baseline: rgba(29, 27, 22, 0.55);
   --chart-threshold: rgba(225, 107, 59, 0.7);
+  --opt-ramp: #e16b3b;
+  --opt-chips: #1f8a70;
+  --opt-exact: #3f6f91;
+  --opt-bg-pos: rgba(31, 138, 112, 0.08);
+  --opt-bg-neg: rgba(225, 107, 59, 0.08);
+  --opt-edge-pos: rgba(31, 138, 112, 0.35);
+  --opt-edge-neg: rgba(225, 107, 59, 0.35);
+  --opt-axis: rgba(29, 27, 22, 0.6);
+  --opt-baseline: rgba(29, 27, 22, 0.35);
 }
 
 * {
@@ -88,24 +97,41 @@ body {
 
 .hands-presets {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
-  background: var(--bg-accent);
+  background: var(--card);
   padding: 4px;
   border-radius: 999px;
+  border: 1px solid var(--border);
 }
 
 .hand-btn {
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--card);
-  font-weight: 600;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hand-btn:hover:not(:disabled) {
+  background: rgba(31, 138, 112, 0.12);
+  color: var(--ink);
 }
 
 .hand-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-2);
+  border-color: var(--accent-2);
   color: #fff;
+  box-shadow: 0 6px 14px var(--shadow);
+}
+
+.hand-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .hands-custom {
@@ -742,4 +768,116 @@ select {
   gap: 8px;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   margin-bottom: 8px;
+}
+
+.optimal-chart {
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: linear-gradient(140deg, rgba(253, 250, 244, 0.9), rgba(244, 239, 230, 0.8));
+}
+
+.optimal-chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.8rem;
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--muted);
+}
+
+.legend-swatch.ramp {
+  background: var(--opt-ramp);
+}
+
+.legend-swatch.chips {
+  background: var(--opt-chips);
+}
+
+.legend-swatch.exact {
+  background: var(--opt-exact);
+}
+
+.legend-swatch.edge {
+  background: var(--opt-edge-pos);
+}
+
+.opt-bg-positive {
+  fill: var(--opt-bg-pos);
+}
+
+.opt-bg-negative {
+  fill: var(--opt-bg-neg);
+}
+
+.opt-edge-bars .opt-edge-positive {
+  fill: var(--opt-edge-pos);
+}
+
+.opt-edge-bars .opt-edge-negative {
+  fill: var(--opt-edge-neg);
+}
+
+.opt-line {
+  fill: none;
+  stroke-width: 2.4;
+}
+
+.opt-line.ramp {
+  stroke: var(--opt-ramp);
+}
+
+.opt-line.chips {
+  stroke: var(--opt-chips);
+}
+
+.opt-line.exact {
+  stroke: var(--opt-exact);
+  stroke-dasharray: 4 3;
+}
+
+.opt-point {
+  fill: var(--opt-chips);
+}
+
+.opt-baseline {
+  stroke: var(--opt-baseline);
+  stroke-width: 1.2;
+}
+
+.opt-axis text {
+  fill: var(--opt-axis);
+  font-size: 0.75rem;
+}
+
+.low-sample {
+  background: rgba(225, 107, 59, 0.08);
+}
+
+.help-block {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(253, 250, 244, 0.9);
 }

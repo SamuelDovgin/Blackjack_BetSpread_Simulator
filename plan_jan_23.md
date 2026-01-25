@@ -12,9 +12,13 @@
 - Constrained deviations toolbar and row inputs so they wrap within the card.
 - Primary metrics now prefer live progress estimates even when appending.
 - Live metrics during append runs are combined with the existing result (not just the new batch).
-- Hands preset buttons restyled with clearer active state (no ghost styling).
-- Midwest rules default surrender turned off.
+- Hands preset buttons use segmented styling with a stronger active state.
+- Midwest rules default surrender is off and preset labels no longer mention LS.
 - Trip Outcomes chart upgraded with new controls, axes, gridlines, bands (sigma/percentile), and tooltips.
+- Fixed per-count tc_table generation to use Welford stats (n_total/n_iba/n_zero), resolving backend KeyError during polling.
+- Restricted CORS to local dev origins for reliable frontend polling.
+- Fixed stale banner to respect randomized seed runs and show RoR from the calculator when bankroll changes.
+- Added styling for the optimal bet chart (colors, backgrounds, legend, axes) to avoid the black-on-black SVG issue.
 
 ## To Do (Remaining)
 - Verify bet ramp row width on small screens and confirm no clipping in the sidebar.

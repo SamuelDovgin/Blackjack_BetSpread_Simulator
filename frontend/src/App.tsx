@@ -304,6 +304,9 @@ function App() {
   const [optKellyFraction, setOptKellyFraction] = useState<number>(1);
   const [optBetIncrement, setOptBetIncrement] = useState<number>(1);
   const [optSimplify, setOptSimplify] = useState<boolean>(true);
+  const [negativeEdgePolicy, setNegativeEdgePolicy] = useState<"sit_out" | "min_bet" | "hide">("sit_out");
+  const [showEdgeBars, setShowEdgeBars] = useState<boolean>(false);
+  const [showExactLine, setShowExactLine] = useState<boolean>(false);
   const [customHandsInput, setCustomHandsInput] = useState<string>("");
   const [isAppending, setIsAppending] = useState<boolean>(false);
   const [appendBase, setAppendBase] = useState<SimulationResult | null>(null);
@@ -547,6 +550,7 @@ function App() {
         ...scenarioConfig,
         settings: { ...scenarioConfig.settings, seed: runSeed },
       };
+      const runConfigJson = JSON.stringify(runConfig);
       const payload = {
         rules: runConfig.rules,
         counting_system: runConfig.counting_system,
@@ -568,7 +572,7 @@ function App() {
       setSimId(id);
       setStatus("running");
       setProgress({ status: "running", progress: 0, hands_done: 0, hands_total: hands });
-      setLastRunConfig(scenarioJson);
+      setLastRunConfig(runConfigJson);
     } catch (err: any) {
       setError(err.message ?? "Failed to start simulation");
       setStatus("error");
@@ -684,6 +688,7 @@ function App() {
     try {
       const runSeed = randomizeSeedEachRun ? Math.floor(Math.random() * 1_000_000_000) : seed;
       if (randomizeSeedEachRun) setSeed(runSeed);
+      const runConfigJson = JSON.stringify({ ...scenarioConfig, settings: { ...scenarioConfig.settings, seed: runSeed } });
       const payload = {
         rules: scenarioConfig.rules,
         counting_system: scenarioConfig.counting_system,
@@ -705,7 +710,7 @@ function App() {
       setSimId(id);
       setStatus("running");
       setProgress({ status: "running", progress: 0, hands_done: 0, hands_total: addHands });
-      setLastRunConfig(scenarioJson);
+      setLastRunConfig(runConfigJson);
     } catch (err: any) {
       setError(err.message ?? "Failed to append simulation");
       setStatus("error");
@@ -1129,66 +1134,100 @@ function App() {
     return clamp01(term1 + term2);
   }, [riskInputs, tripHands]);
 
+  const primaryRor = rorSimple ?? result?.ror ?? null;
+
   const tcSummary = useMemo(() => {
     const table = result?.tc_table;
     if (!table || table.length === 0) return null;
     const buckets = [
-      { label: "<=-1", test: (tc: number) => tc <= -1 },
-      { label: "0", test: (tc: number) => tc === 0 },
-      { label: "1", test: (tc: number) => tc === 1 },
-      { label: "2", test: (tc: number) => tc === 2 },
-      { label: "3", test: (tc: number) => tc === 3 },
-      { label: "4", test: (tc: number) => tc === 4 },
-      { label: "5", test: (tc: number) => tc === 5 },
-      { label: "6", test: (tc: number) => tc === 6 },
-      { label: "7", test: (tc: number) => tc === 7 },
-      { label: "8", test: (tc: number) => tc === 8 },
-      { label: "9", test: (tc: number) => tc === 9 },
-      { label: "10", test: (tc: number) => tc === 10 },
-      { label: "11", test: (tc: number) => tc === 11 },
-      { label: ">=12", test: (tc: number) => tc >= 12 },
+      { label: "<=-2", test: (tc: number) => tc <= -2, tc_value: -2 },
+      { label: "-1", test: (tc: number) => tc === -1, tc_value: -1 },
+      { label: "0", test: (tc: number) => tc === 0, tc_value: 0 },
+      { label: "1", test: (tc: number) => tc === 1, tc_value: 1 },
+      { label: "2", test: (tc: number) => tc === 2, tc_value: 2 },
+      { label: "3", test: (tc: number) => tc === 3, tc_value: 3 },
+      { label: "4", test: (tc: number) => tc === 4, tc_value: 4 },
+      { label: "5", test: (tc: number) => tc === 5, tc_value: 5 },
+      { label: "6", test: (tc: number) => tc === 6, tc_value: 6 },
+      { label: "7", test: (tc: number) => tc === 7, tc_value: 7 },
+      { label: "8", test: (tc: number) => tc === 8, tc_value: 8 },
+      { label: "9", test: (tc: number) => tc === 9, tc_value: 9 },
+      { label: "10", test: (tc: number) => tc === 10, tc_value: 10 },
+      { label: "11", test: (tc: number) => tc === 11, tc_value: 11 },
+      { label: ">=12", test: (tc: number) => tc >= 12, tc_value: 12 },
     ];
 
     const entries = table.map((entry) => {
-      const mean = entry.ev_pct / 100;
-      const sumX = mean * entry.n;
-      const sumX2 = (entry.variance + mean * mean) * entry.n;
-      return { ...entry, sumX, sumX2 };
+      const nIba = entry.n_iba ?? entry.n;
+      const nTotal = entry.n;
+      const nZero = entry.n_zero ?? Math.max(nTotal - nIba, 0);
+      const mean = nIba > 0 ? entry.ev_pct / 100 : 0;
+      const variance = nIba > 0 ? entry.variance : 0;
+      const sumX = mean * nIba;
+      const sumX2 = (variance + mean * mean) * nIba;
+      return { ...entry, n_iba: nIba, n_total: nTotal, n_zero: nZero, sumX, sumX2 };
     });
 
-    const total = entries.reduce((sum, entry) => sum + entry.n, 0);
+    const total = entries.reduce((sum, entry) => sum + entry.n_total, 0);
     if (total === 0) return null;
 
     const bankrollUnits = riskBankrollUnits ?? null;
     const maxUnits = Math.max(0, optMaxUnits);
     const increment = optBetIncrement > 0 ? optBetIncrement : 1;
     const kelly = Math.max(0, optKellyFraction);
+    const minUnits = betRamp?.steps?.length ? Math.min(...betRamp.steps.map((step) => step.units)) : 1;
 
     const rows = buckets.map((bucket) => {
       const bucketEntries = entries.filter((entry) => bucket.test(entry.tc));
-      const n = bucketEntries.reduce((sum, entry) => sum + entry.n, 0);
+      const n_total = bucketEntries.reduce((sum, entry) => sum + entry.n_total, 0);
+      const n_iba = bucketEntries.reduce((sum, entry) => sum + entry.n_iba, 0);
+      const n_zero = bucketEntries.reduce((sum, entry) => sum + entry.n_zero, 0);
       const sumX = bucketEntries.reduce((sum, entry) => sum + entry.sumX, 0);
       const sumX2 = bucketEntries.reduce((sum, entry) => sum + entry.sumX2, 0);
-      const mean = n > 0 ? sumX / n : 0;
-      const variance = n > 0 ? Math.max(sumX2 / n - mean * mean, 0) : 0;
-      const se = n > 0 ? Math.sqrt(variance / n) : 0;
+      const edgeKnown = n_iba > 0;
+      const mean = edgeKnown ? sumX / n_iba : 0;
+      const variance = edgeKnown ? Math.max(sumX2 / n_iba - mean * mean, 0) : 0;
+      const se = edgeKnown ? Math.sqrt(variance / n_iba) : 0;
       let optExact: number | null = null;
       let optChips: number | null = null;
-      if (bankrollUnits !== null && variance > 0 && mean > 0) {
+      const applyPolicy = () => {
+        if (negativeEdgePolicy === "hide") {
+          optExact = null;
+          optChips = null;
+          return;
+        }
+        if (negativeEdgePolicy === "min_bet") {
+          optExact = minUnits;
+          optChips = minUnits;
+          return;
+        }
+        optExact = 0;
+        optChips = 0;
+      };
+
+      if (bankrollUnits !== null && edgeKnown && variance > 0 && mean > 0) {
         optExact = (bankrollUnits * kelly * mean) / variance;
         optExact = Math.max(0, Math.min(optExact, maxUnits));
+        if (optExact > 0 && optExact < minUnits) optExact = minUnits;
         optChips = Math.round(optExact / increment) * increment;
         optChips = Math.max(0, Math.min(optChips, maxUnits));
+        if (optChips > 0 && optChips < minUnits) optChips = minUnits;
+      } else {
+        applyPolicy();
       }
       return {
         label: bucket.label,
-        n,
-        freq: n / total,
+        tc_value: bucket.tc_value,
+        n_total,
+        n_iba,
+        n_zero,
+        freq: n_total / total,
         ev_pct: mean * 100,
         ev_se_pct: se * 100,
         variance,
         opt_exact: optExact,
         opt_chips: optChips,
+        edge_known: edgeKnown,
       };
     });
 
@@ -1202,7 +1241,84 @@ function App() {
     }
 
     return { rows, total };
-  }, [result, riskBankrollUnits, optMaxUnits, optBetIncrement, optKellyFraction, optSimplify]);
+  }, [result, riskBankrollUnits, optMaxUnits, optBetIncrement, optKellyFraction, optSimplify, betRamp, negativeEdgePolicy]);
+
+  const optimalChart = useMemo(() => {
+    if (!tcSummary || !betRamp) return null;
+    const rows = tcSummary.rows;
+    if (rows.length === 0) return null;
+    const steps = betRamp.steps.slice().sort((a, b) => a.tc_floor - b.tc_floor);
+    const rampUnitsForTc = (tc: number) => {
+      if (betRamp.wong_out_below !== null && tc < betRamp.wong_out_below) return 0;
+      let units = steps[0]?.units ?? 0;
+      for (const step of steps) {
+        if (tc >= step.tc_floor) units = step.units;
+        else break;
+      }
+      return units;
+    };
+
+    const data = rows.map((row) => ({
+      ...row,
+      ramp_units: rampUnitsForTc(row.tc_value),
+    }));
+
+    const width = 720;
+    const height = 180;
+    const margin = { top: 16, right: 16, bottom: 28, left: 40 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const bucketWidth = plotWidth / data.length;
+
+    const maxUnits = Math.max(
+      ...data.map((row) => Math.max(row.ramp_units ?? 0, row.opt_chips ?? 0, row.opt_exact ?? 0)),
+      1
+    );
+    const yMax = maxUnits * 1.15;
+    const yMin = 0;
+
+    const scaleXCenter = (index: number) => margin.left + bucketWidth * (index + 0.5);
+    const scaleXLeft = (index: number) => margin.left + bucketWidth * index;
+    const scaleY = (value: number) => margin.top + (1 - (value - yMin) / (yMax - yMin)) * plotHeight;
+
+    const buildStepPath = (values: number[]) => {
+      if (!values.length) return "";
+      let d = `M${scaleXLeft(0)},${scaleY(values[0])}`;
+      values.forEach((value, idx) => {
+        const right = scaleXLeft(idx) + bucketWidth;
+        d += ` H${right}`;
+        if (idx < values.length - 1) {
+          d += ` V${scaleY(values[idx + 1])}`;
+        }
+      });
+      return d;
+    };
+
+    const rampPath = buildStepPath(data.map((row) => row.ramp_units ?? 0));
+    const chipsPath = buildStepPath(data.map((row) => row.opt_chips ?? 0));
+    const exactPath = data.map((row, idx) => `${idx === 0 ? "M" : "L"}${scaleXCenter(idx)},${scaleY(row.opt_exact ?? 0)}`).join(" ");
+
+    const maxAbsEdge = Math.max(...data.map((row) => Math.abs(row.ev_pct ?? 0)), 0.1);
+
+    return {
+      width,
+      height,
+      margin,
+      plotWidth,
+      plotHeight,
+      bucketWidth,
+      data,
+      rampPath,
+      chipsPath,
+      exactPath,
+      scaleXCenter,
+      scaleXLeft,
+      scaleY,
+      yMax,
+      maxAbsEdge,
+      showExactLine,
+    };
+  }, [tcSummary, betRamp, showExactLine]);
 
   const sessionChart = useMemo(() => {
     if (evPer100 === null || stdevPer100 === null) return null;
@@ -1412,7 +1528,9 @@ function App() {
               {handPresets.map((preset) => (
                 <button
                   key={preset}
-                  className={`btn hand-btn ${hands === preset ? "active" : ""}`}
+                  type="button"
+                  className={`hand-btn ${hands === preset ? "active" : ""}`}
+                  aria-pressed={hands === preset}
                   onClick={() => setHands(preset)}
                   disabled={status === "running"}
                 >
@@ -1507,8 +1625,8 @@ function App() {
                       applyRulesPreset(preset);
                     }}
                   >
-                    <option value="default">6D H17 DAS LS (Midwest)</option>
-                    <option value="s17">6D S17 DAS LS (Midwest)</option>
+                    <option value="default">6D H17 DAS (Midwest)</option>
+                    <option value="s17">6D S17 DAS (Midwest)</option>
                   </select>
                 </label>
                 <label>
@@ -2132,8 +2250,11 @@ function App() {
                   </div>
                   <div className="metric">
                     <div className="label">RoR</div>
-                    <div className="value" title={result?.ror === null || result?.ror === undefined ? "Requires bankroll and positive EV." : ""}>
-                      {result ? formatRor(result.ror) : "n/a"}
+                    <div
+                      className="value"
+                      title={primaryRor === null ? "Requires bankroll and EV/SD from a run." : "Uses the latest EV/SD and bankroll settings."}
+                    >
+                      {formatRor(primaryRor)}
                     </div>
                   </div>
                   <div className="metric">
@@ -2511,6 +2632,22 @@ function App() {
                     Simplify
                     <input type="checkbox" checked={optSimplify} onChange={(e) => setOptSimplify(e.target.checked)} />
                   </label>
+                  <label>
+                    Negative edge policy
+                    <select value={negativeEdgePolicy} onChange={(e) => setNegativeEdgePolicy(e.target.value as "sit_out" | "min_bet" | "hide")}>
+                      <option value="sit_out">Sit out (0 bet)</option>
+                      <option value="min_bet">Force min bet</option>
+                      <option value="hide">Hide (N/A)</option>
+                    </select>
+                  </label>
+                  <label className="toggle">
+                    Show edge bars
+                    <input type="checkbox" checked={showEdgeBars} onChange={(e) => setShowEdgeBars(e.target.checked)} />
+                  </label>
+                  <label className="toggle">
+                    Show exact line
+                    <input type="checkbox" checked={showExactLine} onChange={(e) => setShowExactLine(e.target.checked)} />
+                  </label>
                 </div>
                 <div className="muted">
                   Optimal bets use EV/variance per TC with a Kelly-style formula and the bankroll from the RoR widget (currently{" "}
@@ -2575,13 +2712,111 @@ function App() {
                 <div className="table-note muted">
                   Bet Average is the initial bet in units before doubles/splits/surrender/insurance. CE and CE/WR are not yet implemented.
                 </div>
+                {optimalChart ? (
+                  <div className="optimal-chart">
+                    <div className="chart-legend">
+                      <span className="legend-item">
+                        <span className="legend-swatch ramp" /> Current ramp
+                      </span>
+                      <span className="legend-item">
+                        <span className="legend-swatch chips" /> Optimal chips
+                      </span>
+                      {showExactLine && (
+                        <span className="legend-item">
+                          <span className="legend-swatch exact" /> Optimal exact
+                        </span>
+                      )}
+                      {showEdgeBars && (
+                        <span className="legend-item">
+                          <span className="legend-swatch edge" /> EV% bars
+                        </span>
+                      )}
+                    </div>
+                    <svg viewBox={`0 0 ${optimalChart.width} ${optimalChart.height}`} className="optimal-chart-svg">
+                      <g className="opt-bg">
+                        {optimalChart.data.map((row, idx) => {
+                          const x = optimalChart.scaleXLeft(idx);
+                          const isPositive = row.ev_pct > 0;
+                          return (
+                            <rect
+                              key={`bg-${row.label}`}
+                              x={x}
+                              y={optimalChart.margin.top}
+                              width={optimalChart.bucketWidth}
+                              height={optimalChart.plotHeight}
+                              className={isPositive ? "opt-bg-positive" : "opt-bg-negative"}
+                            />
+                          );
+                        })}
+                      </g>
+                      {showEdgeBars && (
+                        <g className="opt-edge-bars">
+                          {optimalChart.data.map((row, idx) => {
+                            const barHeight = (Math.abs(row.ev_pct) / optimalChart.maxAbsEdge) * optimalChart.plotHeight * 0.6;
+                            const xCenter = optimalChart.scaleXCenter(idx);
+                            const yBottom = optimalChart.margin.top + optimalChart.plotHeight;
+                            return (
+                              <rect
+                                key={`bar-${row.label}`}
+                                x={xCenter - optimalChart.bucketWidth * 0.25}
+                                y={yBottom - barHeight}
+                                width={optimalChart.bucketWidth * 0.5}
+                                height={barHeight}
+                                className={row.ev_pct >= 0 ? "opt-edge-positive" : "opt-edge-negative"}
+                              />
+                            );
+                          })}
+                        </g>
+                      )}
+                      <line
+                        className="opt-baseline"
+                        x1={optimalChart.margin.left}
+                        x2={optimalChart.margin.left + optimalChart.plotWidth}
+                        y1={optimalChart.scaleY(0)}
+                        y2={optimalChart.scaleY(0)}
+                      />
+                      <path d={optimalChart.rampPath} className="opt-line ramp" />
+                      <path d={optimalChart.chipsPath} className="opt-line chips" />
+                      {showExactLine && <path d={optimalChart.exactPath} className="opt-line exact" />}
+                      {optimalChart.data.map((row, idx) => (
+                        <circle
+                          key={`pt-${row.label}`}
+                          cx={optimalChart.scaleXCenter(idx)}
+                          cy={optimalChart.scaleY(row.opt_chips ?? 0)}
+                          r={2.8}
+                          className="opt-point"
+                        />
+                      ))}
+                      <g className="opt-axis">
+                        {optimalChart.data.map((row, idx) => (
+                          <text
+                            key={`x-${row.label}`}
+                            x={optimalChart.scaleXCenter(idx)}
+                            y={optimalChart.height - 8}
+                            textAnchor="middle"
+                          >
+                            {row.label}
+                          </text>
+                        ))}
+                        <text x={optimalChart.margin.left - 6} y={optimalChart.margin.top + 6} textAnchor="end">
+                          {optimalChart.yMax.toFixed(0)}u
+                        </text>
+                        <text x={optimalChart.margin.left - 6} y={optimalChart.scaleY(0) + 4} textAnchor="end">
+                          0
+                        </text>
+                      </g>
+                    </svg>
+                  </div>
+                ) : (
+                  <div className="muted">Run a simulation to see optimal bet comparisons.</div>
+                )}
                 <div className="table-scroll">
                   <table className="data-table">
                     <thead>
                       <tr>
                         <th>Count</th>
                         <th>Freq.</th>
-                        <th>N</th>
+                        <th>N (played)</th>
                         <th>EV% (IBA)</th>
                         <th>Std Err%</th>
                         <th>Optimal Bet Exact (u)</th>
@@ -2590,18 +2825,39 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {tcSummary?.rows.map((row) => (
-                        <tr key={row.label}>
-                          <td>{row.label}</td>
-                          <td>{formatPercent(row.freq * 100, 2)}</td>
-                          <td>{row.n}</td>
-                          <td>{formatPercent(row.ev_pct, 2)}</td>
-                          <td>{formatPercent(row.ev_se_pct, 2)}</td>
-                          <td>{row.opt_exact !== null ? row.opt_exact.toFixed(2) : "n/a"}</td>
-                          <td>{row.opt_chips !== null ? row.opt_chips.toFixed(2) : "n/a"}</td>
-                          <td>{row.opt_chips !== null ? "$" + (row.opt_chips * unitSize).toFixed(2) : "n/a"}</td>
-                        </tr>
-                      ))}
+                      {tcSummary?.rows.map((row) => {
+                        const minUnits = rampStats?.min ?? 1;
+                        const notes: string[] = [];
+                        if (!row.edge_known) {
+                          notes.push("Bucket includes 0-bet (wonged) rounds; IBA undefined.");
+                        } else if (row.ev_pct <= 0) {
+                          notes.push("Edge <= 0: optimal is 0 (sit out) unless forced min-bet.");
+                        }
+                        if (row.n_zero > 0) {
+                          notes.push("Bucket includes wonged rounds.");
+                        }
+                        const tooltip = [
+                          `TC bucket: ${row.label}`,
+                          `Freq: ${(row.freq * 100).toFixed(2)}% (N=${row.n_total.toLocaleString()}, played=${row.n_iba.toLocaleString()})`,
+                          `Edge (IBA): ${row.edge_known ? row.ev_pct.toFixed(2) + "%" : "n/a"}`,
+                          `Std Err: ${row.edge_known ? row.ev_se_pct.toFixed(2) + "%" : "n/a"}`,
+                          `Bankroll: ${riskBankrollUnits !== null ? riskBankrollUnits.toFixed(1) + "u" : "n/a"}, Kelly fraction: ${optKellyFraction.toFixed(2)}`,
+                          `Exact: ${row.opt_exact !== null ? row.opt_exact.toFixed(2) + "u" : "n/a"}  Chips: ${row.opt_chips !== null ? row.opt_chips.toFixed(2) + "u" : "n/a"} (inc ${optBetIncrement}u, min ${minUnits}u, max ${optMaxUnits}u)`,
+                          ...notes,
+                        ].join("\n");
+                        return (
+                          <tr key={row.label} title={tooltip} className={row.n_iba < 200 ? "low-sample" : ""}>
+                            <td>{row.label}</td>
+                            <td>{formatPercent(row.freq * 100, 2)}</td>
+                            <td>{row.n_iba}</td>
+                            <td>{row.edge_known ? formatPercent(row.ev_pct, 2) : "n/a"}</td>
+                            <td>{row.edge_known ? formatPercent(row.ev_se_pct, 2) : "n/a"}</td>
+                            <td>{row.opt_exact !== null ? row.opt_exact.toFixed(2) : "n/a"}</td>
+                            <td>{row.opt_chips !== null ? row.opt_chips.toFixed(2) : "n/a"}</td>
+                            <td>{row.opt_chips !== null ? "$" + (row.opt_chips * unitSize).toFixed(2) : "n/a"}</td>
+                          </tr>
+                        );
+                      })}
                       {!tcSummary && (
                         <tr>
                           <td colSpan={8} className="muted">
@@ -2612,6 +2868,31 @@ function App() {
                     </tbody>
                   </table>
                 </div>
+                <details className="help-block">
+                  <summary>How to read this table</summary>
+                  <ul>
+                    <li>
+                      What this table shows: For each true count bucket, we estimate your edge (EV%) and uncertainty (Std Err%) using IBA (profit per initial bet).
+                    </li>
+                    <li>
+                      Optimal Bet = Kelly-style sizing: Optimal Bet Exact uses a Kelly-style formula: bet bigger when the edge is higher and/or variance is lower,
+                      and smaller when variance is higher. It also scales with your bankroll and Kelly fraction.
+                    </li>
+                    <li>
+                      Chips vs Exact: Chips (u) rounds the exact bet to your bet increment and clamps it to min/max units. Chips ($) converts units to dollars using Unit size.
+                    </li>
+                    <li>
+                      Why some rows show 0 or N/A: When the estimated edge is &lt;= 0, the unconstrained optimal bet is 0 (sit out) unless your rules force you to play.
+                      Rows can show N/A when the bucket includes wonged (0-bet) rounds, because IBA is undefined when initial bet = 0.
+                    </li>
+                    <li>
+                      How to use it: Compare your current ramp to Optimal Chips. If your ramp is higher than optimal at mid counts, you will usually get higher EV but also higher risk (RoR / drawdowns).
+                    </li>
+                    <li>
+                      Important limitation: These are conditional estimates by bucket; real play can differ because TC estimation, table selection, and rule constraints change what you actually see and bet.
+                    </li>
+                  </ul>
+                </details>
                 <div className="table-note muted">
                   Per-count EV and standard error use IBA (profit per initial bet). Optimal bets are Kelly-style and rounded by the bet increment.
                 </div>

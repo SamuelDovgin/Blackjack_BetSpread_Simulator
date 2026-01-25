@@ -77,6 +77,8 @@ export interface SimulationResult {
   tc_table?: Array<{
     tc: number;
     n: number;
+    n_iba?: number;
+    n_zero?: number;
     freq: number;
     ev_pct: number;
     ev_se_pct: number;

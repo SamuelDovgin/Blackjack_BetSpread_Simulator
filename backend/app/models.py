@@ -95,7 +95,9 @@ class SimulationStatus(BaseModel):
 
 class TcTableEntry(BaseModel):
     tc: int
-    n: int
+    n: int  # total rounds observed in bucket (including wonged)
+    n_iba: int = 0  # rounds with initial bet > 0
+    n_zero: int = 0  # rounds with 0 bet (wonged)
     freq: float
     ev_pct: float
     ev_se_pct: float
