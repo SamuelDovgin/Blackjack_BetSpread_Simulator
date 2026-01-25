@@ -46,6 +46,6 @@ DEFAULT_RAMP = BetRamp(
         BetRampEntry(tc_floor=4, units=10),
         BetRampEntry(tc_floor=5, units=12),
     ],
-    wong_out_below=-2,
+    wong_out_below=-1,
     wong_out_policy="anytime",
 )

@@ -270,6 +270,27 @@ label {
   font-size: 0.9rem;
 }
 
+.label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.help-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--card);
+  cursor: help;
+}
+
 input,
 select {
   border: 1px solid var(--border);
@@ -502,13 +523,40 @@ select {
 
 .preset-item {
   border: 1px solid var(--border);
-  background: #fff;
-  padding: 10px;
   border-radius: 10px;
+  background: #fff;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px;
+}
+
+.preset-load {
+  border: none;
+  background: transparent;
+  padding: 6px 8px;
+  border-radius: 8px;
   cursor: pointer;
   display: flex;
   justify-content: space-between;
   gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+
+.preset-load:hover {
+  background: rgba(31, 138, 112, 0.08);
+}
+
+.preset-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn.small {
+  padding: 4px 8px;
+  font-size: 0.75rem;
 }
 
 .tags {
@@ -541,7 +589,7 @@ select {
 }
 .session-controls {
   display: grid;
-  gap: 8px;
+  gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   margin-bottom: 8px;
   align-items: end;
@@ -765,7 +813,7 @@ select {
 
 .opt-controls {
   display: grid;
-  gap: 8px;
+  gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   margin-bottom: 8px;
 }

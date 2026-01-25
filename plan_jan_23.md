@@ -19,6 +19,12 @@
 - Restricted CORS to local dev origins for reliable frontend polling.
 - Fixed stale banner to respect randomized seed runs and show RoR from the calculator when bankroll changes.
 - Added styling for the optimal bet chart (colors, backgrounds, legend, axes) to avoid the black-on-black SVG issue.
+- Unified bankroll input across Simulation Settings and RoR widget; removed the toggle and increased RoR precision.
+- Added tooltip help icons for trip controls and optimal bet controls, plus improved spacing.
+- Load Preset modal now allows deleting saved presets.
+- Default wong-out threshold adjusted to -1 for the built-in Midwest ramp.
+- Hands custom input now uses an Apply button and supports Enter to set.
+- Added a playing-card favicon for the SPA.
 
 ## To Do (Remaining)
 - Verify bet ramp row width on small screens and confirm no clipping in the sidebar.
