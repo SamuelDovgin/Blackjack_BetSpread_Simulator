@@ -2550,3 +2550,65 @@ Each detailed task above includes:
 - Acceptance criteria
 
 Check off items as you complete them to track progress.
+
+---
+
+## Implementation Notes
+
+### Simulation Stop Mechanism (Implemented)
+
+The simulator supports graceful cancellation of running simulations with partial result preservation.
+
+#### Architecture
+
+**Backend Components:**
+
+1. **`sim_runner.py` - InMemorySimulationRunner**
+   - Uses `threading.Event` flags per simulation for cancellation
+   - `stop(sim_id)` method sets the cancellation flag
+   - `status()` returns "stopped" for cancelled simulations
+
+2. **`simulation.py` - run_simulation()**
+   - Accepts optional `cancel_check` callback
+   - Checks for cancellation every `max(target_rounds // 100, 1000)` rounds
+   - Returns partial results when cancelled (EV/SD computed from completed hands)
+   - Sets `meta["was_cancelled"] = "true"` for cancelled simulations
+
+3. **`routes.py` - Stop Endpoint**
+   ```python
+   POST /api/simulations/{sim_id}/stop
+   ```
+   Returns `{"stopped": true}` on success, 404 if not found.
+
+**Frontend Components:**
+
+1. **`client.ts` - stopSimulation()**
+   - Calls backend stop endpoint
+   - Returns `{stopped: boolean}`
+
+2. **`App.tsx` - handleStop()**
+   - Calls backend `stopSimulation()` first
+   - Creates partial result from progress data (preserves hands already computed)
+   - Handles append mode by merging partial with previous result
+
+3. **Polling Error Handling**
+   - Counts consecutive errors (max 5)
+   - Stops polling on 404 or too many errors
+   - Handles "stopped" status from backend
+
+#### Key Features
+
+- **Partial Result Preservation:** When stopped mid-simulation, all completed hands are preserved
+- **Append Mode Support:** Stopping during "Add more hands" correctly merges with base result
+- **Backend CPU Release:** Cancellation flag causes simulation loop to break, freeing CPU
+- **Graceful Error Handling:** Frontend handles backend unavailability gracefully
+
+#### Files Modified
+
+| File | Purpose |
+|------|---------|
+| `backend/app/services/sim_runner.py` | Added stop(), cancel flags, stopped status |
+| `backend/app/engine/simulation.py` | Added cancel_check callback, periodic check |
+| `backend/app/api/routes.py` | Added POST /stop endpoint |
+| `frontend/src/api/client.ts` | Added stopSimulation() function |
+| `frontend/src/App.tsx` | Updated handleStop(), polling error handling |

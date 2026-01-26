@@ -35,6 +35,14 @@ async def get_simulation_status(sim_id: str) -> SimulationStatus:
     return status
 
 
+@router.post("/simulations/{sim_id}/stop")
+async def stop_simulation(sim_id: str) -> Dict[str, bool]:
+    stopped = runner.stop(sim_id)
+    if not stopped:
+        raise HTTPException(status_code=404, detail="Simulation not found or already stopped")
+    return {"stopped": True}
+
+
 @router.get("/libraries/defaults")
 async def get_defaults() -> Dict:
     return {
