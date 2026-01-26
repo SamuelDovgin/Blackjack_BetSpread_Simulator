@@ -30,11 +30,11 @@
   - Results pane with primary metrics cards, unit toggle, and TC histograms (raw + estimated).
   - Metrics include Bet Average (units), win rate (units/hour + $/hour), RoR percent, and equivalent table time.
   - Trip outcomes chart with simulated paths, axes/gridlines, and sigma/percentile bands (normal approximation).
-  - Risk of Ruin calculator widget (simple + trip) under histograms, driven by EV/SD from the current run (trip uses Brownian/normal approximation) with a toggle to use simulation bankroll.
+  - Risk of Ruin calculator widget (simple + trip) under histograms, driven by EV/SD from the current run (trip uses Brownian/normal approximation) and a shared global bankroll input.
   - CVCX-style performance tables (bet average, EV/100, SD/100, RoR, DI, c-SCORE, N0) and count frequency table (raw TC).
   - Per-count EV/SE (IBA) table using played-round TC buckets (tc_for_bet).
   - Optimal bet tables (Kelly-style exact + chips rounding with bet increment and simplify toggle).
-  - Preset save/load modals with localStorage persistence for rules/ramp/deviations/scenarios, plus duplicate/rename/delete and JSON import/export.
+  - Preset save/load modals with localStorage persistence for rules/ramp/deviations/scenarios, plus duplicate/rename/delete and JSON import/export (including delete from the load modal).
   - Ramp preview de-dupes TC steps for a clean mini chart.
   - Built-in ramp library presets (BJInfo 1-8, BJInfo 1-12, shoe 1-12 + wong-out, single-deck 1-4, aggressive shoe 1-15).
   - Deviation search + filters + action dropdowns; auto-disable surrender deviations when surrender is off.
@@ -43,6 +43,7 @@
   - RoR displayed as percent; raw RoR available in Run Details. Equivalent table time shown with hours + days + 4h sessions.
   - Estimated metrics update during running sims (EV/SD/bet average), including append runs (combined with prior results).
   - Seed randomizes each run by default with a toggle to lock a fixed seed.
+  - Help tooltips on key trip outcomes and optimal bet controls for quick guidance.
 
 - **Configuration**
   - API base configurable via `VITE_API_BASE` (defaults to `http://127.0.0.1:8001/api`).

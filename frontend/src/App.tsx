@@ -32,6 +32,12 @@ const PRESET_KEY = "bj_presets_v1";
 const emptyRampEntry = (): BetRampEntry => ({ tc_floor: 0, units: 1 });
 const emptyDeviation = (): Deviation => ({ hand_key: "16v10", tc_floor: 0, action: "S" });
 
+const HelpIcon = ({ text }: { text: string }) => (
+  <span className="help-icon" title={text} aria-label={text}>
+    ?
+  </span>
+);
+
 const actionOptions = ["H", "S", "D", "P", "R", "I"];
 const tcModes = [
   { label: "Perfect", value: 0 },
@@ -298,8 +304,6 @@ function App() {
   const [rorMode, setRorMode] = useState<"simple" | "trip">("simple");
   const [rorTripMode, setRorTripMode] = useState<"hands" | "hours">("hands");
   const [rorTripValue, setRorTripValue] = useState<number>(2_000_000);
-  const [riskBankroll, setRiskBankroll] = useState<number | null>(null);
-  const [useSimBankroll, setUseSimBankroll] = useState<boolean>(true);
   const [optMaxUnits, setOptMaxUnits] = useState<number>(12);
   const [optKellyFraction, setOptKellyFraction] = useState<number>(1);
   const [optBetIncrement, setOptBetIncrement] = useState<number>(1);
@@ -326,10 +330,6 @@ function App() {
       })
       .catch((err) => setError(`Failed to load defaults: ${err.message}`));
   }, []);
-
-  useEffect(() => {
-    if (useSimBankroll) setRiskBankroll(bankroll);
-  }, [useSimBankroll, bankroll]);
 
   useEffect(() => {
     setCustomHandsInput(hands.toString());
@@ -534,7 +534,14 @@ function App() {
   ]);
 
   const scenarioJson = useMemo(() => (scenarioConfig ? JSON.stringify(scenarioConfig) : ""), [scenarioConfig]);
-  const isStale = lastRunConfig !== null && lastRunConfig !== scenarioJson;
+  const scenarioCompareJson = useMemo(() => {
+    if (!scenarioConfig) return "";
+    const compareConfig = randomizeSeedEachRun
+      ? { ...scenarioConfig, settings: { ...scenarioConfig.settings, seed: 0 } }
+      : scenarioConfig;
+    return JSON.stringify(compareConfig);
+  }, [scenarioConfig, randomizeSeedEachRun]);
+  const isStale = lastRunConfig !== null && lastRunConfig !== scenarioCompareJson;
   const isDirty = lastSavedConfig !== null ? lastSavedConfig !== scenarioJson : scenarioConfig !== null;
 
   const handleRun = async () => {
@@ -550,7 +557,10 @@ function App() {
         ...scenarioConfig,
         settings: { ...scenarioConfig.settings, seed: runSeed },
       };
-      const runConfigJson = JSON.stringify(runConfig);
+      const runCompareConfig = randomizeSeedEachRun
+        ? { ...runConfig, settings: { ...runConfig.settings, seed: 0 } }
+        : runConfig;
+      const runConfigJson = JSON.stringify(runCompareConfig);
       const payload = {
         rules: runConfig.rules,
         counting_system: runConfig.counting_system,
@@ -688,7 +698,11 @@ function App() {
     try {
       const runSeed = randomizeSeedEachRun ? Math.floor(Math.random() * 1_000_000_000) : seed;
       if (randomizeSeedEachRun) setSeed(runSeed);
-      const runConfigJson = JSON.stringify({ ...scenarioConfig, settings: { ...scenarioConfig.settings, seed: runSeed } });
+      const runConfig = { ...scenarioConfig, settings: { ...scenarioConfig.settings, seed: runSeed } };
+      const runCompareConfig = randomizeSeedEachRun
+        ? { ...runConfig, settings: { ...runConfig.settings, seed: 0 } }
+        : runConfig;
+      const runConfigJson = JSON.stringify(runCompareConfig);
       const payload = {
         rules: scenarioConfig.rules,
         counting_system: scenarioConfig.counting_system,
@@ -1003,7 +1017,7 @@ function App() {
 
   const formatRor = (ror?: number | null) => {
     if (ror === null || ror === undefined) return "n/a";
-    return `${(ror * 100).toFixed(1)}%`;
+    return `${(ror * 100).toFixed(3)}%`;
   };
 
   const erf = (x: number) => {
@@ -1088,11 +1102,11 @@ function App() {
   const cScore = result?.di ? result.di * result.di : null;
   const evPer100Units = evPer100 !== null && unitSize > 0 ? evPer100 / unitSize : null;
   const stdevPer100Units = stdevPer100 !== null && unitSize > 0 ? stdevPer100 / unitSize : null;
-  const riskBankrollUnits = riskBankroll !== null && unitSize > 0 ? riskBankroll / unitSize : null;
+  const riskBankrollUnits = bankroll !== null && unitSize > 0 ? bankroll / unitSize : null;
 
   const riskInputs = useMemo(() => {
     if (evPer100 === null || stdevPer100 === null) return null;
-    const bankrollValue = riskBankroll ?? null;
+    const bankrollValue = bankroll ?? null;
     if (bankrollValue === null) return null;
     const meanPerHand = evPer100 / 100;
     const stdevPerHand = stdevPer100 / 10;
@@ -1103,7 +1117,7 @@ function App() {
       variancePerHand: stdevPerHand * stdevPerHand,
       bankroll: bankrollValue,
     };
-  }, [evPer100, stdevPer100, riskBankroll]);
+  }, [evPer100, stdevPer100, bankroll]);
 
   const tripHands = useMemo(() => {
     if (!rorTripValue || Number.isNaN(rorTripValue)) return 0;
@@ -1544,18 +1558,23 @@ function App() {
                 type="text"
                 value={customHandsInput}
                 onChange={(e) => setCustomHandsInput(e.target.value)}
-                placeholder="Custom hands"
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  const parsed = parseHandsInput(customHandsInput);
+                  if (parsed) setHands(parsed);
+                }}
+                placeholder="Custom hands (e.g., 500000)"
                 disabled={status === "running"}
               />
               <button
-                className="btn ghost"
+                className="btn"
                 onClick={() => {
                   const parsed = parseHandsInput(customHandsInput);
                   if (parsed) setHands(parsed);
                 }}
                 disabled={status === "running"}
               >
-                Set
+                Apply
               </button>
               <button
                 className="btn ghost"
@@ -2031,7 +2050,10 @@ function App() {
                 <input type="number" value={unitSize} onChange={(e) => setUnitSize(Number(e.target.value))} />
               </label>
               <label>
-                Bankroll ($)
+                <span className="label-row">
+                  Bankroll ($)
+                  <HelpIcon text="Shared bankroll used for RoR and optimal bet sizing." />
+                </span>
                 <input type="number" value={bankroll ?? ""} onChange={(e) => setBankroll(e.target.value ? Number(e.target.value) : null)} />
               </label>
               <label>
@@ -2296,23 +2318,38 @@ function App() {
             <div className="card-title">Trip Outcomes (simulated)</div>
             <div className="session-controls">
               <label>
-                Paths shown
+                <span className="label-row">
+                  Paths shown
+                  <HelpIcon text="Number of simulated sample paths to draw. Higher values show more variability but are purely visual." />
+                </span>
                 <input type="number" min={1} max={50} value={pathCount} onChange={(e) => setPathCount(Number(e.target.value))} />
               </label>
               <label>
-                Trip length (hours)
+                <span className="label-row">
+                  Trip length (hours)
+                  <HelpIcon text="Total trip duration. Sets the x-axis and total hands for the session paths." />
+                </span>
                 <input type="number" min={0.5} max={72} step="0.5" value={tripHours} onChange={(e) => setTripHours(Number(e.target.value))} />
               </label>
               <label>
-                Hands per hour
+                <span className="label-row">
+                  Hands per hour
+                  <HelpIcon text="Pace used to convert trip hours into hands. Affects total hands in the session chart." />
+                </span>
                 <input type="number" min={30} max={300} value={tripHandsPerHour} onChange={(e) => setTripHandsPerHour(Number(e.target.value))} />
               </label>
               <label>
-                Steps
+                <span className="label-row">
+                  Steps
+                  <HelpIcon text="Number of points in each path. Higher = smoother curves but more computation." />
+                </span>
                 <input type="number" min={20} max={400} value={tripSteps} onChange={(e) => setTripSteps(Number(e.target.value))} />
               </label>
               <label>
-                Band mode
+                <span className="label-row">
+                  Band mode
+                  <HelpIcon text="Sigma uses mean ± K*SD. Percentile uses a normal fan (5/25/50/75/95)." />
+                </span>
                 <select value={bandMode} onChange={(e) => setBandMode(e.target.value as "sigma" | "percentile")}>
                   <option value="sigma">Sigma</option>
                   <option value="percentile">Percentile</option>
@@ -2320,14 +2357,20 @@ function App() {
               </label>
               {bandMode === "sigma" ? (
                 <label>
-                  Sigma K
+                  <span className="label-row">
+                    Sigma K
+                    <HelpIcon text="Width of the sigma band. 1.0 ≈ 68% of outcomes, 2.0 ≈ 95%." />
+                  </span>
                   <input type="number" step="0.1" min={0.5} max={3} value={sigmaK} onChange={(e) => setSigmaK(Number(e.target.value))} />
                 </label>
               ) : (
                 <div className="muted">Fan: 5 / 25 / 50 / 75 / 95</div>
               )}
               <label>
-                Starting bankroll (units)
+                <span className="label-row">
+                  Starting bankroll (units)
+                  <HelpIcon text="Optional. If set, paths start from this bankroll level instead of 0 to show drawdowns from a starting stack." />
+                </span>
                 <input
                   type="number"
                   min={0}
@@ -2336,7 +2379,10 @@ function App() {
                 />
               </label>
               <label>
-                Stop-loss (units)
+                <span className="label-row">
+                  Stop-loss (units)
+                  <HelpIcon text="Optional horizontal line showing a stop-loss threshold in units." />
+                </span>
                 <input
                   type="number"
                   min={0}
@@ -2345,7 +2391,10 @@ function App() {
                 />
               </label>
               <label>
-                Win goal (units)
+                <span className="label-row">
+                  Win goal (units)
+                  <HelpIcon text="Optional horizontal line showing a target profit or win goal in units." />
+                </span>
                 <input
                   type="number"
                   min={0}
@@ -2536,17 +2585,15 @@ function App() {
                 </div>
               )}
               <label>
-                Bankroll ($)
+                <span className="label-row">
+                  Bankroll ($)
+                  <HelpIcon text="Shared with Simulation Settings. Changing this value updates both the sim bankroll and the RoR calculator." />
+                </span>
                 <input
                   type="number"
-                  value={riskBankroll ?? ""}
-                  onChange={(e) => setRiskBankroll(e.target.value ? Number(e.target.value) : null)}
-                  disabled={useSimBankroll}
+                  value={bankroll ?? ""}
+                  onChange={(e) => setBankroll(e.target.value ? Number(e.target.value) : null)}
                 />
-              </label>
-              <label className="toggle">
-                Use simulation bankroll
-                <input type="checkbox" checked={useSimBankroll} onChange={(e) => setUseSimBankroll(e.target.checked)} />
               </label>
             </div>
             {riskInputs ? (
@@ -2583,7 +2630,7 @@ function App() {
                         ? "n/a"
                         : `${formatNumber(stdevPer100Units)} u`
                       : `$${formatNumber(stdevPer100)}`}{" "}
-                  from the current run. Bankroll: {riskBankroll !== null ? `$${riskBankroll.toFixed(2)}` : "n/a"} (
+                  from the current run. Bankroll: {bankroll !== null ? `$${bankroll.toFixed(2)}` : "n/a"} (
                   {riskBankrollUnits !== null ? riskBankrollUnits.toFixed(1) + " u" : "n/a"}).
                 </div>
               </>
@@ -2600,7 +2647,10 @@ function App() {
               <>
                 <div className="opt-controls">
                   <label>
-                    Kelly fraction
+                    <span className="label-row">
+                      Kelly fraction
+                      <HelpIcon text="Fraction of full Kelly sizing used for optimal bets. 1.0 = full Kelly; 0.5 = half Kelly. Lower values reduce variance and RoR but also reduce growth." />
+                    </span>
                     <input
                       type="number"
                       step="0.1"
@@ -2610,7 +2660,10 @@ function App() {
                     />
                   </label>
                   <label>
-                    Max units
+                    <span className="label-row">
+                      Max units
+                      <HelpIcon text="Hard cap for optimal bets. Set to your table max or spread limit. Higher caps increase EV and variance." />
+                    </span>
                     <input
                       type="number"
                       min={0}
@@ -2619,7 +2672,10 @@ function App() {
                     />
                   </label>
                   <label>
-                    Bet increment (units)
+                    <span className="label-row">
+                      Bet increment (units)
+                      <HelpIcon text="Minimum bet step for rounding optimal bets (e.g., 1.0 = whole unit, 0.5 = half unit)." />
+                    </span>
                     <input
                       type="number"
                       step="0.1"
@@ -2629,11 +2685,17 @@ function App() {
                     />
                   </label>
                   <label className="toggle">
-                    Simplify
+                    <span className="label-row">
+                      Simplify
+                      <HelpIcon text="Smooths the optimal bet ramp by reducing abrupt jumps. More realistic, but can slightly reduce EV." />
+                    </span>
                     <input type="checkbox" checked={optSimplify} onChange={(e) => setOptSimplify(e.target.checked)} />
                   </label>
                   <label>
-                    Negative edge policy
+                    <span className="label-row">
+                      Negative edge policy
+                      <HelpIcon text="What to do when EV% <= 0 for a TC bucket: sit out (0 bet), force min bet, or hide the row." />
+                    </span>
                     <select value={negativeEdgePolicy} onChange={(e) => setNegativeEdgePolicy(e.target.value as "sit_out" | "min_bet" | "hide")}>
                       <option value="sit_out">Sit out (0 bet)</option>
                       <option value="min_bet">Force min bet</option>
@@ -2641,16 +2703,22 @@ function App() {
                     </select>
                   </label>
                   <label className="toggle">
-                    Show edge bars
+                    <span className="label-row">
+                      Show edge bars
+                      <HelpIcon text="Adds EV% bars behind the lines to show where your edge is positive or negative." />
+                    </span>
                     <input type="checkbox" checked={showEdgeBars} onChange={(e) => setShowEdgeBars(e.target.checked)} />
                   </label>
                   <label className="toggle">
-                    Show exact line
+                    <span className="label-row">
+                      Show exact line
+                      <HelpIcon text="Shows the unrounded Kelly bet line before chip rounding and caps are applied." />
+                    </span>
                     <input type="checkbox" checked={showExactLine} onChange={(e) => setShowExactLine(e.target.checked)} />
                   </label>
                 </div>
                 <div className="muted">
-                  Optimal bets use EV/variance per TC with a Kelly-style formula and the bankroll from the RoR widget (currently{" "}
+                  Optimal bets use EV/variance per TC with a Kelly-style formula and the shared bankroll (currently{" "}
                   {riskBankrollUnits !== null ? `${riskBankrollUnits.toFixed(1)} u` : "n/a"}).
                 </div>
                 <div className="table-scroll">
@@ -2951,13 +3019,27 @@ function App() {
             <input placeholder="Search presets..." value={searchPresets} onChange={(e) => setSearchPresets(e.target.value)} />
             <div className="preset-list">
               {filteredPresets.map((preset) => (
-                <button key={preset.id} className="preset-item" onClick={() => handleLoadPreset(preset)}>
-                  <div>
-                    <strong>{preset.name}</strong>
-                    <div className="muted">{preset.type}</div>
+                <div key={preset.id} className="preset-item">
+                  <button className="preset-load" onClick={() => handleLoadPreset(preset)}>
+                    <div>
+                      <strong>{preset.name}</strong>
+                      <div className="muted">{preset.type}</div>
+                    </div>
+                    <div className="tags">{preset.tags.join(", ")}</div>
+                  </button>
+                  <div className="preset-actions">
+                    <button
+                      className="btn ghost small"
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        deletePreset(preset);
+                      }}
+                    >
+                      Delete
+                    </button>
                   </div>
-                  <div className="tags">{preset.tags.join(", ")}</div>
-                </button>
+                </div>
               ))}
             </div>
           </div>
