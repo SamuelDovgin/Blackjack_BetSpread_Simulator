@@ -16,6 +16,7 @@
 - Auto-continue can append multiple batches until the CI target is met (after a minimum hands threshold).
 - Stop no longer wipes the current results/config; it just stops polling and keeps the last results.
 - Run Status uses a persistent rounds count (includes appended hands).
+- Advanced metrics toggle removed; DI always displays in Primary Metrics.
 
 ## To Do (Remaining)
 - Validate that the stale-results banner no longer appears immediately after a run when seed is randomized.

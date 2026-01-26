@@ -63,7 +63,7 @@ const builtInRampPresets: Preset[] = [
     payload: {
       bet_input_mode: "units",
       bet_ramp: {
-        wong_out_below: -1,
+        wong_out_below: -2,
         wong_out_policy: "anytime",
         steps: [
           { tc_floor: -1, units: 1 },
@@ -85,7 +85,7 @@ const builtInRampPresets: Preset[] = [
     payload: {
       bet_input_mode: "units",
       bet_ramp: {
-        wong_out_below: -1,
+        wong_out_below: -2,
         wong_out_policy: "anytime",
         steps: [
           { tc_floor: -1, units: 1 },
@@ -108,7 +108,7 @@ const builtInRampPresets: Preset[] = [
     payload: {
       bet_input_mode: "units",
       bet_ramp: {
-        wong_out_below: -1,
+        wong_out_below: -2,
         wong_out_policy: "after_loss_only",
         steps: [
           { tc_floor: -1, units: 1 },
@@ -131,7 +131,7 @@ const builtInRampPresets: Preset[] = [
     payload: {
       bet_input_mode: "units",
       bet_ramp: {
-        wong_out_below: -1,
+        wong_out_below: -2,
         wong_out_policy: "anytime",
         steps: [
           { tc_floor: -1, units: 1 },
@@ -151,7 +151,7 @@ const builtInRampPresets: Preset[] = [
     payload: {
       bet_input_mode: "units",
       bet_ramp: {
-        wong_out_below: -1,
+        wong_out_below: -2,
         wong_out_policy: "anytime",
         steps: [
           { tc_floor: -1, units: 1 },
@@ -303,14 +303,13 @@ function App() {
   const [startBankrollUnits, setStartBankrollUnits] = useState<number | null>(null);
   const [stopLossUnits, setStopLossUnits] = useState<number | null>(null);
   const [winGoalUnits, setWinGoalUnits] = useState<number | null>(null);
-  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
   const [showConfidence, setShowConfidence] = useState<boolean>(false);
   const [precisionPreset, setPrecisionPreset] = useState<keyof typeof precisionPresets>("balanced");
   const [precisionRelative, setPrecisionRelative] = useState<number>(precisionPresets.balanced.rel);
   const [precisionAbsolute, setPrecisionAbsolute] = useState<number>(precisionPresets.balanced.abs);
   const [precisionMinHands, setPrecisionMinHands] = useState<number>(1_000_000);
   const [autoPrecisionActive, setAutoPrecisionActive] = useState<boolean>(false);
-  const [rampPresetId, setRampPresetId] = useState<string>("");
+  const [rampPresetId, setRampPresetId] = useState<string>("builtin:bjinfo-1-8");
   const [deviationPresetId, setDeviationPresetId] = useState<string>("");
   const [rorMode, setRorMode] = useState<"simple" | "trip">("simple");
   const [rorTripMode, setRorTripMode] = useState<"hands" | "hours">("hands");
@@ -336,7 +335,13 @@ function App() {
       .then((data) => {
         setDefaults(data);
         setRules(data.rules);
-        setBetRamp(data.bet_ramp);
+        // Apply BJInfo 1-8 as default ramp instead of backend default
+        const defaultRamp = builtInRampPresets.find((p) => p.id === "builtin:bjinfo-1-8");
+        if (defaultRamp?.payload?.bet_ramp) {
+          setBetRamp({ wong_out_policy: "anytime", ...defaultRamp.payload.bet_ramp });
+        } else {
+          setBetRamp(data.bet_ramp);
+        }
         setDeviations(data.deviations);
       })
       .catch((err) => setError(`Failed to load defaults: ${err.message}`));
@@ -824,6 +829,63 @@ function App() {
   };
 
   const handleStop = () => {
+    // If we have progress data, create a partial result to preserve what we've computed
+    if (progress && progress.hands_done && progress.hands_done > 0 && progress.ev_per_100_est !== null && progress.stdev_per_100_est !== null) {
+      const ev = progress.ev_per_100_est;
+      const stdev = progress.stdev_per_100_est;
+      const mean = ev / 100;
+      const variance = Math.pow(stdev / 10, 2);
+      const avgBet = progress.avg_initial_bet_est ?? unitSize;
+
+      // Create partial result from progress
+      const partialResult: SimulationResult = {
+        rounds_played: progress.hands_done,
+        ev_per_100: ev,
+        stdev_per_100: stdev,
+        variance_per_hand: variance,
+        avg_initial_bet: avgBet,
+        di: variance > 0 ? mean / Math.sqrt(variance) : 0,
+        score: variance > 0 ? 100 * (mean * mean) / variance : 0,
+        n0_hands: mean !== 0 ? variance / (mean * mean) : 0,
+        hours_played: handsPerHour > 0 ? progress.hands_done / handsPerHour : 0,
+        tc_histogram: result?.tc_histogram ?? {},
+        tc_histogram_est: result?.tc_histogram_est ?? {},
+        tc_table: result?.tc_table ?? [],
+        debug_log: [],
+        ror: null,
+        ror_detail: null,
+      };
+
+      // If appending, merge with previous result
+      if (isAppending && appendBase) {
+        const baseRounds = parseRoundsFromResult(appendBase);
+        const totalRounds = baseRounds + progress.hands_done;
+        const n1 = baseRounds;
+        const n2 = progress.hands_done;
+        const mean1 = appendBase.ev_per_100 / 100;
+        const var1 = appendBase.variance_per_hand;
+        const mean2 = mean;
+        const var2 = variance;
+
+        const meanTotal = (n1 * mean1 + n2 * mean2) / totalRounds;
+        const varTotal = ((n1 - 1) * var1 + (n2 - 1) * var2 + n1 * Math.pow(mean1 - meanTotal, 2) + n2 * Math.pow(mean2 - meanTotal, 2)) / (totalRounds - 1);
+        const stdevTotal = Math.sqrt(varTotal);
+
+        partialResult.rounds_played = totalRounds;
+        partialResult.ev_per_100 = meanTotal * 100;
+        partialResult.stdev_per_100 = stdevTotal * 10;
+        partialResult.variance_per_hand = varTotal;
+        partialResult.di = stdevTotal > 0 ? meanTotal / stdevTotal : 0;
+        partialResult.score = varTotal > 0 ? 100 * (meanTotal * meanTotal) / varTotal : 0;
+        partialResult.n0_hands = meanTotal !== 0 ? varTotal / (meanTotal * meanTotal) : 0;
+        partialResult.hours_played = handsPerHour > 0 ? totalRounds / handsPerHour : 0;
+      }
+
+      setResult(partialResult);
+      setIsAppending(false);
+      setAppendBase(null);
+    }
+
     setSimId(null);
     setStatus("stopped");
     setAutoPrecisionActive(false);
@@ -1434,6 +1496,74 @@ function App() {
 
   const primaryRor = rorSimple ?? result?.ror ?? null;
 
+  // Live computed metrics (update during simulation)
+  const liveN0 = useMemo(() => {
+    if (evPer100 === null || stdevPer100 === null) return null;
+    const mean = evPer100 / 100;
+    const variance = Math.pow(stdevPer100 / 10, 2);
+    if (mean === 0) return null;
+    return variance / (mean * mean);
+  }, [evPer100, stdevPer100]);
+
+  const liveScore = useMemo(() => {
+    if (evPer100 === null || stdevPer100 === null) return null;
+    const variance = Math.pow(stdevPer100 / 10, 2);
+    if (variance === 0) return null;
+    return 100 * Math.pow(evPer100 / 100, 2) / variance;
+  }, [evPer100, stdevPer100]);
+
+  const liveHoursPlayed = useMemo(() => {
+    const rounds = progressHandsDone > 0 ? progressHandsDone : (result ? parseRoundsFromResult(result) : 0);
+    if (!rounds || handsPerHour <= 0) return null;
+    return rounds / handsPerHour;
+  }, [progressHandsDone, result, handsPerHour]);
+
+  const liveRorDetail = useMemo(() => {
+    if (!riskInputs) return null;
+    const { meanPerHand, stdevPerHand, variancePerHand, bankroll: br } = riskInputs;
+    if (meanPerHand <= 0 || variancePerHand <= 0) return null;
+
+    const adjustedRor = clamp01(Math.exp((-2 * meanPerHand * br) / variancePerHand));
+
+    // Trip RoR
+    const tripHrs = tripHours ?? 4;
+    const tripHandsCalc = tripHrs * handsPerHour;
+    let tripRor: number | null = null;
+    if (tripHandsCalc > 0 && stdevPerHand > 0) {
+      const sqrtT = Math.sqrt(tripHandsCalc);
+      const denom = stdevPerHand * sqrtT;
+      const z1 = (-br - meanPerHand * tripHandsCalc) / denom;
+      const z2 = (-br + meanPerHand * tripHandsCalc) / denom;
+      tripRor = clamp01(normalCdf(z1) + Math.exp((-2 * meanPerHand * br) / (stdevPerHand * stdevPerHand)) * normalCdf(z2));
+    }
+
+    // Required bankrolls
+    const calcBankrollForRor = (targetRor: number): number => {
+      if (targetRor <= 0 || targetRor >= 1) return 0;
+      return (-Math.log(targetRor) * variancePerHand) / (2 * meanPerHand);
+    };
+    const reqBankroll5pct = calcBankrollForRor(0.05);
+    const reqBankroll1pct = calcBankrollForRor(0.01);
+
+    // N0
+    const n0 = variancePerHand / (meanPerHand * meanPerHand);
+
+    return {
+      adjusted_ror: adjustedRor,
+      trip_ror: tripRor,
+      trip_hours: tripHrs,
+      required_bankroll_5pct: reqBankroll5pct,
+      required_bankroll_1pct: reqBankroll1pct,
+      n0_hands: n0,
+    };
+  }, [riskInputs, tripHours, handsPerHour]);
+
+  // Use live values when available, fall back to result
+  const displayN0 = liveN0 ?? result?.n0_hands ?? null;
+  const displayScore = liveScore ?? result?.score ?? null;
+  const displayHoursPlayed = liveHoursPlayed ?? result?.hours_played ?? null;
+  const displayRorDetail = liveRorDetail ?? result?.ror_detail ?? null;
+
   const tcSummary = useMemo(() => {
     const table = result?.tc_table;
     if (!table || table.length === 0) return null;
@@ -1870,6 +2000,14 @@ function App() {
                 title={result ? "Append additional hands to the current results" : "Run a simulation first"}
               >
                 + Add
+              </button>
+              <button
+                className={`btn ${autoPrecisionActive ? "primary" : ""}`}
+                onClick={handleContinueToPrecision}
+                disabled={status === "running"}
+                title="Run until target precision is reached (configure in sidebar)"
+              >
+                {autoPrecisionActive ? "Precision..." : "Precision"}
               </button>
             </div>
           </div>
@@ -2479,37 +2617,13 @@ function App() {
                 <div className={`precision-status status-${ciWarning?.level || "unknown"}`}>
                   {precisionEstimate.additional <= 0
                     ? "✅ Within target precision!"
+                    : autoPrecisionActive
+                    ? `Running... ${precisionEstimate.additional.toLocaleString()} hands remaining`
                     : ciWarning?.message || "Run more hands to reach target"}
                 </div>
               </div>
             )}
             {!precisionEstimate && <div className="muted" style={{ textAlign: "center", padding: "8px" }}>Run a simulation to estimate precision.</div>}
-
-            <button
-              className="btn"
-              style={{ width: "100%", marginTop: "12px" }}
-              onClick={handleContinueToPrecision}
-              disabled={status === "running" || autoPrecisionActive}
-            >
-              {autoPrecisionActive ? "Auto precision running..." : "Continue until precision"}
-            </button>
-
-            {autoPrecisionActive && precisionEstimate && (
-              <div className="precision-progress-section">
-                <div className="progress-label">
-                  {precisionEstimate.additional > 0 &&
-                    `${precisionEstimate.additional.toLocaleString()} more hands needed`}
-                </div>
-                <div className="progress-bar-container">
-                  <div
-                    className="progress-bar-fill"
-                    style={{
-                      width: `${Math.min(100, (1 - precisionEstimate.additional / precisionEstimate.targetTotal) * 100)}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="card">
@@ -2700,7 +2814,7 @@ function App() {
                   </div>
                   <div className="metric">
                     <div className="label" title="Rounds until EV equals 1 SD.">N0 (rounds)</div>
-                    <div className="value">{result ? result.n0_hands.toFixed(0) : "n/a"}</div>
+                    <div className="value">{displayN0 !== null ? displayN0.toFixed(0) : "n/a"}</div>
                     {showConfidence && (
                       <div className="sub muted">
                         95% CI: {ciMetrics?.n0 ? formatRange(ciMetrics.n0.low, ciMetrics.n0.high, 0) : "n/a"}
@@ -2711,7 +2825,7 @@ function App() {
                     <div className="label" title="Score proxy = 100 * (EV^2 / variance)">
                       Score (EV/Var proxy)
                     </div>
-                    <div className="value">{result ? result.score.toFixed(4) : "n/a"}</div>
+                    <div className="value">{displayScore !== null ? displayScore.toFixed(4) : "n/a"}</div>
                     {showConfidence && (
                       <div className="sub muted">
                         95% CI: {ciMetrics?.score ? formatRange(ciMetrics.score.low, ciMetrics.score.high, 4) : "n/a"}
@@ -2720,7 +2834,7 @@ function App() {
                   </div>
                   <div className="metric">
                     <div className="label">Equivalent table time</div>
-                    <div className="value">{result ? formatHours(result.hours_played) : "n/a"}</div>
+                    <div className="value">{displayHoursPlayed !== null ? formatHours(displayHoursPlayed) : "n/a"}</div>
                   </div>
                   <div className="metric">
                     <div className="label">RoR</div>
@@ -2759,23 +2873,17 @@ function App() {
                       </div>
                     )}
                   </div>
-                  {showAdvanced && (
-                    <div className="metric">
-                      <div className="label">DI</div>
-                      <div className="value">{result ? result.di.toFixed(5) : "n/a"}</div>
-                      {showConfidence && (
-                        <div className="sub muted">
-                          95% CI: {ciMetrics?.di ? formatRange(ciMetrics.di.low, ciMetrics.di.high, 5) : "n/a"}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <div className="metric">
+                    <div className="label">DI</div>
+                    <div className="value">{result ? result.di.toFixed(5) : "n/a"}</div>
+                    {showConfidence && (
+                      <div className="sub muted">
+                        95% CI: {ciMetrics?.di ? formatRange(ciMetrics.di.low, ciMetrics.di.high, 5) : "n/a"}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="toggle-row">
-                  <label className="toggle">
-                    Show advanced metrics
-                    <input type="checkbox" checked={showAdvanced} onChange={(e) => setShowAdvanced(e.target.checked)} />
-                  </label>
                   <label className="toggle">
                     Show confidence intervals
                     <input type="checkbox" checked={showConfidence} onChange={(e) => setShowConfidence(e.target.checked)} />
@@ -2791,7 +2899,7 @@ function App() {
             )}
           </div>
 
-          {result && result.ror_detail && (
+          {displayRorDetail && (
             <div className="card">
               <div className="card-title">Risk of Ruin Analysis</div>
               <div className="ror-detail-content">
@@ -2799,41 +2907,41 @@ function App() {
                   <div className="ror-metric">
                     <div className="label">Lifetime RoR</div>
                     <div className="ror-value">
-                      {(result.ror_detail.adjusted_ror * 100).toFixed(3)}%
+                      {(displayRorDetail.adjusted_ror * 100).toFixed(3)}%
                     </div>
                     <div className="ror-hint">Probability of losing entire bankroll</div>
                   </div>
 
-                  {result.ror_detail.trip_ror !== null && result.ror_detail.trip_ror !== undefined && (
+                  {displayRorDetail.trip_ror !== null && displayRorDetail.trip_ror !== undefined && (
                     <div className="ror-metric">
-                      <div className="label">Trip RoR ({result.ror_detail.trip_hours}h)</div>
+                      <div className="label">Trip RoR ({displayRorDetail.trip_hours}h)</div>
                       <div className="ror-value">
-                        {(result.ror_detail.trip_ror * 100).toFixed(3)}%
+                        {(displayRorDetail.trip_ror * 100).toFixed(3)}%
                       </div>
                       <div className="ror-hint">Risk of losing bankroll in one trip</div>
                     </div>
                   )}
 
-                  {result.ror_detail.required_bankroll_5pct && (
+                  {displayRorDetail.required_bankroll_5pct && (
                     <div className="ror-metric">
                       <div className="label">Bankroll for 5% RoR</div>
                       <div className="ror-value">
-                        ${result.ror_detail.required_bankroll_5pct.toFixed(0)}
+                        ${displayRorDetail.required_bankroll_5pct.toFixed(0)}
                       </div>
                       <div className="ror-hint">
-                        {(result.ror_detail.required_bankroll_5pct / unitSize).toFixed(0)} units
+                        {(displayRorDetail.required_bankroll_5pct / unitSize).toFixed(0)} units
                       </div>
                     </div>
                   )}
 
-                  {result.ror_detail.required_bankroll_1pct && (
+                  {displayRorDetail.required_bankroll_1pct && (
                     <div className="ror-metric">
                       <div className="label">Bankroll for 1% RoR</div>
                       <div className="ror-value">
-                        ${result.ror_detail.required_bankroll_1pct.toFixed(0)}
+                        ${displayRorDetail.required_bankroll_1pct.toFixed(0)}
                       </div>
                       <div className="ror-hint">
-                        {(result.ror_detail.required_bankroll_1pct / unitSize).toFixed(0)} units
+                        {(displayRorDetail.required_bankroll_1pct / unitSize).toFixed(0)} units
                       </div>
                     </div>
                   )}
@@ -2841,10 +2949,10 @@ function App() {
                   <div className="ror-metric">
                     <div className="label">N0 (hands to overcome 1 SD)</div>
                     <div className="ror-value">
-                      {result.ror_detail.n0_hands.toFixed(0).toLocaleString()}
+                      {displayRorDetail.n0_hands.toFixed(0).toLocaleString()}
                     </div>
                     <div className="ror-hint">
-                      {(result.ror_detail.n0_hands / handsPerHour).toFixed(0)} hours
+                      {(displayRorDetail.n0_hands / handsPerHour).toFixed(0)} hours
                     </div>
                   </div>
                 </div>
@@ -2867,8 +2975,8 @@ function App() {
             </div>
           )}
 
-          <div className="card">
-            <div className="card-title">Trip Outcomes (simulated)</div>
+          <details className="card">
+            <summary className="card-title">Trip Outcomes (simulated)</summary>
             <div className="session-controls">
               <label>
                 <span className="label-row">
@@ -3082,7 +3190,7 @@ function App() {
             <div className="muted">
               EV/SD are applied per hand. Band mode uses {bandMode === "sigma" ? `${sigmaK}σ` : "percentile fan (5–95 and 25–75)"}.
             </div>
-          </div>
+          </details>
 
           <details className="card">
             <summary className="card-title">TC Histograms</summary>
@@ -3375,7 +3483,7 @@ function App() {
                               : undefined
                           }
                         >
-                          {result ? result.score.toFixed(4) : "n/a"}
+                          {displayScore !== null ? displayScore.toFixed(4) : "n/a"}
                         </td>
                         <td
                           title={
@@ -3420,7 +3528,7 @@ function App() {
                             showConfidence ? `95% CI: ${ciMetrics?.n0 ? formatRange(ciMetrics.n0.low, ciMetrics.n0.high, 0) : "n/a"}` : undefined
                           }
                         >
-                          {result ? result.n0_hands.toFixed(0) : "n/a"}
+                          {displayN0 !== null ? displayN0.toFixed(0) : "n/a"}
                         </td>
                       </tr>
                     </tbody>
