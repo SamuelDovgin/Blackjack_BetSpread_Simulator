@@ -104,6 +104,17 @@ class TcTableEntry(BaseModel):
     variance: float
 
 
+class RoRResult(BaseModel):
+    """Detailed risk of ruin analysis for variable betting"""
+    simple_ror: float  # Basic formula (for reference/backwards compat)
+    adjusted_ror: float  # Proper variable-bet RoR using actual variance
+    trip_ror: Optional[float] = None  # Risk of ruin for a single trip
+    trip_hours: Optional[float] = None  # Trip length in hours
+    required_bankroll_5pct: Optional[float] = None  # Bankroll needed for 5% RoR
+    required_bankroll_1pct: Optional[float] = None  # Bankroll needed for 1% RoR
+    n0_hands: float  # Hands needed to overcome 1 SD
+
+
 class SimulationResult(BaseModel):
     ev_per_100: float
     stdev_per_100: float
@@ -111,7 +122,8 @@ class SimulationResult(BaseModel):
     di: float  # desirability index
     score: float
     n0_hands: float
-    ror: Optional[float] = None
+    ror: Optional[float] = None  # Keep for backwards compatibility (simple RoR)
+    ror_detail: Optional[RoRResult] = None  # New detailed RoR analysis
     avg_initial_bet: Optional[float] = None
     avg_initial_bet_units: Optional[float] = None
     tc_histogram: Dict[int, int] = Field(default_factory=dict)

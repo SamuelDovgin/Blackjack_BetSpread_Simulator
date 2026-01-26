@@ -29,6 +29,9 @@
   - Rules preset includes both `6D H17 DAS` and `6D S17 DAS` (surrender off by default).
   - Results pane with primary metrics cards, unit toggle, and TC histograms (raw + estimated).
   - Metrics include Bet Average (units), win rate (units/hour + $/hour), RoR percent, and equivalent table time.
+  - Confidence intervals (95%) available for primary metrics and performance table tooltips.
+  - Precision Target controls near Run/Stop to continue runs until a CI target is reached (fast/balanced/strict presets).
+  - Auto-continue can append multiple batches until the CI target is met (with a minimum hands threshold).
   - Trip outcomes chart with simulated paths, axes/gridlines, and sigma/percentile bands (normal approximation).
   - Risk of Ruin calculator widget (simple + trip) under histograms, driven by EV/SD from the current run (trip uses Brownian/normal approximation) and a shared global bankroll input.
   - CVCX-style performance tables (bet average, EV/100, SD/100, RoR, DI, c-SCORE, N0) and count frequency table (raw TC).
