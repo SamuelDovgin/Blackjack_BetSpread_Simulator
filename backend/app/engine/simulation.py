@@ -228,6 +228,22 @@ def run_simulation(
     last_round_played = False
     is_wonged_out = False
 
+    def bucket_stats(tc_bucket: int) -> Dict[str, float]:
+        return tc_stats.setdefault(
+            tc_bucket,
+            {"n_total": 0.0, "n_iba": 0.0, "n_zero": 0.0, "mean": 0.0, "m2": 0.0},
+        )
+
+    def update_iba_stats(tc_bucket: int, profit: float, bet_amt: float) -> None:
+        if bet_amt <= 0:
+            return
+        stat = bucket_stats(tc_bucket)
+        stat["n_iba"] += 1.0
+        x = profit / bet_amt
+        delta = x - stat["mean"]
+        stat["mean"] += delta / stat["n_iba"]
+        stat["m2"] += delta * (x - stat["mean"])
+
     def draw_card() -> str:
         nonlocal pointer, shoe, running_count, cut_card
         if pointer >= cut_card:
@@ -257,6 +273,8 @@ def run_simulation(
 
         tc_histogram[raw_floor] = tc_histogram.get(raw_floor, 0) + 1
         tc_histogram_est[est_floor] = tc_histogram_est.get(est_floor, 0) + 1
+        round_tc_bucket = math.floor(tc_for_bet)
+        bucket_stats(round_tc_bucket)["n_total"] += 1.0
 
         # Bet decision
         if request.bet_ramp.wong_out_below is not None:
@@ -272,6 +290,7 @@ def run_simulation(
                     elif policy == "after_hand_only":
                         is_wonged_out = last_round_played
                 if is_wonged_out:
+                    bucket_stats(round_tc_bucket)["n_zero"] += 1.0
                     # Burn a few cards to advance shoe realistically
                     draw_card()
                     draw_card()
@@ -279,7 +298,6 @@ def run_simulation(
                     continue
 
         bet = choose_bet(tc_for_bet, ramp_steps, request.unit_size)
-        round_tc_bucket = math.floor(tc_for_bet)
         total_initial_bet += bet
 
         # Initial deal
@@ -309,12 +327,7 @@ def run_simulation(
                 profit -= bet
             total_profit += profit
             total_sq_profit += profit * profit
-            if bet > 0:
-                stat = tc_stats.setdefault(round_tc_bucket, {"n": 0.0, "sum_x": 0.0, "sum_x2": 0.0})
-                stat["n"] += 1.0
-                x = profit / bet
-                stat["sum_x"] += x
-                stat["sum_x2"] += x * x
+            update_iba_stats(round_tc_bucket, profit, bet)
             rounds_played += 1
             last_round_result = "win" if profit > 0 else "loss" if profit < 0 else "push"
             last_round_played = True
@@ -488,12 +501,7 @@ def run_simulation(
                     }
                 )
 
-        if bet > 0:
-            stat = tc_stats.setdefault(round_tc_bucket, {"n": 0.0, "sum_x": 0.0, "sum_x2": 0.0})
-            stat["n"] += 1.0
-            x = round_profit / bet
-            stat["sum_x"] += x
-            stat["sum_x2"] += x * x
+        update_iba_stats(round_tc_bucket, round_profit, bet)
         rounds_played += 1
         last_round_result = "win" if round_profit > 0 else "loss" if round_profit < 0 else "push"
         last_round_played = True
@@ -549,18 +557,28 @@ def run_simulation(
     avg_initial_bet_units = avg_initial_bet / request.unit_size if avg_initial_bet is not None else None
 
     tc_table: List[TcTableEntry] = []
+    total_obs = sum(int(stat.get("n_total", 0)) for stat in tc_stats.values())
     for tc_bucket, stat in sorted(tc_stats.items(), key=lambda item: item[0]):
-        n = int(stat["n"])
-        if n <= 0:
+        n_total = int(stat.get("n_total", 0))
+        n_iba = int(stat.get("n_iba", 0))
+        n_zero = int(stat.get("n_zero", 0))
+        if n_total <= 0:
             continue
-        mean_x = stat["sum_x"] / n
-        var_x = max(stat["sum_x2"] / n - mean_x * mean_x, 0.0)
-        se_x = math.sqrt(var_x / n) if n > 0 else 0.0
-        freq = n / rounds_played if rounds_played > 0 else 0.0
+        freq = n_total / total_obs if total_obs > 0 else 0.0
+        if n_iba > 0:
+            mean_x = stat["mean"]
+            var_x = max(stat["m2"] / n_iba, 0.0)
+            se_x = math.sqrt(var_x / n_iba)
+        else:
+            mean_x = 0.0
+            var_x = 0.0
+            se_x = 0.0
         tc_table.append(
             TcTableEntry(
                 tc=tc_bucket,
-                n=n,
+                n=n_total,
+                n_iba=n_iba,
+                n_zero=n_zero,
                 freq=freq,
                 ev_pct=mean_x * 100,
                 ev_se_pct=se_x * 100,
