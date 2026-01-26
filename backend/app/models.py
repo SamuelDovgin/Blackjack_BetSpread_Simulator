@@ -131,4 +131,5 @@ class SimulationResult(BaseModel):
     tc_table: List[TcTableEntry] = Field(default_factory=list)
     meta: Dict[str, str] = Field(default_factory=dict)
     hours_played: Optional[float] = None
+    rounds_played: Optional[int] = None
     debug_hands: Optional[List[Dict[str, str]]] = None

@@ -286,6 +286,7 @@ def calculate_ror_detail(
 def run_simulation(
     request: SimulationRequest,
     progress_cb: Optional[Callable[[int, int, float, float, float], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> SimulationResult:
     rng = np.random.default_rng(request.seed)
     rules = request.rules
@@ -345,7 +346,13 @@ def run_simulation(
 
     target_rounds = request.hands
     progress_interval = max(target_rounds // 50, 10_000)
+    cancel_check_interval = max(target_rounds // 100, 1_000)
+    was_cancelled = False
     while rounds_played < target_rounds:
+        # Check for cancellation periodically
+        if cancel_check and rounds_played % cancel_check_interval == 0 and cancel_check():
+            was_cancelled = True
+            break
         remaining_cards = len(shoe) - pointer
         remaining_decks = max(remaining_cards / 52.0, 0.25)
         true_count_raw = running_count / remaining_decks
@@ -595,6 +602,7 @@ def run_simulation(
         if progress_cb and rounds_played % progress_interval == 0:
             progress_cb(rounds_played, target_rounds, total_profit, total_sq_profit, total_initial_bet)
 
+    # Final progress callback (important for cancelled simulations)
     if progress_cb:
         progress_cb(rounds_played, target_rounds, total_profit, total_sq_profit, total_initial_bet)
 
@@ -650,7 +658,8 @@ def run_simulation(
 
     meta = {
         "rounds_played": str(rounds_played),
-        "note": "single-process sim",
+        "note": "cancelled" if was_cancelled else "single-process sim",
+        "was_cancelled": str(was_cancelled).lower(),
     }
 
     hours_played = rounds_played / request.hands_per_hour if request.hands_per_hour > 0 else None
@@ -704,5 +713,6 @@ def run_simulation(
         tc_table=tc_table,
         meta=meta,
         hours_played=hours_played,
+        rounds_played=rounds_played,
         debug_hands=debug_logs if request.debug_log else None,
     )

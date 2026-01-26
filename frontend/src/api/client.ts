@@ -97,6 +97,7 @@ export interface SimulationResult {
   }>;
   meta?: Record<string, string>;
   hours_played?: number | null;
+  rounds_played?: number | null;
   debug_hands?: Array<Record<string, string>>;
 }
 
@@ -134,5 +135,10 @@ export interface SimulationStatus {
 
 export async function getSimulationStatus(id: string): Promise<SimulationStatus> {
   const { data } = await api.get(`/simulations/${id}/status`);
+  return data;
+}
+
+export async function stopSimulation(id: string): Promise<{ stopped: boolean }> {
+  const { data } = await api.post(`/simulations/${id}/stop`);
   return data;
 }

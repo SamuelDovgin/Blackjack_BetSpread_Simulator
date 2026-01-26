@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import {
   BetRamp,
@@ -12,6 +12,7 @@ import {
   getSimulation,
   getSimulationStatus,
   startSimulation,
+  stopSimulation,
 } from "./api/client";
 
 type UiStatus = "idle" | "running" | "done" | "error" | "stopped";
@@ -47,9 +48,9 @@ const tcModes = [
 const tcRounding = ["nearest", "floor", "ceil"];
 const handPresets = [50_000, 200_000, 2_000_000];
 const precisionPresets = {
-  fast: { label: "Fast (20% / 0.50u)", rel: 0.2, abs: 0.5 },
-  balanced: { label: "Balanced (10% / 0.25u)", rel: 0.1, abs: 0.25 },
-  strict: { label: "Strict (5% / 0.10u)", rel: 0.05, abs: 0.1 },
+  fast: { label: "Fast (±0.50u)", abs: 0.5 },
+  balanced: { label: "Balanced (±0.25u)", abs: 0.25 },
+  strict: { label: "Strict (±0.10u)", abs: 0.1 },
 } as const;
 
 const builtInRampPresets: Preset[] = [
@@ -305,7 +306,6 @@ function App() {
   const [winGoalUnits, setWinGoalUnits] = useState<number | null>(null);
   const [showConfidence, setShowConfidence] = useState<boolean>(false);
   const [precisionPreset, setPrecisionPreset] = useState<keyof typeof precisionPresets>("balanced");
-  const [precisionRelative, setPrecisionRelative] = useState<number>(precisionPresets.balanced.rel);
   const [precisionAbsolute, setPrecisionAbsolute] = useState<number>(precisionPresets.balanced.abs);
   const [precisionMinHands, setPrecisionMinHands] = useState<number>(1_000_000);
   const [autoPrecisionActive, setAutoPrecisionActive] = useState<boolean>(false);
@@ -324,6 +324,12 @@ function App() {
   const [customHandsInput, setCustomHandsInput] = useState<string>("");
   const [isAppending, setIsAppending] = useState<boolean>(false);
   const [appendBase, setAppendBase] = useState<SimulationResult | null>(null);
+
+  // Refs to track current append state for polling (avoids stale closure)
+  const isAppendingRef = useRef(isAppending);
+  const appendBaseRef = useRef(appendBase);
+  useEffect(() => { isAppendingRef.current = isAppending; }, [isAppending]);
+  useEffect(() => { appendBaseRef.current = appendBase; }, [appendBase]);
   const [hoverPoint, setHoverPoint] = useState<{ index: number; x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -353,7 +359,6 @@ function App() {
 
   useEffect(() => {
     const preset = precisionPresets[precisionPreset];
-    setPrecisionRelative(preset.rel);
     setPrecisionAbsolute(preset.abs);
   }, [precisionPreset]);
 
@@ -367,14 +372,18 @@ function App() {
   useEffect(() => {
     if (!simId) return;
     setStatus("running");
+    let errorCount = 0;
+    const maxErrors = 5;
     const timer = setInterval(async () => {
       try {
         const stat = await getSimulationStatus(simId);
+        errorCount = 0; // Reset on success
         setProgress(stat);
         if (stat.status === "done" || stat.progress >= 1) {
           const data = await getSimulation(simId);
-          if (isAppending && appendBase) {
-            setResult(combineResults(appendBase, data));
+          // Use refs to get current append state (avoids stale closure)
+          if (isAppendingRef.current && appendBaseRef.current) {
+            setResult(combineResults(appendBaseRef.current, data));
             setIsAppending(false);
             setAppendBase(null);
           } else {
@@ -382,9 +391,35 @@ function App() {
           }
           setStatus("done");
           clearInterval(timer);
+        } else if (stat.status === "stopped") {
+          // Simulation was stopped - try to get partial results
+          try {
+            const data = await getSimulation(simId);
+            if (isAppendingRef.current && appendBaseRef.current) {
+              setResult(combineResults(appendBaseRef.current, data));
+            } else {
+              setResult(data);
+            }
+          } catch {
+            // No complete result available - partial result preserved from handleStop
+          }
+          setIsAppending(false);
+          setAppendBase(null);
+          setStatus("stopped");
+          clearInterval(timer);
         }
-      } catch {
-        // keep polling until available
+      } catch (err: unknown) {
+        errorCount++;
+        // Check if it's a 404 (simulation not found) or too many errors
+        const is404 = err && typeof err === "object" && "response" in err &&
+          (err as { response?: { status?: number } }).response?.status === 404;
+        if (is404 || errorCount >= maxErrors) {
+          // Stop polling - backend is down or simulation was deleted
+          clearInterval(timer);
+          setStatus("stopped");
+          setSimId(null);
+        }
+        // Otherwise keep polling on transient errors
       }
     }, 750);
     return () => clearInterval(timer);
@@ -460,6 +495,8 @@ function App() {
 
   const parseRoundsFromResult = (res: SimulationResult | null) => {
     if (!res) return 0;
+    // Prefer direct rounds_played field, fall back to meta
+    if (res.rounds_played && res.rounds_played > 0) return res.rounds_played;
     const raw = res.meta?.rounds_played ?? res.meta?.hands_played ?? "";
     const parsed = Number(raw);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -828,7 +865,16 @@ function App() {
     handleAppendHands(addHands);
   };
 
-  const handleStop = () => {
+  const handleStop = async () => {
+    // First, tell the backend to stop the simulation
+    if (simId) {
+      try {
+        await stopSimulation(simId);
+      } catch {
+        // Backend may already be stopped or unavailable - continue with local cleanup
+      }
+    }
+
     // If we have progress data, create a partial result to preserve what we've computed
     if (progress && progress.hands_done && progress.hands_done > 0 && progress.ev_per_100_est !== null && progress.stdev_per_100_est !== null) {
       const ev = progress.ev_per_100_est;
@@ -1380,7 +1426,8 @@ function App() {
     if (!roundsForCi || roundsForCi <= 0) return null;
     if (unitSize <= 0) return null;
     const halfWidthUnits = Math.abs(ciMetrics.ev100.high - ciMetrics.ev100.low) / 2 / unitSize;
-    const targetHalfUnits = Math.max(precisionAbsolute, Math.abs(evPer100Units) * precisionRelative);
+    // Use absolute precision only - relative precision unfairly penalizes low-EV games
+    const targetHalfUnits = precisionAbsolute;
     if (targetHalfUnits <= 0) return null;
     const factor = Math.pow(halfWidthUnits / targetHalfUnits, 2);
     const targetTotal = Math.max(Math.ceil(roundsForCi * factor), precisionMinHands);
@@ -1392,7 +1439,7 @@ function App() {
       targetTotal,
       additional,
     };
-  }, [ciMetrics, evPer100Units, roundsForCi, unitSize, precisionAbsolute, precisionRelative, precisionMinHands]);
+  }, [ciMetrics, evPer100Units, roundsForCi, unitSize, precisionAbsolute, precisionMinHands]);
 
   const ciWarning = useMemo(() => {
     if (!precisionEstimate || !ciMetrics || evPer100Units === null) return null;
@@ -1563,6 +1610,10 @@ function App() {
   const displayScore = liveScore ?? result?.score ?? null;
   const displayHoursPlayed = liveHoursPlayed ?? result?.hours_played ?? null;
   const displayRorDetail = liveRorDetail ?? result?.ror_detail ?? null;
+  // Use progressHandsDone during running, otherwise use result's total
+  const displayRounds = (status === "running" && progressHandsDone > 0)
+    ? progressHandsDone
+    : (result ? parseRoundsFromResult(result) : null);
 
   const tcSummary = useMemo(() => {
     const table = result?.tc_table;
@@ -2560,22 +2611,8 @@ function App() {
               </label>
               <label>
                 <span className="label-row">
-                  Relative (% of EV/100)
-                  <HelpIcon text="Stop when the 95% CI half-width is below this percent of |EV/100|." />
-                </span>
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  step={1}
-                  value={Math.round(precisionRelative * 100)}
-                  onChange={(e) => setPrecisionRelative(Number(e.target.value) / 100)}
-                />
-              </label>
-              <label>
-                <span className="label-row">
-                  Absolute (u/100)
-                  <HelpIcon text="Stop when the 95% CI half-width is below this absolute unit value." />
+                  Target (±u/100)
+                  <HelpIcon text="Stop when the 95% CI half-width is below this absolute unit value per 100 rounds." />
                 </span>
                 <input
                   type="number"
@@ -2850,6 +2887,10 @@ function App() {
                         {ciMetrics?.ror ? formatRange(ciMetrics.ror.low * 100, ciMetrics.ror.high * 100, 3, "%") : "n/a"}
                       </div>
                     )}
+                  </div>
+                  <div className="metric">
+                    <div className="label" title="Total rounds simulated (updates live during simulation)">Rounds Simulated</div>
+                    <div className="value">{displayRounds !== null ? displayRounds.toLocaleString() : "n/a"}</div>
                   </div>
                   <div className="metric">
                     <div className="label">Bet Average (units)</div>
