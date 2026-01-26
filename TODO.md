@@ -1975,9 +1975,539 @@ function BigCard({ value }: { value: string }) {
 | 8 | Implement proper insurance EV tracking | Statistics |
 | 5 | Add custom basic strategy editor | Strategy |
 | 12 | Refactor App.tsx into components | Architecture |
-| 24 | Implement multi-processing | Performance |
+| 24 | Implement multi-processing for faster simulations | Performance |
 | 30 | Add comprehensive test suite | Quality |
 | 1 | Add more counting systems | Features |
+
+---
+
+### Task #24: Implement Multi-Processing for Faster Simulations
+
+**Priority:** 🔴 CRITICAL (Performance)
+
+**Status:** Not started
+
+#### Why This Matters
+
+The current simulation runs in a single thread. With modern CPUs having 8-16+ cores, simulations are drastically underutilizing available hardware. A 10 million hand simulation that takes 60 seconds could complete in ~8-10 seconds with proper parallelization.
+
+**Current bottleneck:**
+- `simulation.py:run_simulation()` is a single monolithic loop (lines 286-550)
+- `sim_runner.py` uses ThreadPoolExecutor with only 2 workers (line 12)
+- Python's GIL (Global Interpreter Lock) limits true parallelism in threads
+- Each simulation is CPU-bound, making it ideal for multi-processing
+
+**Real-world impact:** Users running 10M+ hand simulations for precision analysis wait minutes instead of seconds. This is especially painful when iterating on bet spreads or deviation thresholds.
+
+#### Current Implementation Location
+
+| File | Lines | What's There |
+|------|-------|--------------|
+| `backend/app/engine/simulation.py` | 286-550 | Main simulation loop (single-threaded) |
+| `backend/app/services/sim_runner.py` | 1-55 | ThreadPoolExecutor runner (max_workers=2) |
+| `backend/app/api/routes.py` | 15-19 | API endpoint calling runner.start() |
+
+Current architecture:
+```
+[API Request] → [ThreadPoolExecutor] → [Single run_simulation()] → [Result]
+```
+
+Target architecture:
+```
+[API Request] → [ProcessPoolExecutor] → [N parallel run_simulation_chunk()] → [Aggregate Results]
+```
+
+#### Key Design Decisions
+
+**Why Multi-Processing (not Multi-Threading)?**
+- Python's GIL prevents true parallelism in threads for CPU-bound work
+- `multiprocessing` or `concurrent.futures.ProcessPoolExecutor` bypasses GIL
+- Each process gets its own Python interpreter and memory space
+- NumPy operations (RNG, shuffling) release GIL, but pure Python loops don't
+
+**Why Split by Hands (not by Shoe)?**
+- Each worker simulates N/workers hands independently
+- Workers use different RNG seeds (derived from base seed)
+- Results are statistically independent and can be combined
+- No need to share shoe state between processes
+
+**Result Aggregation Math:**
+For combining N independent simulation chunks:
+```python
+# Combined mean (weighted by hands)
+combined_mean = sum(chunk.mean * chunk.hands for chunk in chunks) / total_hands
+
+# Combined variance using parallel variance formula
+# Var(combined) = (sum of within-group variance + between-group variance)
+combined_var = (
+    sum(chunk.hands * (chunk.variance + (chunk.mean - combined_mean)**2) for chunk in chunks)
+) / total_hands
+```
+
+#### Acceptance Criteria
+
+- [ ] Simulations utilize all available CPU cores
+- [ ] 10M hand simulation completes in <15 seconds on 8-core machine
+- [ ] Results are statistically identical to single-threaded (same seed = same final stats)
+- [ ] Progress callback still works (aggregated across workers)
+- [ ] Memory usage stays reasonable (<2GB for 10M hands)
+- [ ] Graceful fallback if multiprocessing unavailable
+- [ ] Worker count configurable (auto-detect by default)
+
+#### Implementation Steps
+
+**Step 1: Create chunk-based simulation function**
+
+In `simulation.py`, add a lightweight version that returns intermediate stats:
+
+```python
+from dataclasses import dataclass
+from typing import List
+import multiprocessing as mp
+
+@dataclass
+class SimulationChunk:
+    """Results from a chunk of hands for aggregation"""
+    hands: int
+    profit_sum: float
+    profit_sq_sum: float
+    bet_sum: float
+    tc_histogram: Dict[int, int]
+    tc_histogram_est: Dict[int, int]
+    tc_stats: Dict[int, Dict[str, float]]
+
+    @property
+    def mean(self) -> float:
+        return self.profit_sum / self.hands if self.hands > 0 else 0.0
+
+    @property
+    def variance(self) -> float:
+        if self.hands == 0:
+            return 0.0
+        mean = self.mean
+        return max(self.profit_sq_sum / self.hands - mean * mean, 0.0)
+
+
+def run_simulation_chunk(
+    request: SimulationRequest,
+    chunk_hands: int,
+    chunk_seed: int,
+) -> SimulationChunk:
+    """
+    Run a chunk of the simulation independently.
+    Used by multiprocessing workers.
+
+    Args:
+        request: The simulation request (rules, ramp, deviations)
+        chunk_hands: Number of hands for this chunk
+        chunk_seed: Unique seed for this chunk's RNG
+
+    Returns:
+        SimulationChunk with aggregatable statistics
+    """
+    # Create independent RNG for this chunk
+    rng = np.random.default_rng(chunk_seed)
+
+    # ... (same setup as run_simulation)
+
+    # Run chunk_hands rounds
+    while rounds_played < chunk_hands:
+        # ... (same logic as main loop)
+        pass
+
+    return SimulationChunk(
+        hands=rounds_played,
+        profit_sum=total_profit,
+        profit_sq_sum=total_sq_profit,
+        bet_sum=total_initial_bet,
+        tc_histogram=tc_histogram,
+        tc_histogram_est=tc_histogram_est,
+        tc_stats=tc_stats,
+    )
+```
+
+**Step 2: Create parallel runner function**
+
+```python
+def run_simulation_parallel(
+    request: SimulationRequest,
+    num_workers: Optional[int] = None,
+    progress_cb: Optional[Callable[[int, int, float, float, float], None]] = None,
+) -> SimulationResult:
+    """
+    Run simulation using multiple processes for parallelism.
+
+    Args:
+        request: Simulation configuration
+        num_workers: Number of worker processes (default: CPU count - 1)
+        progress_cb: Progress callback (called periodically with aggregated stats)
+
+    Returns:
+        Aggregated SimulationResult
+    """
+    if num_workers is None:
+        num_workers = max(1, mp.cpu_count() - 1)
+
+    # Fall back to single-threaded for small simulations
+    if request.hands < 100_000 or num_workers == 1:
+        return run_simulation(request, progress_cb)
+
+    # Split hands across workers
+    base_chunk_size = request.hands // num_workers
+    remainder = request.hands % num_workers
+
+    # Prepare chunk arguments
+    chunk_args: List[Tuple[SimulationRequest, int, int]] = []
+    for i in range(num_workers):
+        chunk_hands = base_chunk_size + (1 if i < remainder else 0)
+        # Derive unique seed for each chunk
+        chunk_seed = request.seed + i * 1_000_000_007  # Large prime offset
+        chunk_args.append((request, chunk_hands, chunk_seed))
+
+    # Run chunks in parallel
+    chunks: List[SimulationChunk] = []
+
+    with mp.Pool(processes=num_workers) as pool:
+        # Use starmap for multiple arguments
+        chunks = pool.starmap(run_simulation_chunk, chunk_args)
+
+    # Aggregate results
+    return aggregate_chunks(chunks, request)
+```
+
+**Step 3: Implement result aggregation**
+
+```python
+def aggregate_chunks(chunks: List[SimulationChunk], request: SimulationRequest) -> SimulationResult:
+    """
+    Combine results from parallel simulation chunks.
+
+    Uses parallel variance formula for statistically correct aggregation.
+    """
+    total_hands = sum(c.hands for c in chunks)
+    total_profit = sum(c.profit_sum for c in chunks)
+    total_sq_profit = sum(c.profit_sq_sum for c in chunks)
+    total_bet = sum(c.bet_sum for c in chunks)
+
+    if total_hands == 0:
+        raise ValueError("No hands simulated across all chunks")
+
+    # Combined mean
+    combined_mean = total_profit / total_hands
+
+    # Combined variance using parallel variance formula
+    # V_combined = (1/N) * sum(n_i * (V_i + (mean_i - mean_combined)^2))
+    combined_variance = 0.0
+    for chunk in chunks:
+        chunk_mean = chunk.mean
+        chunk_var = chunk.variance
+        combined_variance += chunk.hands * (chunk_var + (chunk_mean - combined_mean) ** 2)
+    combined_variance /= total_hands
+
+    combined_stdev = math.sqrt(combined_variance)
+
+    # Merge histograms
+    merged_tc_hist: Dict[int, int] = {}
+    merged_tc_hist_est: Dict[int, int] = {}
+    merged_tc_stats: Dict[int, Dict[str, float]] = {}
+
+    for chunk in chunks:
+        for tc, count in chunk.tc_histogram.items():
+            merged_tc_hist[tc] = merged_tc_hist.get(tc, 0) + count
+        for tc, count in chunk.tc_histogram_est.items():
+            merged_tc_hist_est[tc] = merged_tc_hist_est.get(tc, 0) + count
+        for tc, stats in chunk.tc_stats.items():
+            if tc not in merged_tc_stats:
+                merged_tc_stats[tc] = {"n_total": 0, "n_iba": 0, "n_zero": 0, "profit": 0, "bet": 0}
+            for key in stats:
+                merged_tc_stats[tc][key] = merged_tc_stats[tc].get(key, 0) + stats[key]
+
+    # Calculate derived metrics
+    ev_per_100 = combined_mean * 100
+    stdev_per_100 = combined_stdev * 10
+    variance_per_hand = combined_variance
+    avg_initial_bet = total_bet / total_hands
+
+    di = combined_mean / combined_stdev if combined_stdev > 0 else 0.0
+    score = (ev_per_100 ** 2) / (stdev_per_100 ** 2) * 100 if stdev_per_100 > 0 else 0.0
+    n0_hands = (stdev_per_100 / ev_per_100) ** 2 * 100 if ev_per_100 != 0 else float("inf")
+
+    # Build TC table from merged stats
+    tc_table = build_tc_table(merged_tc_stats, avg_initial_bet)
+
+    # Calculate RoR if bankroll specified
+    ror_result = None
+    if request.bankroll:
+        ror_result = calculate_ror(
+            ev_per_hand=combined_mean,
+            stdev_per_hand=combined_stdev,
+            avg_bet=avg_initial_bet,
+            bankroll_units=request.bankroll,
+            hands_per_hour=request.hands_per_hour,
+        )
+
+    return SimulationResult(
+        rounds_played=total_hands,
+        ev_per_100=ev_per_100,
+        stdev_per_100=stdev_per_100,
+        variance_per_hand=variance_per_hand,
+        avg_initial_bet=avg_initial_bet,
+        di=di,
+        score=score,
+        n0_hands=n0_hands,
+        ror=ror_result.simple_ror if ror_result else None,
+        ror_detail=ror_result,
+        tc_histogram=merged_tc_hist,
+        tc_histogram_est=merged_tc_hist_est,
+        tc_table=tc_table,
+        debug_log=[],  # Debug log not supported in parallel mode
+    )
+```
+
+**Step 4: Update sim_runner.py to use parallel execution**
+
+```python
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, Future
+from typing import Dict, Optional
+
+from app.engine.simulation import run_simulation, run_simulation_parallel
+from app.models import SimulationRequest, SimulationResult, SimulationStatus
+
+
+class InMemorySimulationRunner:
+    """Simulation runner with multi-processing support."""
+
+    def __init__(self, max_workers: Optional[int] = None) -> None:
+        self._max_workers = max_workers or max(1, mp.cpu_count() - 1)
+        self._executor = ProcessPoolExecutor(max_workers=self._max_workers)
+        self._futures: Dict[str, Future] = {}
+        self._progress: Dict[str, SimulationStatus] = {}
+
+    def start(self, sim_id: str, request: SimulationRequest) -> None:
+        """Start a simulation using parallel processing."""
+
+        # For small simulations, use single-threaded
+        if request.hands < 100_000:
+            future = self._executor.submit(run_simulation, request, None)
+        else:
+            future = self._executor.submit(
+                run_simulation_parallel,
+                request,
+                self._max_workers,
+                None,  # Progress callback doesn't work well across processes
+            )
+
+        self._futures[sim_id] = future
+        self._progress[sim_id] = SimulationStatus(
+            status="running",
+            progress=0.0,
+            hands_done=0,
+            hands_total=request.hands,
+        )
+
+    def get(self, sim_id: str) -> Optional[SimulationResult]:
+        future = self._futures.get(sim_id)
+        if not future or not future.done():
+            return None
+        return future.result()
+
+    def status(self, sim_id: str) -> Optional[SimulationStatus]:
+        future = self._futures.get(sim_id)
+        if not future:
+            return None
+        if future.done():
+            total = self._progress.get(sim_id, SimulationStatus(
+                status="done", progress=1.0, hands_done=0, hands_total=0
+            )).hands_total
+            return SimulationStatus(
+                status="done",
+                progress=1.0,
+                hands_done=total,
+                hands_total=total,
+            )
+        return self._progress.get(sim_id)
+```
+
+**Step 5: Add configuration for worker count**
+
+In `models.py`, add to SimulationRequest:
+
+```python
+class SimulationRequest(BaseModel):
+    # ... existing fields ...
+
+    # Performance options
+    parallel_workers: Optional[int] = None  # None = auto-detect
+    disable_parallel: bool = False  # Force single-threaded
+```
+
+**Step 6: Handle progress reporting across processes**
+
+Progress reporting with multiprocessing is tricky because callbacks can't easily cross process boundaries. Options:
+
+**Option A: Polling-based progress (Recommended)**
+```python
+import multiprocessing as mp
+from multiprocessing import Queue
+
+def run_chunk_with_progress(
+    request: SimulationRequest,
+    chunk_hands: int,
+    chunk_seed: int,
+    progress_queue: Queue,
+    chunk_id: int,
+) -> SimulationChunk:
+    """Worker function that reports progress via queue."""
+    # ... simulation logic ...
+
+    # Report progress every N hands
+    if rounds_played % 10_000 == 0:
+        progress_queue.put({
+            "chunk_id": chunk_id,
+            "hands_done": rounds_played,
+            "profit_sum": total_profit,
+        })
+
+    return result
+
+
+def aggregate_progress(progress_queue: Queue, num_chunks: int) -> Dict:
+    """Aggregate progress from all workers."""
+    chunk_progress = {}
+    while True:
+        try:
+            update = progress_queue.get_nowait()
+            chunk_progress[update["chunk_id"]] = update
+        except:
+            break
+
+    total_done = sum(p["hands_done"] for p in chunk_progress.values())
+    total_profit = sum(p["profit_sum"] for p in chunk_progress.values())
+    return {"hands_done": total_done, "profit_sum": total_profit}
+```
+
+**Option B: Shared memory counters**
+```python
+from multiprocessing import Value
+
+# Create shared counters
+hands_done = Value('i', 0)  # Shared integer
+profit_sum = Value('d', 0.0)  # Shared double
+
+def worker_with_shared_memory(hands_done_counter, ...):
+    # Atomically update shared counter
+    with hands_done_counter.get_lock():
+        hands_done_counter.value += batch_size
+```
+
+#### Performance Benchmarks (Expected)
+
+| Hands | Single-threaded | 4 workers | 8 workers | Speedup |
+|-------|-----------------|-----------|-----------|---------|
+| 100K | 0.6s | 0.5s | 0.5s | ~1x (overhead) |
+| 1M | 6s | 2s | 1.5s | ~4x |
+| 10M | 60s | 18s | 10s | ~6x |
+| 100M | 10min | 3min | 1.5min | ~7x |
+
+*Note: Speedup is sub-linear due to aggregation overhead and memory bandwidth limits.*
+
+#### Edge Cases to Handle
+
+1. **Small simulations (<100K hands):** Skip parallelization, overhead > benefit
+2. **Single-core systems:** Gracefully fall back to single-threaded
+3. **Memory pressure:** Each worker needs ~100MB for shoe + stats
+4. **Deterministic results:** Same base seed should produce same final stats
+5. **Debug logging:** Not supported in parallel mode (logs would interleave)
+6. **Progress callbacks:** Use queue-based aggregation or disable
+
+#### Test Cases
+
+```python
+def test_parallel_matches_sequential():
+    """Parallel results should match sequential for same effective work."""
+    request = SimulationRequest(hands=1_000_000, seed=42, ...)
+
+    # Run sequential
+    seq_result = run_simulation(request)
+
+    # Run parallel with deterministic chunk seeds
+    par_result = run_simulation_parallel(request, num_workers=4)
+
+    # Results should be statistically similar (not identical due to different RNG paths)
+    # But with same seed derivation, aggregated stats should match
+    assert abs(seq_result.ev_per_100 - par_result.ev_per_100) < 0.05
+    assert abs(seq_result.stdev_per_100 - par_result.stdev_per_100) < 0.1
+
+
+def test_parallel_speedup():
+    """Parallel should be faster for large simulations."""
+    import time
+    request = SimulationRequest(hands=5_000_000, seed=42, ...)
+
+    start = time.time()
+    run_simulation(request)
+    seq_time = time.time() - start
+
+    start = time.time()
+    run_simulation_parallel(request, num_workers=4)
+    par_time = time.time() - start
+
+    # Should be at least 2x faster with 4 workers
+    assert par_time < seq_time / 2
+
+
+def test_parallel_aggregation_math():
+    """Test that variance aggregation is mathematically correct."""
+    # Create chunks with known statistics
+    chunk1 = SimulationChunk(hands=1000, profit_sum=100, profit_sq_sum=200, ...)
+    chunk2 = SimulationChunk(hands=1000, profit_sum=150, profit_sq_sum=350, ...)
+
+    result = aggregate_chunks([chunk1, chunk2], request)
+
+    # Manually calculate expected combined mean and variance
+    expected_mean = (100 + 150) / 2000
+    # ... verify variance formula
+    assert abs(result.mean - expected_mean) < 1e-10
+```
+
+#### Alternative: Cython/Numba Optimization (Task #25)
+
+If parallelization alone isn't enough, the hot loop can be JIT-compiled:
+
+```python
+from numba import njit
+
+@njit
+def simulate_hand_fast(shoe, pointer, running_count, bet, rules_tuple):
+    """Numba-compiled hand simulation for ~10-50x speedup."""
+    # Pure numeric operations, no Python objects
+    ...
+```
+
+This can be combined with multiprocessing for multiplicative speedup.
+
+#### Files to Modify
+
+1. **`backend/app/engine/simulation.py`**
+   - Add `SimulationChunk` dataclass
+   - Add `run_simulation_chunk()` function
+   - Add `run_simulation_parallel()` function
+   - Add `aggregate_chunks()` function
+
+2. **`backend/app/services/sim_runner.py`**
+   - Change from ThreadPoolExecutor to ProcessPoolExecutor
+   - Update `start()` to use parallel runner for large sims
+   - Handle progress aggregation
+
+3. **`backend/app/models.py`**
+   - Add `parallel_workers` and `disable_parallel` to SimulationRequest
+
+4. **`backend/app/api/routes.py`**
+   - No changes needed (transparent to API)
+
+5. **`frontend/src/App.tsx`**
+   - Optionally add worker count setting in advanced options
 
 ### 🟡 Medium Priority
 
