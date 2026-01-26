@@ -1,5 +1,7 @@
 import math
-from dataclasses import dataclass
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -17,6 +19,29 @@ class HandState:
     split_depth: int = 0
     is_split_aces: bool = False
     can_double: bool = True
+
+
+@dataclass
+class SimulationChunk:
+    """Results from a chunk of hands for parallel aggregation."""
+    hands: int
+    profit_sum: float
+    profit_sq_sum: float
+    bet_sum: float
+    tc_histogram: Dict[int, int] = field(default_factory=dict)
+    tc_histogram_est: Dict[int, int] = field(default_factory=dict)
+    tc_stats: Dict[int, Dict[str, float]] = field(default_factory=dict)
+
+    @property
+    def mean(self) -> float:
+        return self.profit_sum / self.hands if self.hands > 0 else 0.0
+
+    @property
+    def variance(self) -> float:
+        if self.hands == 0:
+            return 0.0
+        mean = self.mean
+        return max(self.profit_sq_sum / self.hands - mean * mean, 0.0)
 
 
 def build_shoe(decks: int, rng: np.random.Generator) -> List[str]:
@@ -716,3 +741,550 @@ def run_simulation(
         rounds_played=rounds_played,
         debug_hands=debug_logs if request.debug_log else None,
     )
+
+
+def _run_chunk_worker(args: Tuple) -> SimulationChunk:
+    """
+    Worker function for parallel simulation. Must be a module-level function
+    for multiprocessing pickle compatibility.
+    """
+    request_dict, chunk_hands, chunk_seed = args
+    # Reconstruct request from dict (required for multiprocessing)
+    request = SimulationRequest(**request_dict)
+
+    rng = np.random.default_rng(chunk_seed)
+    rules = request.rules
+    ramp_steps = sorted(request.bet_ramp.steps, key=lambda s: s.tc_floor)
+
+    # Pre-index deviations
+    dev_index: Dict[str, List[Deviation]] = {}
+    for dev in request.deviations:
+        dev_index.setdefault(dev.hand_key, []).append(dev)
+    for key in dev_index:
+        dev_index[key].sort(key=lambda d: d.tc_floor)
+
+    shoe = build_shoe(rules.decks, rng)
+    cut_card = int(len(shoe) * rules.penetration)
+    pointer = 0
+    running_count = 0
+
+    total_profit = 0.0
+    total_sq_profit = 0.0
+    total_initial_bet = 0.0
+    rounds_played = 0
+    tc_histogram: Dict[int, int] = {}
+    tc_histogram_est: Dict[int, int] = {}
+    tc_stats: Dict[int, Dict[str, float]] = {}
+    last_round_result: Optional[str] = None
+    last_round_played = False
+    is_wonged_out = False
+
+    def bucket_stats(tc_bucket: int) -> Dict[str, float]:
+        return tc_stats.setdefault(
+            tc_bucket,
+            {"n_total": 0.0, "n_iba": 0.0, "n_zero": 0.0, "mean": 0.0, "m2": 0.0},
+        )
+
+    def update_iba_stats(tc_bucket: int, profit: float, bet_amt: float) -> None:
+        if bet_amt <= 0:
+            return
+        stat = bucket_stats(tc_bucket)
+        stat["n_iba"] += 1.0
+        x = profit / bet_amt
+        delta = x - stat["mean"]
+        stat["mean"] += delta / stat["n_iba"]
+        stat["m2"] += delta * (x - stat["mean"])
+
+    def draw_card() -> str:
+        nonlocal pointer, shoe, running_count, cut_card
+        if pointer >= cut_card:
+            shoe[:] = build_shoe(rules.decks, rng)
+            cut_card = int(len(shoe) * rules.penetration)
+            pointer = 0
+            running_count = 0
+        card = shoe[pointer]
+        pointer += 1
+        running_count += request.counting_system.tags.get(card, 0)
+        return card
+
+    while rounds_played < chunk_hands:
+        remaining_cards = len(shoe) - pointer
+        remaining_decks = max(remaining_cards / 52.0, 0.25)
+        true_count_raw = running_count / remaining_decks
+        est_decks = estimate_decks(remaining_cards, request.deck_estimation_step, request.deck_estimation_rounding)
+        true_count_est = running_count / est_decks
+
+        tc_for_bet = true_count_est if request.use_estimated_tc_for_bet else true_count_raw
+        tc_for_dev = true_count_est if request.use_estimated_tc_for_deviations else true_count_raw
+
+        raw_floor = math.floor(true_count_raw)
+        est_floor = math.floor(true_count_est)
+
+        tc_histogram[raw_floor] = tc_histogram.get(raw_floor, 0) + 1
+        tc_histogram_est[est_floor] = tc_histogram_est.get(est_floor, 0) + 1
+        round_tc_bucket = math.floor(tc_for_bet)
+        bucket_stats(round_tc_bucket)["n_total"] += 1.0
+
+        # Bet decision (wong out logic)
+        if request.bet_ramp.wong_out_below is not None:
+            if math.floor(tc_for_bet) >= request.bet_ramp.wong_out_below:
+                is_wonged_out = False
+            else:
+                if not is_wonged_out:
+                    policy = request.bet_ramp.wong_out_policy or "anytime"
+                    if policy == "anytime":
+                        is_wonged_out = True
+                    elif policy == "after_loss_only":
+                        is_wonged_out = last_round_result == "loss"
+                    elif policy == "after_hand_only":
+                        is_wonged_out = last_round_played
+                if is_wonged_out:
+                    bucket_stats(round_tc_bucket)["n_zero"] += 1.0
+                    draw_card()
+                    draw_card()
+                    last_round_played = False
+                    continue
+
+        bet = choose_bet(tc_for_bet, ramp_steps, request.unit_size)
+        total_initial_bet += bet
+
+        # Initial deal
+        player_start = [draw_card(), draw_card()]
+        dealer = [draw_card(), draw_card()]
+
+        # Insurance check
+        insurance_payout = 0.0
+        if dealer[0] == "A":
+            ins_action = apply_deviation("insurance", tc_for_dev, dev_index)
+            if ins_action == "I":
+                insurance_bet = bet / 2
+                if is_blackjack(dealer):
+                    insurance_payout = insurance_bet * 2
+                else:
+                    insurance_payout = -insurance_bet
+
+        dealer_has_bj = is_blackjack(dealer)
+        player_has_bj = is_blackjack(player_start)
+        if dealer_has_bj or player_has_bj:
+            profit = insurance_payout
+            if player_has_bj and not dealer_has_bj:
+                profit += bet * rules.blackjack_payout
+            elif dealer_has_bj and player_has_bj:
+                profit += 0
+            else:
+                profit -= bet
+            total_profit += profit
+            total_sq_profit += profit * profit
+            update_iba_stats(round_tc_bucket, profit, bet)
+            rounds_played += 1
+            last_round_result = "win" if profit > 0 else "loss" if profit < 0 else "push"
+            last_round_played = True
+            continue
+
+        # Split-aware queue
+        queue: List[HandState] = [
+            HandState(
+                cards=player_start,
+                bet=bet,
+                split_depth=0,
+                is_split_aces=False,
+                can_double=rules.double_any_two,
+            )
+        ]
+        finished_hands: List[Dict] = []
+
+        while queue:
+            hand = queue.pop(0)
+            while True:
+                remaining_cards = len(shoe) - pointer
+                remaining_decks = max(remaining_cards / 52.0, 0.25)
+                true_count_raw = running_count / remaining_decks
+                est_decks = estimate_decks(remaining_cards, request.deck_estimation_step, request.deck_estimation_rounding)
+                true_count_est = running_count / est_decks
+                tc_for_dev = true_count_est if request.use_estimated_tc_for_deviations else true_count_raw
+
+                # Check for split opportunity
+                if (
+                    len(hand.cards) == 2
+                    and hand.cards[0] == hand.cards[1]
+                    and hand.split_depth < rules.max_splits
+                    and (hand.cards[0] != "A" or rules.resplit_aces or hand.split_depth == 0)
+                ):
+                    pair_action = pair_strategy_action(hand.cards[0], dealer[0], rules)
+                    if pair_action == "P":
+                        left = HandState(
+                            cards=[hand.cards[0], draw_card()],
+                            bet=hand.bet,
+                            split_depth=hand.split_depth + 1,
+                            is_split_aces=hand.cards[0] == "A",
+                            can_double=rules.double_any_two if rules.double_after_split else False,
+                        )
+                        right = HandState(
+                            cards=[hand.cards[1], draw_card()],
+                            bet=hand.bet,
+                            split_depth=hand.split_depth + 1,
+                            is_split_aces=hand.cards[1] == "A",
+                            can_double=rules.double_any_two if rules.double_after_split else False,
+                        )
+                        queue.insert(0, right)
+                        queue.insert(0, left)
+                        break
+
+                action = choose_action(hand.cards, dealer[0], tc_for_dev, dev_index, rules, hand.can_double)
+
+                if action == "R" and rules.surrender:
+                    finished_hands.append(
+                        {"cards": hand.cards[:], "bet": hand.bet, "surrendered": True, "doubled": False, "bust": False}
+                    )
+                    break
+
+                if action == "S":
+                    finished_hands.append(
+                        {"cards": hand.cards[:], "bet": hand.bet, "surrendered": False, "doubled": False, "bust": False}
+                    )
+                    break
+
+                if action == "D" and hand.can_double:
+                    hand.bet *= 2
+                    hand.cards.append(draw_card())
+                    total, _ = hand_value(hand.cards)
+                    finished_hands.append(
+                        {
+                            "cards": hand.cards[:],
+                            "bet": hand.bet,
+                            "surrendered": False,
+                            "doubled": True,
+                            "bust": total > 21,
+                        }
+                    )
+                    break
+
+                # Hit
+                if hand.is_split_aces and not rules.hit_split_aces:
+                    finished_hands.append(
+                        {"cards": hand.cards[:], "bet": hand.bet, "surrendered": False, "doubled": False, "bust": False}
+                    )
+                    break
+
+                hand.cards.append(draw_card())
+                total, _ = hand_value(hand.cards)
+                if total >= 21:
+                    finished_hands.append(
+                        {
+                            "cards": hand.cards[:],
+                            "bet": hand.bet,
+                            "surrendered": False,
+                            "doubled": False,
+                            "bust": total > 21,
+                        }
+                    )
+                    break
+
+        # Dealer play once
+        dealer_total, dealer_soft = hand_value(dealer)
+        while dealer_total < 17 or (dealer_total == 17 and dealer_soft and rules.hit_soft_17):
+            dealer.append(draw_card())
+            dealer_total, dealer_soft = hand_value(dealer)
+
+        # Resolve all hands
+        round_profit = 0.0
+        for fh in finished_hands:
+            bet_amt = fh["bet"]
+            surrendered = fh.get("surrendered", False)
+            bust = fh.get("bust", False)
+            player_total, _ = hand_value(fh["cards"])
+
+            if surrendered:
+                profit = -0.5 * bet_amt + insurance_payout
+            elif bust:
+                profit = -bet_amt + insurance_payout
+            else:
+                if dealer_total > 21:
+                    profit = bet_amt + insurance_payout
+                elif player_total > dealer_total:
+                    profit = bet_amt + insurance_payout
+                elif player_total < dealer_total:
+                    profit = -bet_amt + insurance_payout
+                else:
+                    profit = insurance_payout
+
+            total_profit += profit
+            total_sq_profit += profit * profit
+            round_profit += profit
+
+        update_iba_stats(round_tc_bucket, round_profit, bet)
+        rounds_played += 1
+        last_round_result = "win" if round_profit > 0 else "loss" if round_profit < 0 else "push"
+        last_round_played = True
+
+    return SimulationChunk(
+        hands=rounds_played,
+        profit_sum=total_profit,
+        profit_sq_sum=total_sq_profit,
+        bet_sum=total_initial_bet,
+        tc_histogram=tc_histogram,
+        tc_histogram_est=tc_histogram_est,
+        tc_stats=tc_stats,
+    )
+
+
+def aggregate_chunks(chunks: List[SimulationChunk], request: SimulationRequest) -> SimulationResult:
+    """
+    Combine results from parallel simulation chunks.
+    Uses parallel variance formula for statistically correct aggregation.
+    """
+    total_hands = sum(c.hands for c in chunks)
+    total_profit = sum(c.profit_sum for c in chunks)
+    total_sq_profit = sum(c.profit_sq_sum for c in chunks)
+    total_bet = sum(c.bet_sum for c in chunks)
+
+    if total_hands == 0:
+        return SimulationResult(
+            ev_per_100=0.0,
+            stdev_per_100=0.0,
+            variance_per_hand=0.0,
+            di=0.0,
+            score=0.0,
+            n0_hands=0.0,
+            ror=None,
+            tc_histogram={},
+            tc_histogram_est={},
+            meta={"note": "no hands played"},
+        )
+
+    # Combined mean and variance
+    mean = total_profit / total_hands
+    variance = max(total_sq_profit / total_hands - mean * mean, 0.0)
+    stdev = math.sqrt(variance)
+
+    ev_per_100 = mean * 100
+    stdev_per_100 = stdev * 10
+    di = mean / stdev if stdev > 0 else 0.0
+    score = 100 * (mean * mean) / variance if variance > 0 else 0.0
+    n0 = variance / (mean * mean) if mean != 0 else 0.0
+
+    # Merge TC histograms
+    tc_histogram: Dict[int, int] = {}
+    tc_histogram_est: Dict[int, int] = {}
+    for chunk in chunks:
+        for tc, count in chunk.tc_histogram.items():
+            tc_histogram[tc] = tc_histogram.get(tc, 0) + count
+        for tc, count in chunk.tc_histogram_est.items():
+            tc_histogram_est[tc] = tc_histogram_est.get(tc, 0) + count
+
+    # Merge TC stats (for EV by TC table)
+    merged_tc_stats: Dict[int, Dict[str, float]] = {}
+    for chunk in chunks:
+        for tc, stat in chunk.tc_stats.items():
+            if tc not in merged_tc_stats:
+                merged_tc_stats[tc] = {"n_total": 0.0, "n_iba": 0.0, "n_zero": 0.0, "mean": 0.0, "m2": 0.0, "sum": 0.0, "sum_sq": 0.0}
+            m = merged_tc_stats[tc]
+            m["n_total"] += stat.get("n_total", 0.0)
+            m["n_iba"] += stat.get("n_iba", 0.0)
+            m["n_zero"] += stat.get("n_zero", 0.0)
+            # For online mean/variance, we need to aggregate differently
+            # Just sum up for now and compute at the end
+            n_iba = stat.get("n_iba", 0.0)
+            if n_iba > 0:
+                m["sum"] = m.get("sum", 0.0) + stat.get("mean", 0.0) * n_iba
+                m["sum_sq"] = m.get("sum_sq", 0.0) + (stat.get("m2", 0.0) + n_iba * stat.get("mean", 0.0) ** 2)
+
+    # Finalize merged TC stats
+    for tc, stat in merged_tc_stats.items():
+        n_iba = stat["n_iba"]
+        if n_iba > 0:
+            stat["mean"] = stat.get("sum", 0.0) / n_iba
+            stat["m2"] = max(stat.get("sum_sq", 0.0) - n_iba * stat["mean"] ** 2, 0.0)
+
+    # Build TC table
+    tc_table: List[TcTableEntry] = []
+    total_obs = sum(int(stat.get("n_total", 0)) for stat in merged_tc_stats.values())
+    for tc_bucket, stat in sorted(merged_tc_stats.items(), key=lambda item: item[0]):
+        n_total = int(stat.get("n_total", 0))
+        n_iba = int(stat.get("n_iba", 0))
+        n_zero = int(stat.get("n_zero", 0))
+        if n_total <= 0:
+            continue
+        freq = n_total / total_obs if total_obs > 0 else 0.0
+        if n_iba > 0:
+            mean_x = stat["mean"]
+            var_x = max(stat["m2"] / n_iba, 0.0)
+            se_x = math.sqrt(var_x / n_iba)
+        else:
+            mean_x = 0.0
+            var_x = 0.0
+            se_x = 0.0
+        tc_table.append(
+            TcTableEntry(
+                tc=tc_bucket,
+                n=n_total,
+                n_iba=n_iba,
+                n_zero=n_zero,
+                freq=freq,
+                ev_pct=mean_x * 100,
+                ev_se_pct=se_x * 100,
+                variance=var_x,
+            )
+        )
+
+    # Calculate RoR
+    ror = None
+    ror_detail = None
+    if request.bankroll:
+        ev_hand = mean
+        var_hand = variance
+        if ev_hand <= 0:
+            ror = 1.0
+        else:
+            k = (2 * ev_hand) / var_hand if var_hand > 0 else 0
+            ror = math.exp(-k * request.bankroll)
+
+        trip_hours = 4.0
+        ror_detail = calculate_ror_detail(
+            ev_per_hand=mean,
+            variance_per_hand=variance,
+            bankroll=request.bankroll,
+            n0_hands=n0,
+            trip_hours=trip_hours,
+            hands_per_hour=request.hands_per_hour,
+        )
+
+    hours_played = total_hands / request.hands_per_hour if request.hands_per_hour > 0 else None
+    avg_initial_bet = total_bet / total_hands if total_hands > 0 else None
+    avg_initial_bet_units = avg_initial_bet / request.unit_size if avg_initial_bet is not None else None
+
+    meta = {
+        "rounds_played": str(total_hands),
+        "note": f"parallel sim ({len(chunks)} workers)",
+        "workers": str(len(chunks)),
+    }
+
+    return SimulationResult(
+        ev_per_100=ev_per_100,
+        stdev_per_100=stdev_per_100,
+        variance_per_hand=variance,
+        di=di,
+        score=score,
+        n0_hands=n0,
+        ror=ror,
+        ror_detail=ror_detail,
+        avg_initial_bet=avg_initial_bet,
+        avg_initial_bet_units=avg_initial_bet_units,
+        tc_histogram=tc_histogram,
+        tc_histogram_est=tc_histogram_est,
+        tc_table=tc_table,
+        meta=meta,
+        hours_played=hours_played,
+        rounds_played=total_hands,
+    )
+
+
+def run_simulation_parallel(
+    request: SimulationRequest,
+    num_workers: Optional[int] = None,
+    progress_cb: Optional[Callable[[int, int, float, float, float], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> SimulationResult:
+    """
+    Run simulation using multiple processes for parallelism.
+
+    Args:
+        request: Simulation configuration
+        num_workers: Number of worker processes (default: CPU count - 1)
+        progress_cb: Progress callback (called frequently as chunks complete)
+        cancel_check: Cancellation check callback
+
+    Returns:
+        Aggregated SimulationResult
+    """
+    from concurrent.futures import as_completed
+
+    if num_workers is None:
+        num_workers = max(1, mp.cpu_count() - 1)
+
+    # Fall back to single-threaded for small simulations or single worker
+    if request.hands < 100_000 or num_workers <= 1:
+        return run_simulation(request, progress_cb, cancel_check)
+
+    # Check for cancellation before starting
+    if cancel_check and cancel_check():
+        return run_simulation(request, progress_cb, cancel_check)
+
+    # Split into many small chunks for frequent progress updates
+    # Target ~50k hands per chunk for smooth progress, min 32 chunks
+    target_chunk_size = 50_000
+    num_chunks = max(32, request.hands // target_chunk_size)
+    # Cap at reasonable number to avoid overhead
+    num_chunks = min(num_chunks, 256)
+
+    base_chunk_size = request.hands // num_chunks
+    remainder = request.hands % num_chunks
+
+    # Prepare chunk arguments - convert request to dict for pickle
+    request_dict = request.model_dump()
+    chunk_args: List[Tuple] = []
+    for i in range(num_chunks):
+        chunk_hands = base_chunk_size + (1 if i < remainder else 0)
+        # Derive unique seed for each chunk using large prime offset
+        chunk_seed = request.seed + i * 1_000_000_007
+        chunk_args.append((request_dict, chunk_hands, chunk_seed))
+
+    # Run chunks in parallel using ProcessPoolExecutor
+    # Use as_completed to report progress as each chunk finishes
+    chunks: List[SimulationChunk] = []
+    completed_hands = 0
+    completed_profit = 0.0
+    completed_sq_profit = 0.0
+    completed_bet = 0.0
+
+    try:
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            # Submit all chunks
+            future_to_idx = {
+                executor.submit(_run_chunk_worker, args): i
+                for i, args in enumerate(chunk_args)
+            }
+
+            # Process results as they complete for smooth progress updates
+            for future in as_completed(future_to_idx):
+                if cancel_check and cancel_check():
+                    # Cancel remaining futures on stop request
+                    for f in future_to_idx:
+                        f.cancel()
+                    break
+
+                try:
+                    chunk = future.result(timeout=600)  # 10 minute timeout per chunk
+                    chunks.append(chunk)
+
+                    # Update running totals
+                    completed_hands += chunk.hands
+                    completed_profit += chunk.profit_sum
+                    completed_sq_profit += chunk.profit_sq_sum
+                    completed_bet += chunk.bet_sum
+
+                    # Report progress after each chunk completes
+                    if progress_cb:
+                        progress_cb(
+                            completed_hands,
+                            request.hands,
+                            completed_profit,
+                            completed_sq_profit,
+                            completed_bet,
+                        )
+                except Exception as e:
+                    # Log error but continue with other chunks
+                    print(f"Chunk failed: {e}")
+
+    except Exception as e:
+        # Fall back to single-threaded if multiprocessing fails
+        print(f"Parallel execution failed, falling back to single-threaded: {e}")
+        return run_simulation(request, progress_cb, cancel_check)
+
+    if not chunks:
+        return run_simulation(request, progress_cb, cancel_check)
+
+    # Aggregate results
+    result = aggregate_chunks(chunks, request)
+
+    return result

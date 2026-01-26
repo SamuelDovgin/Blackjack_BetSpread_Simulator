@@ -1,16 +1,16 @@
 import concurrent.futures
 import threading
-from typing import Callable, Dict, Optional
+from typing import Dict, Optional
 
-from app.engine.simulation import run_simulation
+from app.engine.simulation import run_simulation, run_simulation_parallel
 from app.models import SimulationRequest, SimulationResult, SimulationStatus
 
 
 class InMemorySimulationRunner:
-    """Simple in-memory runner; replace with queue/worker if needed."""
+    """Simulation runner with optional multi-processing support."""
 
     def __init__(self) -> None:
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
         self._futures: Dict[str, concurrent.futures.Future] = {}
         self._progress: Dict[str, SimulationStatus] = {}
         self._cancel_flags: Dict[str, threading.Event] = {}
@@ -44,7 +44,21 @@ class InMemorySimulationRunner:
                 avg_initial_bet_est=avg_initial_bet_est,
             )
 
-        future = self._executor.submit(run_simulation, request, _progress_cb, _cancel_check)
+        # Choose simulation function based on multiprocessing flag
+        if request.use_multiprocessing and request.hands >= 100_000:
+            # Use parallel processing for large simulations
+            num_workers = min(request.processes, 8)  # Cap at 8 workers
+            future = self._executor.submit(
+                run_simulation_parallel,
+                request,
+                num_workers,
+                _progress_cb,
+                _cancel_check,
+            )
+        else:
+            # Use single-threaded simulation
+            future = self._executor.submit(run_simulation, request, _progress_cb, _cancel_check)
+
         self._futures[sim_id] = future
         self._progress[sim_id] = SimulationStatus(status="queued", progress=0.0, hands_done=0, hands_total=request.hands)
 

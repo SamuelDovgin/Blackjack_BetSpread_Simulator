@@ -53,6 +53,7 @@ export interface SimulationRequest {
   hands: number;
   seed: number;
   processes?: number;
+  use_multiprocessing?: boolean;
   debug_log?: boolean;
   debug_log_hands?: number;
   deck_estimation_step?: number;

@@ -74,6 +74,7 @@ class SimulationRequest(BaseModel):
     hands: int = Field(2_000_000, ge=100)
     seed: int = 42
     processes: int = Field(4, ge=1, le=64)
+    use_multiprocessing: bool = True  # Enable parallel processing for large simulations
     debug_log: bool = False
     debug_log_hands: int = Field(20, ge=1, le=500)
     deck_estimation_step: float = 1.0  # 0 = perfect, 0.5 = half deck, 1.0 = full deck
