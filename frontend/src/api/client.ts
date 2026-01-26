@@ -62,6 +62,16 @@ export interface SimulationRequest {
   hands_per_hour?: number;
 }
 
+export interface RoRResult {
+  simple_ror: number;
+  adjusted_ror: number;
+  trip_ror?: number | null;
+  trip_hours?: number | null;
+  required_bankroll_5pct?: number | null;
+  required_bankroll_1pct?: number | null;
+  n0_hands: number;
+}
+
 export interface SimulationResult {
   ev_per_100: number;
   stdev_per_100: number;
@@ -70,6 +80,7 @@ export interface SimulationResult {
   score: number;
   n0_hands: number;
   ror?: number | null;
+  ror_detail?: RoRResult | null;
   avg_initial_bet?: number | null;
   avg_initial_bet_units?: number | null;
   tc_histogram: Record<string, number>;

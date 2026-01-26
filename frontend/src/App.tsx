@@ -14,7 +14,7 @@ import {
   startSimulation,
 } from "./api/client";
 
-type UiStatus = "idle" | "running" | "done" | "error";
+type UiStatus = "idle" | "running" | "done" | "error" | "stopped";
 type PresetType = "rules" | "ramp" | "deviations" | "scenario";
 
 type Preset = {
@@ -46,6 +46,11 @@ const tcModes = [
 ];
 const tcRounding = ["nearest", "floor", "ceil"];
 const handPresets = [50_000, 200_000, 2_000_000];
+const precisionPresets = {
+  fast: { label: "Fast (20% / 0.50u)", rel: 0.2, abs: 0.5 },
+  balanced: { label: "Balanced (10% / 0.25u)", rel: 0.1, abs: 0.25 },
+  strict: { label: "Strict (5% / 0.10u)", rel: 0.05, abs: 0.1 },
+} as const;
 
 const builtInRampPresets: Preset[] = [
   {
@@ -58,7 +63,7 @@ const builtInRampPresets: Preset[] = [
     payload: {
       bet_input_mode: "units",
       bet_ramp: {
-        wong_out_below: null,
+        wong_out_below: -1,
         wong_out_policy: "anytime",
         steps: [
           { tc_floor: -1, units: 1 },
@@ -80,7 +85,7 @@ const builtInRampPresets: Preset[] = [
     payload: {
       bet_input_mode: "units",
       bet_ramp: {
-        wong_out_below: null,
+        wong_out_below: -1,
         wong_out_policy: "anytime",
         steps: [
           { tc_floor: -1, units: 1 },
@@ -299,6 +304,12 @@ function App() {
   const [stopLossUnits, setStopLossUnits] = useState<number | null>(null);
   const [winGoalUnits, setWinGoalUnits] = useState<number | null>(null);
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
+  const [showConfidence, setShowConfidence] = useState<boolean>(false);
+  const [precisionPreset, setPrecisionPreset] = useState<keyof typeof precisionPresets>("balanced");
+  const [precisionRelative, setPrecisionRelative] = useState<number>(precisionPresets.balanced.rel);
+  const [precisionAbsolute, setPrecisionAbsolute] = useState<number>(precisionPresets.balanced.abs);
+  const [precisionMinHands, setPrecisionMinHands] = useState<number>(1_000_000);
+  const [autoPrecisionActive, setAutoPrecisionActive] = useState<boolean>(false);
   const [rampPresetId, setRampPresetId] = useState<string>("");
   const [deviationPresetId, setDeviationPresetId] = useState<string>("");
   const [rorMode, setRorMode] = useState<"simple" | "trip">("simple");
@@ -334,6 +345,12 @@ function App() {
   useEffect(() => {
     setCustomHandsInput(hands.toString());
   }, [hands]);
+
+  useEffect(() => {
+    const preset = precisionPresets[precisionPreset];
+    setPrecisionRelative(preset.rel);
+    setPrecisionAbsolute(preset.abs);
+  }, [precisionPreset]);
 
   useEffect(() => {
     if (tcEstStep === 0) {
@@ -589,6 +606,51 @@ function App() {
     }
   };
 
+  const handleRunWithHands = async (handsCount: number) => {
+    if (!scenarioConfig) return;
+    setError(null);
+    setResult(null);
+    setAppendBase(null);
+    setIsAppending(false);
+    try {
+      const runSeed = randomizeSeedEachRun ? Math.floor(Math.random() * 1_000_000_000) : seed;
+      if (randomizeSeedEachRun) setSeed(runSeed);
+      const runConfig = {
+        ...scenarioConfig,
+        settings: { ...scenarioConfig.settings, seed: runSeed, hands: handsCount },
+      };
+      const runCompareConfig = randomizeSeedEachRun
+        ? { ...runConfig, settings: { ...runConfig.settings, seed: 0 } }
+        : runConfig;
+      const runConfigJson = JSON.stringify(runCompareConfig);
+      const payload = {
+        rules: runConfig.rules,
+        counting_system: runConfig.counting_system,
+        deviations: runConfig.deviations,
+        bet_ramp: { wong_out_policy: "anytime", ...runConfig.bet_ramp },
+        unit_size: runConfig.settings.unit_size,
+        bankroll: runConfig.settings.bankroll,
+        hands: handsCount,
+        seed: runConfig.settings.seed,
+        debug_log: runConfig.settings.debug_log,
+        debug_log_hands: runConfig.settings.debug_log_hands,
+        deck_estimation_step: runConfig.settings.deck_estimation_step,
+        deck_estimation_rounding: runConfig.settings.deck_estimation_rounding,
+        use_estimated_tc_for_bet: runConfig.settings.use_estimated_tc_for_bet,
+        use_estimated_tc_for_deviations: runConfig.settings.use_estimated_tc_for_deviations,
+        hands_per_hour: runConfig.settings.hands_per_hour,
+      };
+      const { id } = await startSimulation(payload);
+      setSimId(id);
+      setStatus("running");
+      setProgress({ status: "running", progress: 0, hands_done: 0, hands_total: handsCount });
+      setLastRunConfig(runConfigJson);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to start simulation");
+      setStatus("error");
+    }
+  };
+
   const combineResults = (base: SimulationResult, next: SimulationResult): SimulationResult => {
     const n1 = parseRoundsFromResult(base);
     const n2 = parseRoundsFromResult(next);
@@ -733,16 +795,45 @@ function App() {
     }
   };
 
+  const handleContinueToPrecision = () => {
+    if (status === "running") return;
+    setError(null);
+    setAutoPrecisionActive(true);
+    if (!result) {
+      const startHands = Math.max(hands, precisionMinHands);
+      setHands(startHands);
+      setCustomHandsInput(startHands.toString());
+      handleRunWithHands(startHands);
+      return;
+    }
+    if (!precisionEstimate) {
+      setError("Unable to estimate precision. Run more hands first.");
+      setAutoPrecisionActive(false);
+      return;
+    }
+    const currentTotal = roundsForCi;
+    const addToMin = Math.max(precisionMinHands - currentTotal, 0);
+    const addToTarget = precisionEstimate.additional;
+    const addHands = currentTotal < precisionMinHands ? addToMin : addToTarget;
+    if (addHands <= 0) {
+      setError("Already within the selected precision target.");
+      setAutoPrecisionActive(false);
+      return;
+    }
+    handleAppendHands(addHands);
+  };
+
   const handleStop = () => {
     setSimId(null);
-    setStatus("idle");
-    setProgress(null);
+    setStatus("stopped");
+    setAutoPrecisionActive(false);
   };
 
   const statusLabel = () => {
     if (status === "running" && progress) return `Running ${Math.round(progress.progress * 100)}%`;
     if (status === "done") return "Complete";
     if (status === "error") return "Error";
+    if (status === "stopped") return "Stopped";
     return "Idle";
   };
 
@@ -1038,6 +1129,10 @@ function App() {
   const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
   const formatNumber = (value: number | null, decimals = 2) => (value === null || Number.isNaN(value) ? "n/a" : value.toFixed(decimals));
   const formatPercent = (value: number | null, decimals = 1) => (value === null || Number.isNaN(value) ? "n/a" : `${value.toFixed(decimals)}%`);
+  const formatRange = (low: number | null, high: number | null, decimals = 2, suffix = "", prefix = "") => {
+    if (low === null || high === null || Number.isNaN(low) || Number.isNaN(high)) return "n/a";
+    return `${prefix}${low.toFixed(decimals)}${suffix} – ${prefix}${high.toFixed(decimals)}${suffix}`;
+  };
 
   const appendLiveMetrics = useMemo(() => {
     if (!isAppending || !appendBase || !progress) return null;
@@ -1091,6 +1186,14 @@ function App() {
     return progress.hands_done ?? 0;
   }, [progress, isAppending, appendBase]);
 
+  const progressHandsTotal = useMemo(() => {
+    if (!progress) return 0;
+    if (isAppending && appendBase) {
+      return parseRoundsFromResult(appendBase) + (progress.hands_total ?? 0);
+    }
+    return progress.hands_total ?? 0;
+  }, [progress, isAppending, appendBase]);
+
   const evPer100 = liveMetrics?.ev_per_100 ?? result?.ev_per_100 ?? null;
   const stdevPer100 = liveMetrics?.stdev_per_100 ?? result?.stdev_per_100 ?? null;
   const avgInitialBet = liveMetrics?.avg_initial_bet ?? result?.avg_initial_bet ?? null;
@@ -1103,6 +1206,193 @@ function App() {
   const evPer100Units = evPer100 !== null && unitSize > 0 ? evPer100 / unitSize : null;
   const stdevPer100Units = stdevPer100 !== null && unitSize > 0 ? stdevPer100 / unitSize : null;
   const riskBankrollUnits = bankroll !== null && unitSize > 0 ? bankroll / unitSize : null;
+
+  const tripHands = useMemo(() => {
+    if (!rorTripValue || Number.isNaN(rorTripValue)) return 0;
+    if (rorTripMode === "hours") return Math.max(0, rorTripValue * Math.max(handsPerHour, 0));
+    return Math.max(0, rorTripValue);
+  }, [rorTripMode, rorTripValue, handsPerHour]);
+
+  const roundsForCi = useMemo(() => {
+    if (status === "running" && progressHandsDone > 0) return progressHandsDone;
+    return result ? parseRoundsFromResult(result) : 0;
+  }, [status, progressHandsDone, result]);
+
+  const ciMetrics = useMemo(() => {
+    if (evPer100 === null || stdevPer100 === null) return null;
+    if (!roundsForCi || roundsForCi <= 1) return null;
+    const mean = evPer100 / 100;
+    const sd = stdevPer100 / 10;
+    if (sd <= 0) return null;
+    const z = 1.96;
+    const seMean = sd / Math.sqrt(roundsForCi);
+    const meanLow = mean - z * seMean;
+    const meanHigh = mean + z * seMean;
+
+    const seSd = sd / Math.sqrt(2 * roundsForCi);
+    const sdLow = Math.max(sd - z * seSd, 0);
+    const sdHigh = sd + z * seSd;
+    const varianceLow = sdLow * sdLow;
+    const varianceHigh = sdHigh * sdHigh;
+
+    const meanAbsLow = Math.min(Math.abs(meanLow), Math.abs(meanHigh));
+    const meanAbsHigh = Math.max(Math.abs(meanLow), Math.abs(meanHigh));
+
+    let diLow: number | null = null;
+    let diHigh: number | null = null;
+    if (sdLow > 0) {
+      diLow = meanLow / sdHigh;
+      diHigh = meanHigh / sdLow;
+    }
+
+    let scoreLow: number | null = null;
+    let scoreHigh: number | null = null;
+    if (varianceLow > 0 && varianceHigh > 0) {
+      scoreLow = (100 * meanAbsLow * meanAbsLow) / varianceHigh;
+      scoreHigh = (100 * meanAbsHigh * meanAbsHigh) / varianceLow;
+    }
+
+    let n0Low: number | null = null;
+    let n0High: number | null = null;
+    if (!(meanLow <= 0 && meanHigh >= 0) && meanAbsLow > 0) {
+      n0Low = varianceLow / (meanAbsHigh * meanAbsHigh);
+      n0High = varianceHigh / (meanAbsLow * meanAbsLow);
+    }
+
+    let winLossLow: number | null = null;
+    let winLossHigh: number | null = null;
+    if (avgInitialBet && avgInitialBet > 0) {
+      winLossLow = (meanLow / avgInitialBet) * 100;
+      winLossHigh = (meanHigh / avgInitialBet) * 100;
+    }
+
+    let rorLow: number | null = null;
+    let rorHigh: number | null = null;
+    if (bankroll && bankroll > 0) {
+      const rorAt = (m: number, v: number) => {
+        if (m <= 0 || v <= 0) return 1;
+        return clamp01(Math.exp((-2 * m * bankroll) / v));
+      };
+      rorLow = rorAt(meanHigh, varianceLow);
+      rorHigh = rorAt(meanLow, varianceHigh);
+    }
+
+    const rorTripAt = (m: number, s: number, hands: number) => {
+      if (hands <= 0 || !bankroll || s <= 0) return null;
+      const denom = s * Math.sqrt(hands);
+      const z1 = (-bankroll - m * hands) / denom;
+      const z2 = (-bankroll + m * hands) / denom;
+      const term1 = normalCdf(z1);
+      const term2 = Math.exp((-2 * m * bankroll) / (s * s)) * normalCdf(z2);
+      return clamp01(term1 + term2);
+    };
+
+    let rorTripLow: number | null = null;
+    let rorTripHigh: number | null = null;
+    if (bankroll && tripHands > 0) {
+      rorTripLow = rorTripAt(meanHigh, sdLow, tripHands);
+      rorTripHigh = rorTripAt(meanLow, sdHigh, tripHands);
+    }
+
+    return {
+      meanLow,
+      meanHigh,
+      sdLow,
+      sdHigh,
+      ev100: { low: meanLow * 100, high: meanHigh * 100 },
+      evRound: { low: meanLow, high: meanHigh },
+      sd100: { low: sdLow * 10, high: sdHigh * 10 },
+      winRateDollars: { low: meanLow * handsPerHour, high: meanHigh * handsPerHour },
+      winRateUnits: unitSize > 0 ? { low: (meanLow * handsPerHour) / unitSize, high: (meanHigh * handsPerHour) / unitSize } : null,
+      winLossPct: { low: winLossLow, high: winLossHigh },
+      di: { low: diLow, high: diHigh },
+      score: { low: scoreLow, high: scoreHigh },
+      n0: { low: n0Low, high: n0High },
+      ror: { low: rorLow, high: rorHigh },
+      rorTrip: { low: rorTripLow, high: rorTripHigh },
+    };
+  }, [evPer100, stdevPer100, roundsForCi, handsPerHour, avgInitialBet, bankroll, unitSize, tripHands]);
+
+  const precisionEstimate = useMemo(() => {
+    if (!ciMetrics?.ev100 || evPer100Units === null) return null;
+    if (!roundsForCi || roundsForCi <= 0) return null;
+    if (unitSize <= 0) return null;
+    const halfWidthUnits = Math.abs(ciMetrics.ev100.high - ciMetrics.ev100.low) / 2 / unitSize;
+    const targetHalfUnits = Math.max(precisionAbsolute, Math.abs(evPer100Units) * precisionRelative);
+    if (targetHalfUnits <= 0) return null;
+    const factor = Math.pow(halfWidthUnits / targetHalfUnits, 2);
+    const targetTotal = Math.max(Math.ceil(roundsForCi * factor), precisionMinHands);
+    const additional = Math.max(0, targetTotal - roundsForCi);
+    return {
+      current: roundsForCi,
+      halfWidthUnits,
+      targetHalfUnits,
+      targetTotal,
+      additional,
+    };
+  }, [ciMetrics, evPer100Units, roundsForCi, unitSize, precisionAbsolute, precisionRelative, precisionMinHands]);
+
+  const ciWarning = useMemo(() => {
+    if (!precisionEstimate || !ciMetrics || evPer100Units === null) return null;
+
+    const halfWidth = precisionEstimate.halfWidthUnits;
+    const evAbs = Math.abs(evPer100Units);
+
+    if (evAbs === 0) {
+      return {
+        level: "high",
+        message: "EV is near zero - CI cannot be meaningfully compared",
+        badge: "Uncertain",
+      };
+    }
+
+    const relativeWidth = (halfWidth / evAbs) * 100;
+
+    if (relativeWidth > 100) {
+      return {
+        level: "high",
+        message: `CI is ${relativeWidth.toFixed(0)}% of estimate - results very uncertain. Run many more hands.`,
+        badge: "Very Wide CI",
+      };
+    } else if (relativeWidth > 50) {
+      return {
+        level: "medium",
+        message: `CI is ${relativeWidth.toFixed(0)}% of estimate - run more hands for better confidence.`,
+        badge: "Wide CI",
+      };
+    } else if (relativeWidth > 20) {
+      return {
+        level: "low",
+        message: `CI is ${relativeWidth.toFixed(0)}% of estimate - reasonable precision.`,
+        badge: "Moderate CI",
+      };
+    } else {
+      return {
+        level: "good",
+        message: `CI is ${relativeWidth.toFixed(0)}% of estimate - high confidence!`,
+        badge: "Good",
+      };
+    }
+  }, [precisionEstimate, ciMetrics, evPer100Units]);
+
+  useEffect(() => {
+    if (!autoPrecisionActive) return;
+    if (status === "running") return;
+    if (!result) return;
+    if (!precisionEstimate) {
+      setAutoPrecisionActive(false);
+      return;
+    }
+    const currentTotal = roundsForCi;
+    const addToMin = Math.max(precisionMinHands - currentTotal, 0);
+    const addToTarget = precisionEstimate.additional;
+    const addHands = currentTotal < precisionMinHands ? addToMin : addToTarget;
+    if (addHands <= 0) {
+      setAutoPrecisionActive(false);
+      return;
+    }
+    handleAppendHands(addHands);
+  }, [autoPrecisionActive, status, result, precisionEstimate, roundsForCi, precisionMinHands]);
 
   const riskInputs = useMemo(() => {
     if (evPer100 === null || stdevPer100 === null) return null;
@@ -1118,12 +1408,6 @@ function App() {
       bankroll: bankrollValue,
     };
   }, [evPer100, stdevPer100, bankroll]);
-
-  const tripHands = useMemo(() => {
-    if (!rorTripValue || Number.isNaN(rorTripValue)) return 0;
-    if (rorTripMode === "hours") return Math.max(0, rorTripValue * Math.max(handsPerHour, 0));
-    return Math.max(0, rorTripValue);
-  }, [rorTripMode, rorTripValue, handsPerHour]);
 
   const rorSimple = useMemo(() => {
     if (!riskInputs) return null;
@@ -1589,6 +1873,122 @@ function App() {
               </button>
             </div>
           </div>
+          <div className="precision-inline">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+              <div className="precision-title">Precision Target</div>
+              {ciWarning && <div className={`precision-badge status-${ciWarning.level}`}>{ciWarning.badge}</div>}
+            </div>
+            <div className="precision-grid">
+              <label>
+                <span className="label-row">
+                  Preset
+                  <HelpIcon text="Choose a stopping target for EV/100 precision. You can override the numbers below." />
+                </span>
+                <select value={precisionPreset} onChange={(e) => setPrecisionPreset(e.target.value as keyof typeof precisionPresets)}>
+                  {Object.entries(precisionPresets).map(([key, preset]) => (
+                    <option key={key} value={key}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span className="label-row">
+                  Relative (% of EV/100)
+                  <HelpIcon text="Stop when the 95% CI half-width is below this percent of |EV/100|." />
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  step={1}
+                  value={Math.round(precisionRelative * 100)}
+                  onChange={(e) => setPrecisionRelative(Number(e.target.value) / 100)}
+                />
+              </label>
+              <label>
+                <span className="label-row">
+                  Absolute (u/100)
+                  <HelpIcon text="Stop when the 95% CI half-width is below this absolute unit value." />
+                </span>
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.05}
+                  value={precisionAbsolute}
+                  onChange={(e) => setPrecisionAbsolute(Number(e.target.value))}
+                />
+              </label>
+              <label>
+                <span className="label-row">
+                  Min hands
+                  <HelpIcon text="Minimum total rounds before auto-append targets can finish." />
+                </span>
+                <input
+                  type="number"
+                  min={100000}
+                  step={100000}
+                  value={precisionMinHands}
+                  onChange={(e) => setPrecisionMinHands(Number(e.target.value))}
+                />
+              </label>
+            </div>
+            {precisionEstimate && (
+              <div className="precision-visual">
+                <div className="precision-labels">
+                  <span>Current: {precisionEstimate.halfWidthUnits.toFixed(3)}u</span>
+                  <span>Target: {precisionEstimate.targetHalfUnits.toFixed(3)}u</span>
+                </div>
+                <div className="precision-comparison-bar">
+                  <div
+                    className="current-marker"
+                    style={{
+                      left: `${Math.min(100, (precisionEstimate.halfWidthUnits / precisionEstimate.targetHalfUnits) * 100)}%`,
+                    }}
+                  />
+                  <div className="target-line" />
+                </div>
+                <div className={`precision-status status-${ciWarning?.level || "unknown"}`}>
+                  {precisionEstimate.additional <= 0
+                    ? "✅ Within target precision!"
+                    : ciWarning?.message || "Run more hands to reach target"}
+                </div>
+              </div>
+            )}
+            {!precisionEstimate && <div className="muted">Run a simulation to estimate precision.</div>}
+            <div className="inline-actions">
+              <button
+                className="btn"
+                onClick={handleContinueToPrecision}
+                disabled={status === "running" || autoPrecisionActive}
+              >
+                {autoPrecisionActive ? "Auto precision running..." : "Continue until precision"}
+              </button>
+            </div>
+            {autoPrecisionActive && precisionEstimate && (
+              <div className="precision-progress-section">
+                <div className="progress-label">
+                  Converging to target...
+                  {precisionEstimate.additional > 0 &&
+                    ` (${precisionEstimate.additional.toLocaleString()} more hands)`}
+                </div>
+                <div className="progress-bar-container">
+                  <div
+                    className="progress-bar-fill"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        (1 -
+                          precisionEstimate.additional /
+                            precisionEstimate.targetTotal) *
+                          100
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
           <button className="btn" onClick={() => setScenarioName(`${scenarioName} Copy`)}>
             Duplicate
           </button>
@@ -2046,7 +2446,10 @@ function App() {
             <div className="card-title">Simulation Settings</div>
             <div className="form-grid">
               <label>
-                Unit size ($)
+                <span className="label-row">
+                  Unit size ($)
+                  <HelpIcon text="Base unit size used for bet ramp units and $ conversions." />
+                </span>
                 <input type="number" value={unitSize} onChange={(e) => setUnitSize(Number(e.target.value))} />
               </label>
               <label>
@@ -2057,15 +2460,24 @@ function App() {
                 <input type="number" value={bankroll ?? ""} onChange={(e) => setBankroll(e.target.value ? Number(e.target.value) : null)} />
               </label>
               <label>
-                Hands
+                <span className="label-row">
+                  Hands
+                  <HelpIcon text="Total rounds to simulate for this run." />
+                </span>
                 <input type="number" value={hands} onChange={(e) => setHands(Number(e.target.value))} />
               </label>
               <label>
-                Hands/hour
+                <span className="label-row">
+                  Hands/hour
+                  <HelpIcon text="Used to compute hours played and win rate per hour." />
+                </span>
                 <input type="number" value={handsPerHour} onChange={(e) => setHandsPerHour(Number(e.target.value))} />
               </label>
               <label>
-                Seed
+                <span className="label-row">
+                  Seed
+                  <HelpIcon text="Random seed for reproducible simulations. Disabled when randomize is on." />
+                </span>
                 <div className="seed-row">
                   <input
                     type="number"
@@ -2079,16 +2491,25 @@ function App() {
                 </div>
               </label>
               <label className="toggle">
-                Randomize seed each run
+                <span className="label-row">
+                  Randomize seed each run
+                  <HelpIcon text="When enabled, each run uses a new random seed for independent samples." />
+                </span>
                 <input type="checkbox" checked={randomizeSeedEachRun} onChange={(e) => setRandomizeSeedEachRun(e.target.checked)} />
               </label>
               <label className="toggle">
-                Debug log
+                <span className="label-row">
+                  Debug log
+                  <HelpIcon text="Include the first N hands in the output for troubleshooting." />
+                </span>
                 <input type="checkbox" checked={debugLog} onChange={(e) => setDebugLog(e.target.checked)} />
               </label>
               {debugLog && (
                 <label>
-                  Debug hands
+                  <span className="label-row">
+                    Debug hands
+                    <HelpIcon text="Number of hands to record in the debug log output." />
+                  </span>
                   <input type="number" min={1} max={500} value={debugLogHands} onChange={(e) => setDebugLogHands(Number(e.target.value))} />
                 </label>
               )}
@@ -2214,7 +2635,7 @@ function App() {
                 <div className="progress">
                   <div className="progress-bar" style={{ width: `${Math.min(progress.progress * 100, 100)}%` }} />
                   <div className="progress-label">
-                    {progress.hands_done.toLocaleString()} / {progress.hands_total.toLocaleString()} rounds
+                    {progressHandsDone.toLocaleString()} / {progressHandsTotal.toLocaleString()} rounds
                   </div>
                 </div>
               )}
@@ -2244,7 +2665,22 @@ function App() {
                         : showUnits
                           ? (evPer100 / unitSize / 100).toFixed(4) + " u"
                           : "$" + (evPer100 / 100).toFixed(4)}
+                      {showConfidence && ciMetrics?.evRound
+                        ? ` • 95% CI: ${showUnits
+                          ? formatRange(ciMetrics.evRound.low / unitSize, ciMetrics.evRound.high / unitSize, 4, " u")
+                          : formatRange(ciMetrics.evRound.low, ciMetrics.evRound.high, 4, "", "$")}`
+                        : ""}
                     </div>
+                    {showConfidence && (
+                      <div className="sub muted">
+                        95% CI (EV/100):{" "}
+                        {ciMetrics?.ev100
+                          ? showUnits
+                            ? formatRange(ciMetrics.ev100.low / unitSize, ciMetrics.ev100.high / unitSize, 2, " u")
+                            : formatRange(ciMetrics.ev100.low, ciMetrics.ev100.high, 2, "", "$")
+                          : "n/a"}
+                      </div>
+                    )}
                   </div>
                   <div className="metric">
                     <div className="label">SD / 100 rounds</div>
@@ -2255,16 +2691,36 @@ function App() {
                           ? (stdevPer100 / unitSize).toFixed(2) + " u"
                           : "$" + stdevPer100.toFixed(2)}
                     </div>
+                    {showConfidence && (
+                      <div className="sub muted">
+                        95% CI:{" "}
+                        {ciMetrics?.sd100
+                          ? showUnits
+                            ? formatRange(ciMetrics.sd100.low / unitSize, ciMetrics.sd100.high / unitSize, 2, " u")
+                            : formatRange(ciMetrics.sd100.low, ciMetrics.sd100.high, 2, "", "$")
+                          : "n/a"}
+                      </div>
+                    )}
                   </div>
                   <div className="metric">
                     <div className="label" title="Rounds until EV equals 1 SD.">N0 (rounds)</div>
                     <div className="value">{result ? result.n0_hands.toFixed(0) : "n/a"}</div>
+                    {showConfidence && (
+                      <div className="sub muted">
+                        95% CI: {ciMetrics?.n0 ? formatRange(ciMetrics.n0.low, ciMetrics.n0.high, 0) : "n/a"}
+                      </div>
+                    )}
                   </div>
                   <div className="metric">
                     <div className="label" title="Score proxy = 100 * (EV^2 / variance)">
                       Score (EV/Var proxy)
                     </div>
                     <div className="value">{result ? result.score.toFixed(4) : "n/a"}</div>
+                    {showConfidence && (
+                      <div className="sub muted">
+                        95% CI: {ciMetrics?.score ? formatRange(ciMetrics.score.low, ciMetrics.score.high, 4) : "n/a"}
+                      </div>
+                    )}
                   </div>
                   <div className="metric">
                     <div className="label">Equivalent table time</div>
@@ -2278,6 +2734,12 @@ function App() {
                     >
                       {formatRor(primaryRor)}
                     </div>
+                    {showConfidence && (
+                      <div className="sub muted">
+                        95% CI:{" "}
+                        {ciMetrics?.ror ? formatRange(ciMetrics.ror.low * 100, ciMetrics.ror.high * 100, 3, "%") : "n/a"}
+                      </div>
+                    )}
                   </div>
                   <div className="metric">
                     <div className="label">Bet Average (units)</div>
@@ -2286,15 +2748,30 @@ function App() {
                   <div className="metric">
                     <div className="label">Win rate (units/hour)</div>
                     <div className="value">{winRateUnits !== null ? winRateUnits.toFixed(2) + " u/hr" : "n/a"}</div>
+                    {showConfidence && (
+                      <div className="sub muted">
+                        95% CI: {ciMetrics?.winRateUnits ? formatRange(ciMetrics.winRateUnits.low, ciMetrics.winRateUnits.high, 2, " u/hr") : "n/a"}
+                      </div>
+                    )}
                   </div>
                   <div className="metric">
                     <div className="label">Win rate ($/hour)</div>
                     <div className="value">{winRateDollars !== null ? "$" + winRateDollars.toFixed(2) : "n/a"}</div>
+                    {showConfidence && (
+                      <div className="sub muted">
+                        95% CI: {ciMetrics?.winRateDollars ? formatRange(ciMetrics.winRateDollars.low, ciMetrics.winRateDollars.high, 2, "", "$") : "n/a"}
+                      </div>
+                    )}
                   </div>
                   {showAdvanced && (
                     <div className="metric">
                       <div className="label">DI</div>
                       <div className="value">{result ? result.di.toFixed(5) : "n/a"}</div>
+                      {showConfidence && (
+                        <div className="sub muted">
+                          95% CI: {ciMetrics?.di ? formatRange(ciMetrics.di.low, ciMetrics.di.high, 5) : "n/a"}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2302,6 +2779,10 @@ function App() {
                   <label className="toggle">
                     Show advanced metrics
                     <input type="checkbox" checked={showAdvanced} onChange={(e) => setShowAdvanced(e.target.checked)} />
+                  </label>
+                  <label className="toggle">
+                    Show confidence intervals
+                    <input type="checkbox" checked={showConfidence} onChange={(e) => setShowConfidence(e.target.checked)} />
                   </label>
                 </div>
                 {status === "running" && progressHandsDone ? (
@@ -2313,6 +2794,82 @@ function App() {
               </>
             )}
           </div>
+
+          {result && result.ror_detail && (
+            <div className="card">
+              <div className="card-title">Risk of Ruin Analysis</div>
+              <div className="ror-detail-content">
+                <div className="ror-detail-grid">
+                  <div className="ror-metric">
+                    <div className="label">Lifetime RoR</div>
+                    <div className="ror-value">
+                      {(result.ror_detail.adjusted_ror * 100).toFixed(3)}%
+                    </div>
+                    <div className="ror-hint">Probability of losing entire bankroll</div>
+                  </div>
+
+                  {result.ror_detail.trip_ror !== null && result.ror_detail.trip_ror !== undefined && (
+                    <div className="ror-metric">
+                      <div className="label">Trip RoR ({result.ror_detail.trip_hours}h)</div>
+                      <div className="ror-value">
+                        {(result.ror_detail.trip_ror * 100).toFixed(3)}%
+                      </div>
+                      <div className="ror-hint">Risk of losing bankroll in one trip</div>
+                    </div>
+                  )}
+
+                  {result.ror_detail.required_bankroll_5pct && (
+                    <div className="ror-metric">
+                      <div className="label">Bankroll for 5% RoR</div>
+                      <div className="ror-value">
+                        ${result.ror_detail.required_bankroll_5pct.toFixed(0)}
+                      </div>
+                      <div className="ror-hint">
+                        {(result.ror_detail.required_bankroll_5pct / unitSize).toFixed(0)} units
+                      </div>
+                    </div>
+                  )}
+
+                  {result.ror_detail.required_bankroll_1pct && (
+                    <div className="ror-metric">
+                      <div className="label">Bankroll for 1% RoR</div>
+                      <div className="ror-value">
+                        ${result.ror_detail.required_bankroll_1pct.toFixed(0)}
+                      </div>
+                      <div className="ror-hint">
+                        {(result.ror_detail.required_bankroll_1pct / unitSize).toFixed(0)} units
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="ror-metric">
+                    <div className="label">N0 (hands to overcome 1 SD)</div>
+                    <div className="ror-value">
+                      {result.ror_detail.n0_hands.toFixed(0).toLocaleString()}
+                    </div>
+                    <div className="ror-hint">
+                      {(result.ror_detail.n0_hands / handsPerHour).toFixed(0)} hours
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ror-explanation">
+                  <details>
+                    <summary>What is Risk of Ruin?</summary>
+                    <p>
+                      <strong>Risk of Ruin (RoR)</strong> is the probability that you'll lose your entire bankroll before achieving your goals.
+                    </p>
+                    <ul>
+                      <li><strong>Lifetime RoR:</strong> Uses actual profit variance from your bet spread to calculate long-term ruin probability. This accounts for the fact that larger bets at high counts contribute more to variance.</li>
+                      <li><strong>Trip RoR:</strong> Risk of losing your entire bankroll during a single trip of specified length. Much higher than lifetime RoR due to short-term variance.</li>
+                      <li><strong>Required Bankroll:</strong> How much you need to achieve 5% or 1% risk targets. Industry standard is 5% RoR for professional play.</li>
+                      <li><strong>N0:</strong> Number of hands needed for results to converge within 1 standard deviation. Higher N0 means longer path to statistical certainty.</li>
+                    </ul>
+                  </details>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="card">
             <div className="card-title">Trip Outcomes (simulated)</div>
@@ -2544,7 +3101,10 @@ function App() {
             <div className="card-title">Risk of Ruin (calculator)</div>
             <div className="risk-grid">
               <label>
-                Mode
+                <span className="label-row">
+                  Mode
+                  <HelpIcon text="Simple = infinite play log-ruin approximation. Trip = finite-hands session risk using a normal approximation." />
+                </span>
                 <select value={rorMode} onChange={(e) => setRorMode(e.target.value as "simple" | "trip")}>
                   <option value="simple">Simple (infinite)</option>
                   <option value="trip">Trip (finite)</option>
@@ -2552,7 +3112,10 @@ function App() {
               </label>
               {rorMode === "trip" && (
                 <label>
-                  Trip input
+                  <span className="label-row">
+                    Trip input
+                    <HelpIcon text="Choose whether the trip length is defined by hands or hours." />
+                  </span>
                   <select value={rorTripMode} onChange={(e) => setRorTripMode(e.target.value as "hands" | "hours")}>
                     <option value="hands">Hands</option>
                     <option value="hours">Hours</option>
@@ -2561,7 +3124,10 @@ function App() {
               )}
               {rorMode === "trip" && (
                 <label>
-                  Trip {rorTripMode}
+                  <span className="label-row">
+                    Trip {rorTripMode}
+                    <HelpIcon text="Total length of the session. Longer trips increase trip RoR." />
+                  </span>
                   <input
                     type="number"
                     min={0}
@@ -2602,11 +3168,22 @@ function App() {
                   <div>
                     <div className="label">Simple RoR</div>
                     <div className="risk-value">{formatRor(rorSimple)}</div>
+                    {showConfidence && (
+                      <div className="muted">
+                        95% CI: {ciMetrics?.ror ? formatRange(ciMetrics.ror.low * 100, ciMetrics.ror.high * 100, 3, "%") : "n/a"}
+                      </div>
+                    )}
                   </div>
                   {rorMode === "trip" && (
                     <div>
                       <div className="label">Trip RoR</div>
                       <div className="risk-value">{formatRor(rorTrip)}</div>
+                      {showConfidence && (
+                        <div className="muted">
+                          95% CI:{" "}
+                          {ciMetrics?.rorTrip ? formatRange(ciMetrics.rorTrip.low * 100, ciMetrics.rorTrip.high * 100, 3, "%") : "n/a"}
+                        </div>
+                      )}
                       <div className="muted">
                         {tripHands.toLocaleString()} hands ({handsPerHour > 0 ? (tripHands / handsPerHour).toFixed(1) : "n/a"} hrs)
                       </div>
@@ -2744,7 +3321,19 @@ function App() {
                     <tbody>
                       <tr>
                         <td>{avgInitialBetUnits !== null ? avgInitialBetUnits.toFixed(2) : "n/a"}</td>
-                        <td>
+                        <td
+                          title={
+                            showConfidence
+                              ? `95% CI: ${
+                                  ciMetrics?.ev100
+                                    ? showUnits
+                                      ? formatRange(ciMetrics.ev100.low / unitSize, ciMetrics.ev100.high / unitSize, 2, " u")
+                                      : formatRange(ciMetrics.ev100.low, ciMetrics.ev100.high, 2, "", "$")
+                                    : "n/a"
+                                }`
+                              : undefined
+                          }
+                        >
                           {evPer100 === null
                             ? "n/a"
                             : showUnits
@@ -2753,7 +3342,19 @@ function App() {
                                 : `${formatNumber(evPer100Units)} u`
                               : `$${formatNumber(evPer100)}`}
                         </td>
-                        <td>
+                        <td
+                          title={
+                            showConfidence
+                              ? `95% CI: ${
+                                  ciMetrics?.sd100
+                                    ? showUnits
+                                      ? formatRange(ciMetrics.sd100.low / unitSize, ciMetrics.sd100.high / unitSize, 2, " u")
+                                      : formatRange(ciMetrics.sd100.low, ciMetrics.sd100.high, 2, "", "$")
+                                    : "n/a"
+                                }`
+                              : undefined
+                          }
+                        >
                           {stdevPer100 === null
                             ? "n/a"
                             : showUnits
@@ -2762,17 +3363,69 @@ function App() {
                                 : `${formatNumber(stdevPer100Units)} u`
                               : `$${formatNumber(stdevPer100)}`}
                         </td>
-                        <td>{formatRor(rorSimple ?? result?.ror)}</td>
-                        <td>{result ? result.score.toFixed(4) : "n/a"}</td>
-                        <td>{formatPercent(winLossPct, 2)}</td>
-                        <td>{winRateUnits !== null ? `${winRateUnits.toFixed(2)} u/hr` : "n/a"}</td>
-                        <td>{winRateDollars !== null ? `$${winRateDollars.toFixed(2)}` : "n/a"}</td>
+                        <td
+                          title={
+                            showConfidence
+                              ? `95% CI: ${ciMetrics?.ror ? formatRange(ciMetrics.ror.low * 100, ciMetrics.ror.high * 100, 3, "%") : "n/a"}`
+                              : undefined
+                          }
+                        >
+                          {formatRor(rorSimple ?? result?.ror)}
+                        </td>
+                        <td
+                          title={
+                            showConfidence
+                              ? `95% CI: ${ciMetrics?.score ? formatRange(ciMetrics.score.low, ciMetrics.score.high, 4) : "n/a"}`
+                              : undefined
+                          }
+                        >
+                          {result ? result.score.toFixed(4) : "n/a"}
+                        </td>
+                        <td
+                          title={
+                            showConfidence
+                              ? `95% CI: ${ciMetrics?.winLossPct ? formatRange(ciMetrics.winLossPct.low, ciMetrics.winLossPct.high, 2, "%") : "n/a"}`
+                              : undefined
+                          }
+                        >
+                          {formatPercent(winLossPct, 2)}
+                        </td>
+                        <td
+                          title={
+                            showConfidence
+                              ? `95% CI: ${ciMetrics?.winRateUnits ? formatRange(ciMetrics.winRateUnits.low, ciMetrics.winRateUnits.high, 2, " u/hr") : "n/a"}`
+                              : undefined
+                          }
+                        >
+                          {winRateUnits !== null ? `${winRateUnits.toFixed(2)} u/hr` : "n/a"}
+                        </td>
+                        <td
+                          title={
+                            showConfidence
+                              ? `95% CI: ${ciMetrics?.winRateDollars ? formatRange(ciMetrics.winRateDollars.low, ciMetrics.winRateDollars.high, 2, "", "$") : "n/a"}`
+                              : undefined
+                          }
+                        >
+                          {winRateDollars !== null ? `$${winRateDollars.toFixed(2)}` : "n/a"}
+                        </td>
                         <td>{handsPerHour}</td>
-                        <td>{result ? result.di.toFixed(4) : "n/a"}</td>
+                        <td
+                          title={
+                            showConfidence ? `95% CI: ${ciMetrics?.di ? formatRange(ciMetrics.di.low, ciMetrics.di.high, 5) : "n/a"}` : undefined
+                          }
+                        >
+                          {result ? result.di.toFixed(4) : "n/a"}
+                        </td>
                         <td>{cScore !== null ? cScore.toFixed(4) : "n/a"}</td>
                         <td className="muted">n/a</td>
                         <td className="muted">n/a</td>
-                        <td>{result ? result.n0_hands.toFixed(0) : "n/a"}</td>
+                        <td
+                          title={
+                            showConfidence ? `95% CI: ${ciMetrics?.n0 ? formatRange(ciMetrics.n0.low, ciMetrics.n0.high, 0) : "n/a"}` : undefined
+                          }
+                        >
+                          {result ? result.n0_hands.toFixed(0) : "n/a"}
+                        </td>
                       </tr>
                     </tbody>
                   </table>

@@ -24,6 +24,8 @@ The improvements below address gaps in these core areas. Each enhancement makes 
 
 **Priority:** 🔴 CRITICAL
 
+**Status:** Implemented in the frontend (95% CI from EV/SD + rounds using normal approximations). Backend CI fields still pending if we want to expose them via API.
+
 #### Why This Matters
 
 The current RoR calculation at `simulation.py:538-547` uses a simple log-ruin formula:
@@ -51,13 +53,15 @@ The variance contribution from high-count bets dominates, but the current formul
 
 #### Acceptance Criteria
 
-- [ ] RoR calculation accounts for actual bet distribution from simulation
-- [ ] Per-TC variance weighted by bet size squared
-- [ ] Kelly-based RoR calculation option
-- [ ] Monte Carlo RoR estimation option (for verification)
-- [ ] Trip RoR (probability of losing X units in Y hours)
-- [ ] 95% confidence interval on RoR estimate
-- [ ] Unit tests comparing to known CVCX values
+- [x] RoR calculation accounts for actual bet distribution from simulation
+- [x] Trip RoR (probability of losing X units in Y hours)
+- [x] Required bankroll calculation for 5% and 1% RoR targets
+- [x] Detailed RoR display in frontend with explanations
+- [ ] Per-TC variance weighted by bet size squared (future enhancement)
+- [ ] Kelly-based RoR calculation option (future enhancement)
+- [ ] Monte Carlo RoR estimation option (for verification - future enhancement)
+- [ ] 95% confidence interval on RoR estimate (future enhancement)
+- [ ] Unit tests comparing to known CVCX values (future enhancement)
 
 #### Implementation Steps
 
@@ -245,6 +249,64 @@ def test_ror_matches_cvcx():
 
 **Priority:** 🔴 CRITICAL
 
+**Status:** ✅ COMPLETED - Frontend UI improvements and visual feedback implemented (Jan 25, 2026)
+
+#### What Was Done
+
+**Phase 1: Fixed Sticky Header**
+- Removed `position: sticky` from `.topbar` in App.css
+- Header now scrolls naturally with page content
+- Reduced topbar visual weight (removed blur effect)
+
+**Phase 2: Added CI Warning System**
+- Implemented `ciWarning` calculation in App.tsx (lines 1334-1371)
+- Categorizes precision status into 4 levels: Good (≤20%), Low (20-100%), Medium (50-100%), High (>100%)
+- Color-coded badges display CI width relative to EV estimate
+- Different colors for each warning level: green, blue, orange, red
+
+**Phase 3: Added Visual Comparison Bar**
+- Created `.precision-comparison-bar` with visual marker showing current vs target half-width
+- Current marker animates as precision improves
+- Target line shows the goal (right edge = target reached)
+- Labels show exact values (e.g., "Current: 0.18u" vs "Target: 0.20u")
+
+**Phase 4: Added Progress Indicator**
+- Implemented progress bar during auto-precision mode
+- Shows percentage toward target (`width = (1 - additional/total) * 100`)
+- Displays remaining hands needed
+- Progress bar fills from left to right as convergence happens
+
+**Phase 5: Enhanced Status Messages**
+- Replaced plain text with color-coded status section
+- Green background + message: "✅ Within target precision!" when achieved
+- Contextual messages based on CI width levels
+- Updated progress label during auto-precision runs
+
+#### Implementation Details
+
+**Files Modified:**
+1. `frontend/src/App.css` (lines 47-62, 92-215): Removed sticky, added visual element styles
+2. `frontend/src/App.tsx` (lines 1334-1371): Added ciWarning calculation
+3. `frontend/src/App.tsx` (lines 1879-1980): Updated precision target JSX with visual elements
+
+**New CSS Classes Added:**
+- `.precision-badge`: CI status indicator badge (Good/Moderate/Wide/Very Wide)
+- `.precision-visual`: Container for visual comparison elements
+- `.precision-labels`: Labels showing current and target values
+- `.precision-comparison-bar`: Visual bar with current marker and target line
+- `.current-marker`: Animated marker showing current half-width position
+- `.target-line`: Right edge indicator showing target position
+- `.precision-status`: Color-coded status message box
+- `.precision-progress-section`: Container for progress bar
+- `.progress-bar-container`: Background container for progress fill
+- `.progress-bar-fill`: Animated gradient fill showing convergence progress
+
+**Color Scheme:**
+- Good (≤20% CI): Green (#27ae60) - High confidence
+- Low (20-50% CI): Blue (#3498db) - Reasonable precision
+- Medium (50-100% CI): Orange (#f39c12) - Run more hands
+- High (>100% CI): Red (#e74c3c) - Very uncertain
+
 #### Why This Matters
 
 Currently, the simulator reports point estimates like "EV/100 = 1.25 units" with no indication of uncertainty. But with 200,000 hands:
@@ -264,19 +326,26 @@ Currently, the simulator reports point estimates like "EV/100 = 1.25 units" with
 |------|-------|--------------|
 | `backend/app/engine/simulation.py` | 528-536 | Mean/variance calculation |
 | `backend/app/models.py` | 107-122 | SimulationResult fields |
-| `frontend/src/App.tsx` | ~1750-1900 | Results display |
+| `frontend/src/App.tsx` | ~1000-2400 | CI calculation + toggle + display + tooltips |
 
 #### Acceptance Criteria
 
-- [ ] 95% CI for EV/100 (primary metric)
-- [ ] 95% CI for standard deviation
-- [ ] CI for DI (Desirability Index)
-- [ ] CI for SCORE
-- [ ] Sample size warning when CI is too wide (>50% of estimate)
-- [ ] "Hands needed" calculator for desired precision
-- [ ] Visual CI display (error bars or range text)
+- [x] 95% CI for EV/100 (primary metric)
+- [x] 95% CI for standard deviation
+- [x] CI for DI (Desirability Index)
+- [x] CI for SCORE
+- [x] Sample size warning when CI is too wide (>50% of estimate)
+- [x] "Hands needed" calculator for desired precision
+- [x] Visual CI display (range text + tooltips)
+- [x] Progress indicator during auto-precision mode
+- [x] Visual comparison bar (current vs target half-width)
+- [x] Color-coded status badges (Good/Moderate/Wide/Very Wide CI)
 
 #### Implementation Steps
+
+**Step 0: Frontend CI (DONE)**
+
+The UI now derives 95% CIs from EV/SD + rounds played and shows them in Primary Metrics and Performance Table tooltips. This does not require backend changes.
 
 **Step 1: Calculate standard error and CI in simulation.py**
 

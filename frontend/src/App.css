@@ -45,20 +45,16 @@ body {
 }
 
 .topbar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
   justify-content: space-between;
-  background: rgba(244, 239, 230, 0.9);
+  background: var(--card);
   border: 1px solid var(--border);
   padding: 12px 16px;
   border-radius: 16px;
-  backdrop-filter: blur(6px);
-  box-shadow: 0 6px 24px var(--shadow);
+  box-shadow: 0 4px 12px var(--shadow);
 }
 
 .scenario {
@@ -87,6 +83,164 @@ body {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.precision-inline {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: var(--card);
+  display: grid;
+  gap: 6px;
+  min-width: 280px;
+}
+
+.precision-title {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.precision-grid {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+/* Badge for CI warning status */
+.precision-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.precision-badge.status-good {
+  background: rgba(39, 174, 96, 0.15);
+  color: #27ae60;
+  border: 1px solid rgba(39, 174, 96, 0.3);
+}
+
+.precision-badge.status-low {
+  background: rgba(52, 152, 219, 0.15);
+  color: #3498db;
+  border: 1px solid rgba(52, 152, 219, 0.3);
+}
+
+.precision-badge.status-medium {
+  background: rgba(241, 196, 15, 0.15);
+  color: #f39c12;
+  border: 1px solid rgba(241, 196, 15, 0.3);
+}
+
+.precision-badge.status-high {
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+/* Visual comparison bar */
+.precision-visual {
+  display: grid;
+  gap: 8px;
+}
+
+.precision-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.precision-comparison-bar {
+  position: relative;
+  height: 24px;
+  background: var(--bg-accent);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.current-marker {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 3px;
+  background: var(--accent);
+  border-left: 2px solid var(--ink);
+  transition: left 0.4s ease;
+  z-index: 2;
+}
+
+.target-line {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 2px;
+  background: var(--accent-2);
+  z-index: 1;
+}
+
+/* Status message */
+.precision-status {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+.precision-status.status-good {
+  background: rgba(39, 174, 96, 0.08);
+  color: #27ae60;
+  border: 1px solid rgba(39, 174, 96, 0.2);
+}
+
+.precision-status.status-low {
+  background: rgba(52, 152, 219, 0.08);
+  color: #3498db;
+  border: 1px solid rgba(52, 152, 219, 0.2);
+}
+
+.precision-status.status-medium {
+  background: rgba(241, 196, 15, 0.08);
+  color: #f39c12;
+  border: 1px solid rgba(241, 196, 15, 0.2);
+}
+
+.precision-status.status-high {
+  background: rgba(231, 76, 60, 0.08);
+  color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.2);
+}
+
+/* Progress bar for auto-precision */
+.precision-progress-section {
+  display: grid;
+  gap: 6px;
+}
+
+.progress-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.progress-bar-container {
+  height: 8px;
+  background: var(--bg-accent);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.5s ease;
 }
 
 .hands-controls {
@@ -928,4 +1082,86 @@ select {
   border-radius: 12px;
   border: 1px solid var(--border);
   background: rgba(253, 250, 244, 0.9);
+}
+
+/* Risk of Ruin Detail Section */
+.ror-detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.ror-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.ror-metric {
+  padding: 16px;
+  background: rgba(31, 138, 112, 0.04);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ror-metric .label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ror-metric .ror-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.ror-metric .ror-hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.ror-explanation {
+  margin-top: 8px;
+  padding: 12px;
+  background: rgba(253, 250, 244, 0.6);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.ror-explanation details {
+  cursor: pointer;
+}
+
+.ror-explanation summary {
+  font-weight: 600;
+  color: var(--accent);
+  padding: 4px;
+  user-select: none;
+}
+
+.ror-explanation p {
+  margin: 12px 0 8px 0;
+  line-height: 1.6;
+}
+
+.ror-explanation ul {
+  margin: 8px 0;
+  padding-left: 24px;
+  line-height: 1.7;
+}
+
+.ror-explanation li {
+  margin: 6px 0;
+}
+
+.ror-explanation strong {
+  color: var(--ink);
+  font-weight: 600;
 }

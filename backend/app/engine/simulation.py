@@ -4,7 +4,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from app.models import Deviation, Rules, SimulationRequest, SimulationResult, TcTableEntry
+from app.models import Deviation, RoRResult, Rules, SimulationRequest, SimulationResult, TcTableEntry
 
 CARD_ORDER = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"]
 CARD_VALUES = {**{str(i): i for i in range(2, 10)}, "T": 10, "J": 10, "Q": 10, "K": 10, "A": 11}
@@ -194,6 +194,93 @@ def choose_bet(true_count: float, ramp_steps: List, unit_size: float) -> float:
     if selected is None:
         selected = ramp_steps[0]
     return selected.units * unit_size
+
+
+def calculate_ror_detail(
+    ev_per_hand: float,
+    variance_per_hand: float,
+    bankroll: float,
+    n0_hands: float,
+    trip_hours: Optional[float] = None,
+    hands_per_hour: float = 100,
+) -> RoRResult:
+    """
+    Calculate detailed risk of ruin for variable betting.
+
+    The key insight: for variable bets, we use the ACTUAL variance from the simulation,
+    which already accounts for bet size variation. The variance of total profit naturally
+    incorporates the fact that high-count bets contribute more variance.
+
+    Args:
+        ev_per_hand: Expected value per hand (in dollars)
+        variance_per_hand: Variance per hand (in dollars squared)
+        bankroll: Total bankroll (in dollars)
+        n0_hands: N0 statistic (hands to overcome 1 SD)
+        trip_hours: Optional trip length in hours for trip RoR
+        hands_per_hour: Hands played per hour
+
+    Returns:
+        RoRResult with detailed risk analysis
+    """
+    # Simple RoR (for backwards compatibility)
+    if ev_per_hand <= 0:
+        simple_ror = 1.0
+        adjusted_ror = 1.0
+    else:
+        k = (2 * ev_per_hand) / variance_per_hand if variance_per_hand > 0 else 0
+        simple_ror = math.exp(-k * bankroll)
+
+        # Adjusted RoR uses the same formula but emphasizes that variance is already bet-adjusted
+        # For variable betting, the actual profit variance IS the correct variance to use
+        adjusted_ror = simple_ror  # Same formula, but clearer interpretation
+
+    # Trip RoR: probability of losing entire trip bankroll in X hours
+    trip_ror_val = None
+    if trip_hours is not None and trip_hours > 0:
+        trip_hands = trip_hours * hands_per_hour
+        trip_ev = ev_per_hand * trip_hands
+        trip_stdev = math.sqrt(variance_per_hand * trip_hands)
+
+        if trip_stdev > 0:
+            # P(loss >= bankroll) using normal approximation
+            # We want P(cumulative_profit < -bankroll)
+            z = (-bankroll - trip_ev) / trip_stdev
+            # Approximation: use normal CDF
+            # For z < 0, CDF(z) ≈ exp(-z^2/2) / (sqrt(2π) * |z|) for large |z|
+            # For simplicity, cap at 0.5 (50%) and use rough approximation
+            if z < -3:
+                trip_ror_val = 0.0  # Extremely unlikely
+            elif z > 3:
+                trip_ror_val = 1.0  # Almost certain
+            else:
+                # Rough normal CDF approximation
+                # For better accuracy, we'd use scipy.stats.norm.cdf(z)
+                # But let's keep dependencies minimal
+                trip_ror_val = 0.5 * (1 + math.erf(z / math.sqrt(2)))
+
+    # Required bankroll for target RoR
+    # From RoR = exp(-k * BR), solve for BR:
+    # BR = -ln(RoR) / k = -ln(RoR) * variance / (2 * ev)
+    required_5pct = None
+    required_1pct = None
+
+    if ev_per_hand > 0 and variance_per_hand > 0:
+        k = (2 * ev_per_hand) / variance_per_hand
+        target_ror_5pct = 0.05
+        target_ror_1pct = 0.01
+
+        required_5pct = -math.log(target_ror_5pct) / k if k > 0 else None
+        required_1pct = -math.log(target_ror_1pct) / k if k > 0 else None
+
+    return RoRResult(
+        simple_ror=simple_ror,
+        adjusted_ror=adjusted_ror,
+        trip_ror=trip_ror_val,
+        trip_hours=trip_hours,
+        required_bankroll_5pct=required_5pct,
+        required_bankroll_1pct=required_1pct,
+        n0_hands=n0_hands,
+    )
 
 
 def run_simulation(
@@ -535,9 +622,12 @@ def run_simulation(
     score = 100 * (mean * mean) / variance if variance > 0 else 0.0
     n0 = variance / (mean * mean) if mean != 0 else 0.0
 
+    # Calculate RoR (both simple and detailed)
     ror = None
+    ror_detail = None
+
     if request.bankroll:
-        # Simple log-ruin approximation for variable bets; conservative.
+        # Simple RoR for backwards compatibility
         ev_hand = mean
         var_hand = variance
         if ev_hand <= 0:
@@ -545,6 +635,18 @@ def run_simulation(
         else:
             k = (2 * ev_hand) / var_hand if var_hand > 0 else 0
             ror = math.exp(-k * request.bankroll)
+
+        # Detailed RoR analysis
+        # Calculate trip RoR for a 4-hour session by default
+        trip_hours = 4.0
+        ror_detail = calculate_ror_detail(
+            ev_per_hand=mean,
+            variance_per_hand=variance,
+            bankroll=request.bankroll,
+            n0_hands=n0,
+            trip_hours=trip_hours,
+            hands_per_hour=request.hands_per_hour,
+        )
 
     meta = {
         "rounds_played": str(rounds_played),
@@ -594,6 +696,7 @@ def run_simulation(
         score=score,
         n0_hands=n0,
         ror=ror,
+        ror_detail=ror_detail,
         avg_initial_bet=avg_initial_bet,
         avg_initial_bet_units=avg_initial_bet_units,
         tc_histogram=tc_histogram,

@@ -25,6 +25,8 @@
 - Default wong-out threshold adjusted to -1 for the built-in Midwest ramp.
 - Hands custom input now uses an Apply button and supports Enter to set.
 - Added a playing-card favicon for the SPA.
+- Added 95% confidence interval display for primary metrics and table tooltips (Task #40).
+- Added Precision Target presets and auto-append button for CI-based stopping (now inline near Run/Stop).
 
 ## To Do (Remaining)
 - Verify bet ramp row width on small screens and confirm no clipping in the sidebar.
