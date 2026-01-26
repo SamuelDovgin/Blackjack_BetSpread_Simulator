@@ -1873,122 +1873,6 @@ function App() {
               </button>
             </div>
           </div>
-          <div className="precision-inline">
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-              <div className="precision-title">Precision Target</div>
-              {ciWarning && <div className={`precision-badge status-${ciWarning.level}`}>{ciWarning.badge}</div>}
-            </div>
-            <div className="precision-grid">
-              <label>
-                <span className="label-row">
-                  Preset
-                  <HelpIcon text="Choose a stopping target for EV/100 precision. You can override the numbers below." />
-                </span>
-                <select value={precisionPreset} onChange={(e) => setPrecisionPreset(e.target.value as keyof typeof precisionPresets)}>
-                  {Object.entries(precisionPresets).map(([key, preset]) => (
-                    <option key={key} value={key}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span className="label-row">
-                  Relative (% of EV/100)
-                  <HelpIcon text="Stop when the 95% CI half-width is below this percent of |EV/100|." />
-                </span>
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  step={1}
-                  value={Math.round(precisionRelative * 100)}
-                  onChange={(e) => setPrecisionRelative(Number(e.target.value) / 100)}
-                />
-              </label>
-              <label>
-                <span className="label-row">
-                  Absolute (u/100)
-                  <HelpIcon text="Stop when the 95% CI half-width is below this absolute unit value." />
-                </span>
-                <input
-                  type="number"
-                  min={0.01}
-                  step={0.05}
-                  value={precisionAbsolute}
-                  onChange={(e) => setPrecisionAbsolute(Number(e.target.value))}
-                />
-              </label>
-              <label>
-                <span className="label-row">
-                  Min hands
-                  <HelpIcon text="Minimum total rounds before auto-append targets can finish." />
-                </span>
-                <input
-                  type="number"
-                  min={100000}
-                  step={100000}
-                  value={precisionMinHands}
-                  onChange={(e) => setPrecisionMinHands(Number(e.target.value))}
-                />
-              </label>
-            </div>
-            {precisionEstimate && (
-              <div className="precision-visual">
-                <div className="precision-labels">
-                  <span>Current: {precisionEstimate.halfWidthUnits.toFixed(3)}u</span>
-                  <span>Target: {precisionEstimate.targetHalfUnits.toFixed(3)}u</span>
-                </div>
-                <div className="precision-comparison-bar">
-                  <div
-                    className="current-marker"
-                    style={{
-                      left: `${Math.min(100, (precisionEstimate.halfWidthUnits / precisionEstimate.targetHalfUnits) * 100)}%`,
-                    }}
-                  />
-                  <div className="target-line" />
-                </div>
-                <div className={`precision-status status-${ciWarning?.level || "unknown"}`}>
-                  {precisionEstimate.additional <= 0
-                    ? "✅ Within target precision!"
-                    : ciWarning?.message || "Run more hands to reach target"}
-                </div>
-              </div>
-            )}
-            {!precisionEstimate && <div className="muted">Run a simulation to estimate precision.</div>}
-            <div className="inline-actions">
-              <button
-                className="btn"
-                onClick={handleContinueToPrecision}
-                disabled={status === "running" || autoPrecisionActive}
-              >
-                {autoPrecisionActive ? "Auto precision running..." : "Continue until precision"}
-              </button>
-            </div>
-            {autoPrecisionActive && precisionEstimate && (
-              <div className="precision-progress-section">
-                <div className="progress-label">
-                  Converging to target...
-                  {precisionEstimate.additional > 0 &&
-                    ` (${precisionEstimate.additional.toLocaleString()} more hands)`}
-                </div>
-                <div className="progress-bar-container">
-                  <div
-                    className="progress-bar-fill"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        (1 -
-                          precisionEstimate.additional /
-                            precisionEstimate.targetTotal) *
-                          100
-                      )}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
           <button className="btn" onClick={() => setScenarioName(`${scenarioName} Copy`)}>
             Duplicate
           </button>
@@ -2514,6 +2398,118 @@ function App() {
                 </label>
               )}
             </div>
+          </div>
+
+          <div className="card">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", marginBottom: "12px" }}>
+              <div className="card-title" style={{ margin: 0 }}>Precision Target</div>
+              {ciWarning && <div className={`precision-badge status-${ciWarning.level}`}>{ciWarning.badge}</div>}
+            </div>
+
+            <div className="form-grid">
+              <label>
+                <span className="label-row">
+                  Preset
+                  <HelpIcon text="Choose a stopping target for EV/100 precision. You can override the numbers below." />
+                </span>
+                <select value={precisionPreset} onChange={(e) => setPrecisionPreset(e.target.value as keyof typeof precisionPresets)}>
+                  {Object.entries(precisionPresets).map(([key, preset]) => (
+                    <option key={key} value={key}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span className="label-row">
+                  Relative (% of EV/100)
+                  <HelpIcon text="Stop when the 95% CI half-width is below this percent of |EV/100|." />
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  step={1}
+                  value={Math.round(precisionRelative * 100)}
+                  onChange={(e) => setPrecisionRelative(Number(e.target.value) / 100)}
+                />
+              </label>
+              <label>
+                <span className="label-row">
+                  Absolute (u/100)
+                  <HelpIcon text="Stop when the 95% CI half-width is below this absolute unit value." />
+                </span>
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.05}
+                  value={precisionAbsolute}
+                  onChange={(e) => setPrecisionAbsolute(Number(e.target.value))}
+                />
+              </label>
+              <label>
+                <span className="label-row">
+                  Min hands
+                  <HelpIcon text="Minimum total rounds before auto-append targets can finish." />
+                </span>
+                <input
+                  type="number"
+                  min={100000}
+                  step={100000}
+                  value={precisionMinHands}
+                  onChange={(e) => setPrecisionMinHands(Number(e.target.value))}
+                />
+              </label>
+            </div>
+
+            {precisionEstimate && (
+              <div className="precision-visual">
+                <div className="precision-labels">
+                  <span>Current: {precisionEstimate.halfWidthUnits.toFixed(3)}u</span>
+                  <span>Target: {precisionEstimate.targetHalfUnits.toFixed(3)}u</span>
+                </div>
+                <div className="precision-progress-bar">
+                  <div
+                    className="precision-progress-fill"
+                    style={{
+                      width: `${Math.min(100, (1 - precisionEstimate.additional / precisionEstimate.targetTotal) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <div className={`precision-status status-${ciWarning?.level || "unknown"}`}>
+                  {precisionEstimate.additional <= 0
+                    ? "✅ Within target precision!"
+                    : ciWarning?.message || "Run more hands to reach target"}
+                </div>
+              </div>
+            )}
+            {!precisionEstimate && <div className="muted" style={{ textAlign: "center", padding: "8px" }}>Run a simulation to estimate precision.</div>}
+
+            <button
+              className="btn"
+              style={{ width: "100%", marginTop: "12px" }}
+              onClick={handleContinueToPrecision}
+              disabled={status === "running" || autoPrecisionActive}
+            >
+              {autoPrecisionActive ? "Auto precision running..." : "Continue until precision"}
+            </button>
+
+            {autoPrecisionActive && precisionEstimate && (
+              <div className="precision-progress-section">
+                <div className="progress-label">
+                  {precisionEstimate.additional > 0 &&
+                    `${precisionEstimate.additional.toLocaleString()} more hands needed`}
+                </div>
+                <div className="progress-bar-container">
+                  <div
+                    className="progress-bar-fill"
+                    style={{
+                      width: `${Math.min(100, (1 - precisionEstimate.additional / precisionEstimate.targetTotal) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="card">

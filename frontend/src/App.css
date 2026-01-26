@@ -154,7 +154,7 @@ body {
   font-weight: 600;
 }
 
-.precision-comparison-bar {
+.precision-progress-bar {
   position: relative;
   height: 24px;
   background: var(--bg-accent);
@@ -163,25 +163,10 @@ body {
   overflow: hidden;
 }
 
-.current-marker {
-  position: absolute;
-  top: 0;
+.precision-progress-fill {
   height: 100%;
-  width: 3px;
-  background: var(--accent);
-  border-left: 2px solid var(--ink);
-  transition: left 0.4s ease;
-  z-index: 2;
-}
-
-.target-line {
-  position: absolute;
-  right: 0;
-  top: 0;
-  height: 100%;
-  width: 2px;
-  background: var(--accent-2);
-  z-index: 1;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.4s ease;
 }
 
 /* Status message */
