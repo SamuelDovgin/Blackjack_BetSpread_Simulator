@@ -208,7 +208,7 @@ def choose_action(
     return action
 
 
-def choose_bet(true_count: float, ramp_steps: List, unit_size: float) -> float:
+def choose_bet(true_count: float, ramp_steps: List) -> float:
     tc_floor = math.floor(true_count)
     selected = None
     for step in ramp_steps:
@@ -218,7 +218,8 @@ def choose_bet(true_count: float, ramp_steps: List, unit_size: float) -> float:
             break
     if selected is None:
         selected = ramp_steps[0]
-    return selected.units * unit_size
+    # Unit-first engine: ramp is expressed in table units, not dollars.
+    return float(selected.units)
 
 
 def calculate_ror_detail(
@@ -416,7 +417,7 @@ def run_simulation(
                     last_round_played = False
                     continue
 
-        bet = choose_bet(tc_for_bet, ramp_steps, request.unit_size)
+        bet = choose_bet(tc_for_bet, ramp_steps)
         total_initial_bet += bet
 
         # Initial deal
@@ -576,8 +577,8 @@ def run_simulation(
             dealer.append(draw_card())
             dealer_total, dealer_soft = hand_value(dealer)
 
-        # Resolve all hands
-        round_profit = 0.0
+        # Resolve all hands (insurance applies once per round, not per split hand)
+        round_profit = insurance_payout
         for fh in finished_hands:
             bet_amt = fh["bet"]
             surrendered = fh.get("surrendered", False)
@@ -586,21 +587,19 @@ def run_simulation(
             player_total, _ = hand_value(fh["cards"])
 
             if surrendered:
-                profit = -0.5 * bet_amt + insurance_payout
+                profit = -0.5 * bet_amt
             elif bust:
-                profit = -bet_amt + insurance_payout
+                profit = -bet_amt
             else:
                 if dealer_total > 21:
-                    profit = bet_amt + insurance_payout
+                    profit = bet_amt
                 elif player_total > dealer_total:
-                    profit = bet_amt + insurance_payout
+                    profit = bet_amt
                 elif player_total < dealer_total:
-                    profit = -bet_amt + insurance_payout
+                    profit = -bet_amt
                 else:
-                    profit = insurance_payout
+                    profit = 0.0
 
-            total_profit += profit
-            total_sq_profit += profit * profit
             round_profit += profit
 
             if request.debug_log and len(debug_logs) < request.debug_log_hands:
@@ -616,10 +615,14 @@ def run_simulation(
                         "doubled": str(doubled),
                         "player_total": str(player_total),
                         "dealer_total": str(dealer_total),
+                        # Profit here excludes insurance; insurance is applied once at round level.
                         "profit": f"{profit:.2f}",
+                        "insurance_profit": f"{insurance_payout:.2f}",
                     }
                 )
 
+        total_profit += round_profit
+        total_sq_profit += round_profit * round_profit
         update_iba_stats(round_tc_bucket, round_profit, bet)
         rounds_played += 1
         last_round_result = "win" if round_profit > 0 else "loss" if round_profit < 0 else "push"
@@ -656,30 +659,10 @@ def run_simulation(
     n0 = variance / (mean * mean) if mean != 0 else 0.0
 
     # Calculate RoR (both simple and detailed)
+    # Unit-first engine: core simulation results are in units and should not depend
+    # on bankroll/unit size display choices. RoR is computed as a calculator layer.
     ror = None
     ror_detail = None
-
-    if request.bankroll:
-        # Simple RoR for backwards compatibility
-        ev_hand = mean
-        var_hand = variance
-        if ev_hand <= 0:
-            ror = 1.0
-        else:
-            k = (2 * ev_hand) / var_hand if var_hand > 0 else 0
-            ror = math.exp(-k * request.bankroll)
-
-        # Detailed RoR analysis
-        # Calculate trip RoR for a 4-hour session by default
-        trip_hours = 4.0
-        ror_detail = calculate_ror_detail(
-            ev_per_hand=mean,
-            variance_per_hand=variance,
-            bankroll=request.bankroll,
-            n0_hands=n0,
-            trip_hours=trip_hours,
-            hands_per_hour=request.hands_per_hour,
-        )
 
     meta = {
         "rounds_played": str(rounds_played),
@@ -690,7 +673,8 @@ def run_simulation(
     hours_played = rounds_played / request.hands_per_hour if request.hands_per_hour > 0 else None
 
     avg_initial_bet = total_initial_bet / rounds_played if rounds_played > 0 else None
-    avg_initial_bet_units = avg_initial_bet / request.unit_size if avg_initial_bet is not None else None
+    # Bets are already expressed in units.
+    avg_initial_bet_units = avg_initial_bet
 
     tc_table: List[TcTableEntry] = []
     total_obs = sum(int(stat.get("n_total", 0)) for stat in tc_stats.values())
@@ -845,7 +829,7 @@ def _run_chunk_worker(args: Tuple) -> SimulationChunk:
                     last_round_played = False
                     continue
 
-        bet = choose_bet(tc_for_bet, ramp_steps, request.unit_size)
+        bet = choose_bet(tc_for_bet, ramp_steps)
         total_initial_bet += bet
 
         # Initial deal
@@ -986,8 +970,8 @@ def _run_chunk_worker(args: Tuple) -> SimulationChunk:
             dealer.append(draw_card())
             dealer_total, dealer_soft = hand_value(dealer)
 
-        # Resolve all hands
-        round_profit = 0.0
+        # Resolve all hands (insurance applies once per round)
+        round_profit = insurance_payout
         for fh in finished_hands:
             bet_amt = fh["bet"]
             surrendered = fh.get("surrendered", False)
@@ -995,23 +979,23 @@ def _run_chunk_worker(args: Tuple) -> SimulationChunk:
             player_total, _ = hand_value(fh["cards"])
 
             if surrendered:
-                profit = -0.5 * bet_amt + insurance_payout
+                profit = -0.5 * bet_amt
             elif bust:
-                profit = -bet_amt + insurance_payout
+                profit = -bet_amt
             else:
                 if dealer_total > 21:
-                    profit = bet_amt + insurance_payout
+                    profit = bet_amt
                 elif player_total > dealer_total:
-                    profit = bet_amt + insurance_payout
+                    profit = bet_amt
                 elif player_total < dealer_total:
-                    profit = -bet_amt + insurance_payout
+                    profit = -bet_amt
                 else:
-                    profit = insurance_payout
+                    profit = 0.0
 
-            total_profit += profit
-            total_sq_profit += profit * profit
             round_profit += profit
 
+        total_profit += round_profit
+        total_sq_profit += round_profit * round_profit
         update_iba_stats(round_tc_bucket, round_profit, bet)
         rounds_played += 1
         last_round_result = "win" if round_profit > 0 else "loss" if round_profit < 0 else "push"
@@ -1127,31 +1111,14 @@ def aggregate_chunks(chunks: List[SimulationChunk], request: SimulationRequest) 
             )
         )
 
-    # Calculate RoR
+    # Unit-first engine: RoR is computed as a calculator layer (depends on bankroll/unit size choices),
+    # so the core aggregated result stays independent of those settings.
     ror = None
     ror_detail = None
-    if request.bankroll:
-        ev_hand = mean
-        var_hand = variance
-        if ev_hand <= 0:
-            ror = 1.0
-        else:
-            k = (2 * ev_hand) / var_hand if var_hand > 0 else 0
-            ror = math.exp(-k * request.bankroll)
-
-        trip_hours = 4.0
-        ror_detail = calculate_ror_detail(
-            ev_per_hand=mean,
-            variance_per_hand=variance,
-            bankroll=request.bankroll,
-            n0_hands=n0,
-            trip_hours=trip_hours,
-            hands_per_hour=request.hands_per_hour,
-        )
 
     hours_played = total_hands / request.hands_per_hour if request.hands_per_hour > 0 else None
     avg_initial_bet = total_bet / total_hands if total_hands > 0 else None
-    avg_initial_bet_units = avg_initial_bet / request.unit_size if avg_initial_bet is not None else None
+    avg_initial_bet_units = avg_initial_bet
 
     meta = {
         "rounds_played": str(total_hands),
@@ -1279,7 +1246,13 @@ def run_simulation_parallel(
     except Exception as e:
         # Fall back to single-threaded if multiprocessing fails
         print(f"Parallel execution failed, falling back to single-threaded: {e}")
-        return run_simulation(request, progress_cb, cancel_check)
+        fallback = run_simulation(request, progress_cb, cancel_check)
+        meta = dict(fallback.meta or {})
+        meta["parallel_failed"] = str(e)
+        # Preserve any existing note but make the fallback visible in the UI.
+        note = meta.get("note", "single-process sim")
+        meta["note"] = f"{note}; parallel failed: {e}"
+        return fallback.model_copy(update={"meta": meta})
 
     if not chunks:
         return run_simulation(request, progress_cb, cancel_check)

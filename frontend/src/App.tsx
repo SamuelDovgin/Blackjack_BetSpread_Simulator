@@ -33,6 +33,21 @@ const PRESET_KEY = "bj_presets_v1";
 const emptyRampEntry = (): BetRampEntry => ({ tc_floor: 0, units: 1 });
 const emptyDeviation = (): Deviation => ({ hand_key: "16v10", tc_floor: 0, action: "S" });
 
+// Stale-result detection should only consider settings that affect the simulation outputs (EV/SD/etc).
+// Display/calculator-only knobs (unit_size, bankroll, hands/hour, debug logging) are intentionally ignored.
+const serializeForStaleCheck = (config: any, randomizeSeedEachRun: boolean): string => {
+  const sanitizedSettings = {
+    ...config.settings,
+    seed: randomizeSeedEachRun ? 0 : config.settings.seed,
+    unit_size: 0,
+    bankroll: null,
+    hands_per_hour: 0,
+    debug_log: false,
+    debug_log_hands: 0,
+  };
+  return JSON.stringify({ ...config, settings: sanitizedSettings });
+};
+
 const HelpIcon = ({ text }: { text: string }) => (
   <span className="help-icon" title={text} aria-label={text}>
     ?
@@ -48,9 +63,9 @@ const tcModes = [
 const tcRounding = ["nearest", "floor", "ceil"];
 const handPresets = [50_000, 200_000, 2_000_000];
 const precisionPresets = {
-  fast: { label: "Fast (±0.50u)", abs: 0.5 },
-  balanced: { label: "Balanced (±0.25u)", abs: 0.25 },
-  strict: { label: "Strict (±0.10u)", abs: 0.1 },
+  fast: { label: "Fast (0.50u)", abs: 0.5 },
+  balanced: { label: "Balanced (0.25u)", abs: 0.25 },
+  strict: { label: "Strict (0.10u)", abs: 0.1 },
 } as const;
 
 const builtInRampPresets: Preset[] = [
@@ -596,10 +611,7 @@ function App() {
   const scenarioJson = useMemo(() => (scenarioConfig ? JSON.stringify(scenarioConfig) : ""), [scenarioConfig]);
   const scenarioCompareJson = useMemo(() => {
     if (!scenarioConfig) return "";
-    const compareConfig = randomizeSeedEachRun
-      ? { ...scenarioConfig, settings: { ...scenarioConfig.settings, seed: 0 } }
-      : scenarioConfig;
-    return JSON.stringify(compareConfig);
+    return serializeForStaleCheck(scenarioConfig, randomizeSeedEachRun);
   }, [scenarioConfig, randomizeSeedEachRun]);
   const isStale = lastRunConfig !== null && lastRunConfig !== scenarioCompareJson;
   const isDirty = lastSavedConfig !== null ? lastSavedConfig !== scenarioJson : scenarioConfig !== null;
@@ -617,10 +629,7 @@ function App() {
         ...scenarioConfig,
         settings: { ...scenarioConfig.settings, seed: runSeed },
       };
-      const runCompareConfig = randomizeSeedEachRun
-        ? { ...runConfig, settings: { ...runConfig.settings, seed: 0 } }
-        : runConfig;
-      const runConfigJson = JSON.stringify(runCompareConfig);
+      const runConfigJson = serializeForStaleCheck(runConfig, randomizeSeedEachRun);
       const payload = {
         rules: runConfig.rules,
         counting_system: runConfig.counting_system,
@@ -663,10 +672,7 @@ function App() {
         ...scenarioConfig,
         settings: { ...scenarioConfig.settings, seed: runSeed, hands: handsCount },
       };
-      const runCompareConfig = randomizeSeedEachRun
-        ? { ...runConfig, settings: { ...runConfig.settings, seed: 0 } }
-        : runConfig;
-      const runConfigJson = JSON.stringify(runCompareConfig);
+      const runConfigJson = serializeForStaleCheck(runConfig, randomizeSeedEachRun);
       const payload = {
         rules: runConfig.rules,
         counting_system: runConfig.counting_system,
@@ -767,13 +773,14 @@ function App() {
       return combined;
     };
 
-    const ror = bankroll
+    const bankrollUnits = bankroll !== null && unitSize > 0 ? bankroll / unitSize : null;
+    const ror = bankrollUnits !== null
       ? meanTotal <= 0
         ? 1.0
         : varianceTotal > 0
-          ? Math.exp((-2 * meanTotal * bankroll) / varianceTotal)
+          ? Math.exp((-2 * meanTotal * bankrollUnits) / varianceTotal)
           : 0.0
-      : base.ror ?? next.ror ?? null;
+      : null;
 
     return {
       ev_per_100: meanTotal * 100,
@@ -784,7 +791,7 @@ function App() {
       n0_hands: meanTotal !== 0 ? varianceTotal / (meanTotal * meanTotal) : 0,
       ror,
       avg_initial_bet: avgInitialBet,
-      avg_initial_bet_units: avgInitialBet !== null ? avgInitialBet / unitSize : null,
+      avg_initial_bet_units: avgInitialBet,
       tc_histogram: mergeCounts(base.tc_histogram ?? {}, next.tc_histogram ?? {}),
       tc_histogram_est: mergeCounts(base.tc_histogram_est ?? {}, next.tc_histogram_est ?? {}),
       tc_table: combineTcTable(),
@@ -806,10 +813,7 @@ function App() {
       const runSeed = randomizeSeedEachRun ? Math.floor(Math.random() * 1_000_000_000) : seed;
       if (randomizeSeedEachRun) setSeed(runSeed);
       const runConfig = { ...scenarioConfig, settings: { ...scenarioConfig.settings, seed: runSeed } };
-      const runCompareConfig = randomizeSeedEachRun
-        ? { ...runConfig, settings: { ...runConfig.settings, seed: 0 } }
-        : runConfig;
-      const runConfigJson = JSON.stringify(runCompareConfig);
+      const runConfigJson = serializeForStaleCheck(runConfig, randomizeSeedEachRun);
       const payload = {
         rules: scenarioConfig.rules,
         counting_system: scenarioConfig.counting_system,
@@ -879,13 +883,14 @@ function App() {
       }
     }
 
-    // If we have progress data, create a partial result to preserve what we've computed
-    if (progress && progress.hands_done && progress.hands_done > 0 && progress.ev_per_100_est !== null && progress.stdev_per_100_est !== null) {
+    // If we have progress data, create a partial result to preserve what we've computed.
+    // Note: backend reports EV/SD in *units* (unit_size is display-only).
+    if (progress && progress.hands_done > 0 && progress.ev_per_100_est != null && progress.stdev_per_100_est != null) {
       const ev = progress.ev_per_100_est;
       const stdev = progress.stdev_per_100_est;
       const mean = ev / 100;
       const variance = Math.pow(stdev / 10, 2);
-      const avgBet = progress.avg_initial_bet_est ?? unitSize;
+      const avgBet = progress.avg_initial_bet_est ?? result?.avg_initial_bet ?? 0;
 
       // Create partial result from progress
       const partialResult: SimulationResult = {
@@ -901,7 +906,7 @@ function App() {
         tc_histogram: result?.tc_histogram ?? {},
         tc_histogram_est: result?.tc_histogram_est ?? {},
         tc_table: result?.tc_table ?? [],
-        debug_log: [],
+        debug_hands: [],
         ror: null,
         ror_detail: null,
       };
@@ -1306,18 +1311,22 @@ function App() {
     return progress.hands_total ?? 0;
   }, [progress, isAppending, appendBase]);
 
-  const evPer100 = liveMetrics?.ev_per_100 ?? result?.ev_per_100 ?? null;
-  const stdevPer100 = liveMetrics?.stdev_per_100 ?? result?.stdev_per_100 ?? null;
-  const avgInitialBet = liveMetrics?.avg_initial_bet ?? result?.avg_initial_bet ?? null;
-  const avgInitialBetUnits = avgInitialBet ? avgInitialBet / unitSize : null;
-  const evPerRound = evPer100 !== null ? evPer100 / 100 : null;
-  const winRateDollars = evPerRound !== null ? evPerRound * handsPerHour : null;
-  const winRateUnits = winRateDollars !== null ? winRateDollars / unitSize : null;
-  const winLossPct = avgInitialBet && evPerRound !== null ? (evPerRound / avgInitialBet) * 100 : null;
+  // Unit-first API: backend returns EV/SD in table units. Dollars are derived in the UI via unit size.
+  const evPer100Units = liveMetrics?.ev_per_100 ?? result?.ev_per_100 ?? null;
+  const stdevPer100Units = liveMetrics?.stdev_per_100 ?? result?.stdev_per_100 ?? null;
+  const avgInitialBetUnits = liveMetrics?.avg_initial_bet ?? result?.avg_initial_bet ?? null;
+  const displayUnitSize = unitSize;
+  const evPerRoundUnits = evPer100Units !== null ? evPer100Units / 100 : null;
+  const winRateUnits = evPerRoundUnits !== null ? evPerRoundUnits * handsPerHour : null;
+  const winRateDollars = winRateUnits !== null ? winRateUnits * displayUnitSize : null;
+  const evPer100DisplayDollars = evPer100Units !== null ? evPer100Units * displayUnitSize : null;
+  const stdevPer100DisplayDollars = stdevPer100Units !== null ? stdevPer100Units * displayUnitSize : null;
+  const avgInitialBetDisplayDollars = avgInitialBetUnits !== null ? avgInitialBetUnits * displayUnitSize : null;
+  const evPerRoundDisplayDollars = evPerRoundUnits !== null ? evPerRoundUnits * displayUnitSize : null;
+  const winLossPct =
+    avgInitialBetUnits !== null && evPerRoundUnits !== null ? (evPerRoundUnits / avgInitialBetUnits) * 100 : null;
   const cScore = result?.di ? result.di * result.di : null;
-  const evPer100Units = evPer100 !== null && unitSize > 0 ? evPer100 / unitSize : null;
-  const stdevPer100Units = stdevPer100 !== null && unitSize > 0 ? stdevPer100 / unitSize : null;
-  const riskBankrollUnits = bankroll !== null && unitSize > 0 ? bankroll / unitSize : null;
+  const riskBankrollUnits = bankroll !== null && displayUnitSize > 0 ? bankroll / displayUnitSize : null;
 
   const tripHands = useMemo(() => {
     if (!rorTripValue || Number.isNaN(rorTripValue)) return 0;
@@ -1331,10 +1340,10 @@ function App() {
   }, [status, progressHandsDone, result]);
 
   const ciMetrics = useMemo(() => {
-    if (evPer100 === null || stdevPer100 === null) return null;
+    if (evPer100Units === null || stdevPer100Units === null) return null;
     if (!roundsForCi || roundsForCi <= 1) return null;
-    const mean = evPer100 / 100;
-    const sd = stdevPer100 / 10;
+    const mean = evPer100Units / 100;
+    const sd = stdevPer100Units / 10;
     if (sd <= 0) return null;
     const z = 1.96;
     const seMean = sd / Math.sqrt(roundsForCi);
@@ -1373,20 +1382,24 @@ function App() {
 
     let winLossLow: number | null = null;
     let winLossHigh: number | null = null;
-    if (avgInitialBet && avgInitialBet > 0) {
-      winLossLow = (meanLow / avgInitialBet) * 100;
-      winLossHigh = (meanHigh / avgInitialBet) * 100;
+    if (avgInitialBetUnits !== null && avgInitialBetUnits > 0) {
+      winLossLow = (meanLow / avgInitialBetUnits) * 100;
+      winLossHigh = (meanHigh / avgInitialBetUnits) * 100;
     }
 
     let rorLow: number | null = null;
     let rorHigh: number | null = null;
     if (bankroll && bankroll > 0) {
+      const meanLowDollars = meanLow * displayUnitSize;
+      const meanHighDollars = meanHigh * displayUnitSize;
+      const varianceLowDollars = varianceLow * displayUnitSize * displayUnitSize;
+      const varianceHighDollars = varianceHigh * displayUnitSize * displayUnitSize;
       const rorAt = (m: number, v: number) => {
         if (m <= 0 || v <= 0) return 1;
         return clamp01(Math.exp((-2 * m * bankroll) / v));
       };
-      rorLow = rorAt(meanHigh, varianceLow);
-      rorHigh = rorAt(meanLow, varianceHigh);
+      rorLow = rorAt(meanHighDollars, varianceLowDollars);
+      rorHigh = rorAt(meanLowDollars, varianceHighDollars);
     }
 
     const rorTripAt = (m: number, s: number, hands: number) => {
@@ -1402,8 +1415,8 @@ function App() {
     let rorTripLow: number | null = null;
     let rorTripHigh: number | null = null;
     if (bankroll && tripHands > 0) {
-      rorTripLow = rorTripAt(meanHigh, sdLow, tripHands);
-      rorTripHigh = rorTripAt(meanLow, sdHigh, tripHands);
+      rorTripLow = rorTripAt(meanHigh * displayUnitSize, sdLow * displayUnitSize, tripHands);
+      rorTripHigh = rorTripAt(meanLow * displayUnitSize, sdHigh * displayUnitSize, tripHands);
     }
 
     return {
@@ -1414,8 +1427,8 @@ function App() {
       ev100: { low: meanLow * 100, high: meanHigh * 100 },
       evRound: { low: meanLow, high: meanHigh },
       sd100: { low: sdLow * 10, high: sdHigh * 10 },
-      winRateDollars: { low: meanLow * handsPerHour, high: meanHigh * handsPerHour },
-      winRateUnits: unitSize > 0 ? { low: (meanLow * handsPerHour) / unitSize, high: (meanHigh * handsPerHour) / unitSize } : null,
+      winRateUnits: { low: meanLow * handsPerHour, high: meanHigh * handsPerHour },
+      winRateDollars: { low: meanLow * handsPerHour * displayUnitSize, high: meanHigh * handsPerHour * displayUnitSize },
       winLossPct: { low: winLossLow, high: winLossHigh },
       di: { low: diLow, high: diHigh },
       score: { low: scoreLow, high: scoreHigh },
@@ -1423,14 +1436,12 @@ function App() {
       ror: { low: rorLow, high: rorHigh },
       rorTrip: { low: rorTripLow, high: rorTripHigh },
     };
-  }, [evPer100, stdevPer100, roundsForCi, handsPerHour, avgInitialBet, bankroll, unitSize, tripHands]);
+  }, [evPer100Units, stdevPer100Units, roundsForCi, handsPerHour, avgInitialBetUnits, bankroll, displayUnitSize, tripHands]);
 
   const precisionEstimate = useMemo(() => {
     if (!ciMetrics?.ev100 || evPer100Units === null) return null;
     if (!roundsForCi || roundsForCi <= 0) return null;
-    if (unitSize <= 0) return null;
-    const halfWidthUnits = Math.abs(ciMetrics.ev100.high - ciMetrics.ev100.low) / 2 / unitSize;
-    // Use absolute precision only - relative precision unfairly penalizes low-EV games
+    const halfWidthUnits = Math.abs(ciMetrics.ev100.high - ciMetrics.ev100.low) / 2;
     const targetHalfUnits = precisionAbsolute;
     if (targetHalfUnits <= 0) return null;
     const factor = Math.pow(halfWidthUnits / targetHalfUnits, 2);
@@ -1443,7 +1454,7 @@ function App() {
       targetTotal,
       additional,
     };
-  }, [ciMetrics, evPer100Units, roundsForCi, unitSize, precisionAbsolute, precisionMinHands]);
+  }, [ciMetrics, evPer100Units, roundsForCi, precisionAbsolute, precisionMinHands]);
 
   const ciWarning = useMemo(() => {
     if (!precisionEstimate || !ciMetrics || evPer100Units === null) return null;
@@ -1508,11 +1519,11 @@ function App() {
   }, [autoPrecisionActive, status, result, precisionEstimate, roundsForCi, precisionMinHands]);
 
   const riskInputs = useMemo(() => {
-    if (evPer100 === null || stdevPer100 === null) return null;
+    if (evPer100DisplayDollars === null || stdevPer100DisplayDollars === null) return null;
     const bankrollValue = bankroll ?? null;
     if (bankrollValue === null) return null;
-    const meanPerHand = evPer100 / 100;
-    const stdevPerHand = stdevPer100 / 10;
+    const meanPerHand = evPer100DisplayDollars / 100;
+    const stdevPerHand = stdevPer100DisplayDollars / 10;
     if (stdevPerHand <= 0) return null;
     return {
       meanPerHand,
@@ -1520,7 +1531,7 @@ function App() {
       variancePerHand: stdevPerHand * stdevPerHand,
       bankroll: bankrollValue,
     };
-  }, [evPer100, stdevPer100, bankroll]);
+  }, [evPer100DisplayDollars, stdevPer100DisplayDollars, bankroll]);
 
   const rorSimple = useMemo(() => {
     if (!riskInputs) return null;
@@ -1549,19 +1560,19 @@ function App() {
 
   // Live computed metrics (update during simulation)
   const liveN0 = useMemo(() => {
-    if (evPer100 === null || stdevPer100 === null) return null;
-    const mean = evPer100 / 100;
-    const variance = Math.pow(stdevPer100 / 10, 2);
+    if (evPer100Units === null || stdevPer100Units === null) return null;
+    const mean = evPer100Units / 100;
+    const variance = Math.pow(stdevPer100Units / 10, 2);
     if (mean === 0) return null;
     return variance / (mean * mean);
-  }, [evPer100, stdevPer100]);
+  }, [evPer100Units, stdevPer100Units]);
 
   const liveScore = useMemo(() => {
-    if (evPer100 === null || stdevPer100 === null) return null;
-    const variance = Math.pow(stdevPer100 / 10, 2);
+    if (evPer100Units === null || stdevPer100Units === null) return null;
+    const variance = Math.pow(stdevPer100Units / 10, 2);
     if (variance === 0) return null;
-    return 100 * Math.pow(evPer100 / 100, 2) / variance;
-  }, [evPer100, stdevPer100]);
+    return 100 * Math.pow(evPer100Units / 100, 2) / variance;
+  }, [evPer100Units, stdevPer100Units]);
 
   const liveHoursPlayed = useMemo(() => {
     const rounds = progressHandsDone > 0 ? progressHandsDone : (result ? parseRoundsFromResult(result) : 0);
@@ -1732,7 +1743,8 @@ function App() {
     if (rows.length === 0) return null;
     const steps = betRamp.steps.slice().sort((a, b) => a.tc_floor - b.tc_floor);
     const rampUnitsForTc = (tc: number) => {
-      if (betRamp.wong_out_below !== null && tc < betRamp.wong_out_below) return 0;
+      const wongOut = betRamp.wong_out_below ?? null;
+      if (wongOut !== null && tc < wongOut) return 0;
       let units = steps[0]?.units ?? 0;
       for (const step of steps) {
         if (tc >= step.tc_floor) units = step.units;
@@ -1804,7 +1816,7 @@ function App() {
   }, [tcSummary, betRamp, showExactLine]);
 
   const sessionChart = useMemo(() => {
-    if (evPer100 === null || stdevPer100 === null) return null;
+    if (evPer100Units === null || stdevPer100Units === null) return null;
     if (!tripHours || !tripHandsPerHour) return null;
 
     const steps = Math.max(20, Math.min(tripSteps, 400));
@@ -1812,10 +1824,11 @@ function App() {
     const hph = Math.max(30, Math.min(tripHandsPerHour, 300));
     const totalHands = hours * hph;
     const stepHands = totalHands / steps;
-    const unitScale = showUnits && unitSize > 0 ? 1 / unitSize : 1;
-    const meanPerHand = (evPer100 / 100) * unitScale;
-    const stdevPerHand = (stdevPer100 / 10) * unitScale;
-    const base = startBankrollUnits !== null ? startBankrollUnits * (showUnits ? 1 : unitSize) : 0;
+    const meanPerHandUnits = evPer100Units / 100;
+    const stdevPerHandUnits = stdevPer100Units / 10;
+    const meanPerHand = showUnits ? meanPerHandUnits : meanPerHandUnits * displayUnitSize;
+    const stdevPerHand = showUnits ? stdevPerHandUnits : stdevPerHandUnits * displayUnitSize;
+    const base = startBankrollUnits !== null ? startBankrollUnits * (showUnits ? 1 : displayUnitSize) : 0;
 
     const mulberry32 = (seedValue: number) => {
       let t = seedValue;
@@ -1897,8 +1910,8 @@ function App() {
       base,
     };
   }, [
-    evPer100,
-    stdevPer100,
+    evPer100Units,
+    stdevPer100Units,
     tripHours,
     tripHandsPerHour,
     tripSteps,
@@ -1906,7 +1919,7 @@ function App() {
     sigmaK,
     bandMode,
     showUnits,
-    unitSize,
+    displayUnitSize,
     seed,
     startBankrollUnits,
   ]);
@@ -1920,8 +1933,8 @@ function App() {
     const plotHeight = height - margin.top - margin.bottom;
 
     const extraLines: number[] = [0];
-    if (stopLossUnits !== null) extraLines.push(stopLossUnits * (showUnits ? 1 : unitSize));
-    if (winGoalUnits !== null) extraLines.push(winGoalUnits * (showUnits ? 1 : unitSize));
+    if (stopLossUnits !== null) extraLines.push(stopLossUnits * (showUnits ? 1 : displayUnitSize));
+    if (winGoalUnits !== null) extraLines.push(winGoalUnits * (showUnits ? 1 : displayUnitSize));
 
     const allValues = [
       ...sessionChart.mean,
@@ -1986,7 +1999,7 @@ function App() {
       bandInner: sessionChart.lowerInner.length ? bandPath(sessionChart.lowerInner, sessionChart.upperInner) : null,
       linePaths: sessionChart.lines.map(buildPath),
     };
-  }, [sessionChart, stopLossUnits, winGoalUnits, showUnits, unitSize]);
+  }, [sessionChart, stopLossUnits, winGoalUnits, showUnits, displayUnitSize]);
 
   return (
     <div className="app">
@@ -2622,7 +2635,7 @@ function App() {
               </label>
               <label>
                 <span className="label-row">
-                  Target (±u/100)
+                  Target (u/100)
                   <HelpIcon text="Stop when the 95% CI half-width is below this absolute unit value per 100 rounds." />
                 </span>
                 <input
@@ -2810,23 +2823,33 @@ function App() {
                   <div className="metric">
                     <div className="label">EV / 100 rounds</div>
                     <div className="value">
-                      {evPer100 === null
+                      {evPer100Units === null
                         ? "n/a"
                         : showUnits
-                          ? (evPer100 / unitSize).toFixed(2) + " u"
-                          : "$" + evPer100.toFixed(2)}
+                          ? evPer100Units.toFixed(2) + " u"
+                          : evPer100DisplayDollars !== null
+                            ? "$" + evPer100DisplayDollars.toFixed(2)
+                            : "n/a"}
                     </div>
                     <div className="sub">
                       EV/round:{" "}
-                      {evPer100 === null
+                      {evPer100Units === null
                         ? "n/a"
                         : showUnits
-                          ? (evPer100 / unitSize / 100).toFixed(4) + " u"
-                          : "$" + (evPer100 / 100).toFixed(4)}
+                          ? (evPer100Units / 100).toFixed(4) + " u"
+                          : evPerRoundDisplayDollars !== null
+                            ? "$" + evPerRoundDisplayDollars.toFixed(4)
+                            : "n/a"}
                       {showConfidence && ciMetrics?.evRound
                         ? ` • 95% CI: ${showUnits
-                          ? formatRange(ciMetrics.evRound.low / unitSize, ciMetrics.evRound.high / unitSize, 4, " u")
-                          : formatRange(ciMetrics.evRound.low, ciMetrics.evRound.high, 4, "", "$")}`
+                          ? formatRange(ciMetrics.evRound.low, ciMetrics.evRound.high, 4, " u")
+                          : formatRange(
+                              ciMetrics.evRound.low * displayUnitSize,
+                              ciMetrics.evRound.high * displayUnitSize,
+                              4,
+                              "",
+                              "$"
+                            )}`
                         : ""}
                     </div>
                     {showConfidence && (
@@ -2834,8 +2857,14 @@ function App() {
                         95% CI (EV/100):{" "}
                         {ciMetrics?.ev100
                           ? showUnits
-                            ? formatRange(ciMetrics.ev100.low / unitSize, ciMetrics.ev100.high / unitSize, 2, " u")
-                            : formatRange(ciMetrics.ev100.low, ciMetrics.ev100.high, 2, "", "$")
+                            ? formatRange(ciMetrics.ev100.low, ciMetrics.ev100.high, 2, " u")
+                            : formatRange(
+                                ciMetrics.ev100.low * displayUnitSize,
+                                ciMetrics.ev100.high * displayUnitSize,
+                                2,
+                                "",
+                                "$"
+                              )
                           : "n/a"}
                       </div>
                     )}
@@ -2843,19 +2872,27 @@ function App() {
                   <div className="metric">
                     <div className="label">SD / 100 rounds</div>
                     <div className="value">
-                      {stdevPer100 === null
+                      {stdevPer100Units === null
                         ? "n/a"
                         : showUnits
-                          ? (stdevPer100 / unitSize).toFixed(2) + " u"
-                          : "$" + stdevPer100.toFixed(2)}
+                          ? stdevPer100Units.toFixed(2) + " u"
+                          : stdevPer100DisplayDollars !== null
+                            ? "$" + stdevPer100DisplayDollars.toFixed(2)
+                            : "n/a"}
                     </div>
                     {showConfidence && (
                       <div className="sub muted">
                         95% CI:{" "}
                         {ciMetrics?.sd100
                           ? showUnits
-                            ? formatRange(ciMetrics.sd100.low / unitSize, ciMetrics.sd100.high / unitSize, 2, " u")
-                            : formatRange(ciMetrics.sd100.low, ciMetrics.sd100.high, 2, "", "$")
+                            ? formatRange(ciMetrics.sd100.low, ciMetrics.sd100.high, 2, " u")
+                            : formatRange(
+                                ciMetrics.sd100.low * displayUnitSize,
+                                ciMetrics.sd100.high * displayUnitSize,
+                                2,
+                                "",
+                                "$"
+                              )
                           : "n/a"}
                       </div>
                     )}
@@ -2895,7 +2932,9 @@ function App() {
                     {showConfidence && (
                       <div className="sub muted">
                         95% CI:{" "}
-                        {ciMetrics?.ror ? formatRange(ciMetrics.ror.low * 100, ciMetrics.ror.high * 100, 3, "%") : "n/a"}
+                        {ciMetrics?.ror && ciMetrics.ror.low != null && ciMetrics.ror.high != null
+                          ? formatRange(ciMetrics.ror.low * 100, ciMetrics.ror.high * 100, 3, "%")
+                          : "n/a"}
                       </div>
                     )}
                   </div>
@@ -3193,8 +3232,8 @@ function App() {
                       className="chart-threshold stop"
                       x1={sessionSvg.margin.left}
                       x2={sessionSvg.margin.left + sessionSvg.plotWidth}
-                      y1={sessionSvg.scaleY(stopLossUnits * (showUnits ? 1 : unitSize))}
-                      y2={sessionSvg.scaleY(stopLossUnits * (showUnits ? 1 : unitSize))}
+                      y1={sessionSvg.scaleY(stopLossUnits * (showUnits ? 1 : displayUnitSize))}
+                      y2={sessionSvg.scaleY(stopLossUnits * (showUnits ? 1 : displayUnitSize))}
                     />
                   )}
                   {winGoalUnits !== null && (
@@ -3202,8 +3241,8 @@ function App() {
                       className="chart-threshold goal"
                       x1={sessionSvg.margin.left}
                       x2={sessionSvg.margin.left + sessionSvg.plotWidth}
-                      y1={sessionSvg.scaleY(winGoalUnits * (showUnits ? 1 : unitSize))}
-                      y2={sessionSvg.scaleY(winGoalUnits * (showUnits ? 1 : unitSize))}
+                      y1={sessionSvg.scaleY(winGoalUnits * (showUnits ? 1 : displayUnitSize))}
+                      y2={sessionSvg.scaleY(winGoalUnits * (showUnits ? 1 : displayUnitSize))}
                     />
                   )}
                   <path d={sessionSvg.bandOuter} className="chart-band-outer" />
@@ -3326,7 +3365,10 @@ function App() {
                     <div className="risk-value">{formatRor(rorSimple)}</div>
                     {showConfidence && (
                       <div className="muted">
-                        95% CI: {ciMetrics?.ror ? formatRange(ciMetrics.ror.low * 100, ciMetrics.ror.high * 100, 3, "%") : "n/a"}
+                        95% CI:{" "}
+                        {ciMetrics?.ror && ciMetrics.ror.low != null && ciMetrics.ror.high != null
+                          ? formatRange(ciMetrics.ror.low * 100, ciMetrics.ror.high * 100, 3, "%")
+                          : "n/a"}
                       </div>
                     )}
                   </div>
@@ -3337,7 +3379,9 @@ function App() {
                       {showConfidence && (
                         <div className="muted">
                           95% CI:{" "}
-                          {ciMetrics?.rorTrip ? formatRange(ciMetrics.rorTrip.low * 100, ciMetrics.rorTrip.high * 100, 3, "%") : "n/a"}
+                          {ciMetrics?.rorTrip && ciMetrics.rorTrip.low != null && ciMetrics.rorTrip.high != null
+                            ? formatRange(ciMetrics.rorTrip.low * 100, ciMetrics.rorTrip.high * 100, 3, "%")
+                            : "n/a"}
                         </div>
                       )}
                       <div className="muted">
@@ -3348,21 +3392,21 @@ function App() {
                 </div>
                 <div className="muted">
                   Uses EV/100{" "}
-                  {evPer100 === null
+                  {evPer100Units === null
                     ? "n/a"
                     : showUnits
-                      ? evPer100Units === null
-                        ? "n/a"
-                        : `${formatNumber(evPer100Units)} u`
-                      : `$${formatNumber(evPer100)}`}{" "}
+                      ? `${formatNumber(evPer100Units)} u`
+                      : evPer100DisplayDollars !== null
+                        ? `$${formatNumber(evPer100DisplayDollars)}`
+                        : "n/a"}{" "}
                   and SD/100{" "}
-                  {stdevPer100 === null
+                  {stdevPer100Units === null
                     ? "n/a"
                     : showUnits
-                      ? stdevPer100Units === null
-                        ? "n/a"
-                        : `${formatNumber(stdevPer100Units)} u`
-                      : `$${formatNumber(stdevPer100)}`}{" "}
+                      ? `${formatNumber(stdevPer100Units)} u`
+                      : stdevPer100DisplayDollars !== null
+                        ? `$${formatNumber(stdevPer100DisplayDollars)}`
+                        : "n/a"}{" "}
                   from the current run. Bankroll: {bankroll !== null ? `$${bankroll.toFixed(2)}` : "n/a"} (
                   {riskBankrollUnits !== null ? riskBankrollUnits.toFixed(1) + " u" : "n/a"}).
                 </div>
@@ -3483,20 +3527,26 @@ function App() {
                               ? `95% CI: ${
                                   ciMetrics?.ev100
                                     ? showUnits
-                                      ? formatRange(ciMetrics.ev100.low / unitSize, ciMetrics.ev100.high / unitSize, 2, " u")
-                                      : formatRange(ciMetrics.ev100.low, ciMetrics.ev100.high, 2, "", "$")
+                                      ? formatRange(ciMetrics.ev100.low, ciMetrics.ev100.high, 2, " u")
+                                      : formatRange(
+                                          ciMetrics.ev100.low * displayUnitSize,
+                                          ciMetrics.ev100.high * displayUnitSize,
+                                          2,
+                                          "",
+                                          "$"
+                                        )
                                     : "n/a"
                                 }`
                               : undefined
                           }
                         >
-                          {evPer100 === null
+                          {evPer100Units === null
                             ? "n/a"
                             : showUnits
-                              ? evPer100Units === null
-                                ? "n/a"
-                                : `${formatNumber(evPer100Units)} u`
-                              : `$${formatNumber(evPer100)}`}
+                              ? `${formatNumber(evPer100Units)} u`
+                              : evPer100DisplayDollars !== null
+                                ? `$${formatNumber(evPer100DisplayDollars)}`
+                                : "n/a"}
                         </td>
                         <td
                           title={
@@ -3504,25 +3554,35 @@ function App() {
                               ? `95% CI: ${
                                   ciMetrics?.sd100
                                     ? showUnits
-                                      ? formatRange(ciMetrics.sd100.low / unitSize, ciMetrics.sd100.high / unitSize, 2, " u")
-                                      : formatRange(ciMetrics.sd100.low, ciMetrics.sd100.high, 2, "", "$")
+                                      ? formatRange(ciMetrics.sd100.low, ciMetrics.sd100.high, 2, " u")
+                                      : formatRange(
+                                          ciMetrics.sd100.low * displayUnitSize,
+                                          ciMetrics.sd100.high * displayUnitSize,
+                                          2,
+                                          "",
+                                          "$"
+                                        )
                                     : "n/a"
                                 }`
                               : undefined
                           }
                         >
-                          {stdevPer100 === null
+                          {stdevPer100Units === null
                             ? "n/a"
                             : showUnits
-                              ? stdevPer100Units === null
-                                ? "n/a"
-                                : `${formatNumber(stdevPer100Units)} u`
-                              : `$${formatNumber(stdevPer100)}`}
+                              ? `${formatNumber(stdevPer100Units)} u`
+                              : stdevPer100DisplayDollars !== null
+                                ? `$${formatNumber(stdevPer100DisplayDollars)}`
+                                : "n/a"}
                         </td>
                         <td
                           title={
                             showConfidence
-                              ? `95% CI: ${ciMetrics?.ror ? formatRange(ciMetrics.ror.low * 100, ciMetrics.ror.high * 100, 3, "%") : "n/a"}`
+                              ? `95% CI: ${
+                                  ciMetrics?.ror && ciMetrics.ror.low != null && ciMetrics.ror.high != null
+                                    ? formatRange(ciMetrics.ror.low * 100, ciMetrics.ror.high * 100, 3, "%")
+                                    : "n/a"
+                                }`
                               : undefined
                           }
                         >

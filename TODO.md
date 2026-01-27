@@ -24,11 +24,11 @@ The improvements below address gaps in these core areas. Each enhancement makes 
 
 **Priority:** 🔴 CRITICAL
 
-**Status:** Implemented in the frontend (95% CI from EV/SD + rounds using normal approximations). Backend CI fields still pending if we want to expose them via API.
+**Status:** Implemented in the frontend (RoR + Trip RoR + required bankrolls computed from the current run's EV/SD plus your bankroll and unit size). Backend RoR is intentionally not computed to keep the engine unit-first and cache-friendly.
 
 #### Why This Matters
 
-The current RoR calculation at `simulation.py:538-547` uses a simple log-ruin formula:
+Previously, the backend used a simple log-ruin approximation (removed). The RoR calculator now lives in the frontend and is recomputed instantly when you change bankroll/unit size.
 
 ```python
 k = (2 * ev_hand) / var_hand if var_hand > 0 else 0
@@ -47,8 +47,8 @@ The variance contribution from high-count bets dominates, but the current formul
 
 | File | Lines | What's There |
 |------|-------|--------------|
-| `backend/app/engine/simulation.py` | 538-547 | Simple log-ruin RoR |
-| `backend/app/models.py` | 114 | `ror: Optional[float]` field |
+| `backend/app/engine/simulation.py` | - | RoR removed; engine returns unit-first EV/SD/variance only |
+| `backend/app/models.py` | - | `ror` and `ror_detail` fields retained for compatibility (typically null) |
 | `frontend/src/App.tsx` | ~1800-1850 | RoR display in results |
 
 #### Acceptance Criteria
@@ -60,7 +60,7 @@ The variance contribution from high-count bets dominates, but the current formul
 - [ ] Per-TC variance weighted by bet size squared (future enhancement)
 - [ ] Kelly-based RoR calculation option (future enhancement)
 - [ ] Monte Carlo RoR estimation option (for verification - future enhancement)
-- [ ] 95% confidence interval on RoR estimate (future enhancement)
+- [x] 95% confidence interval on RoR estimate (derived from EV/SD CI in the frontend)
 - [ ] Unit tests comparing to known CVCX values (future enhancement)
 
 #### Implementation Steps

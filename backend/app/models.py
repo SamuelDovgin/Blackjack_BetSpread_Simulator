@@ -69,8 +69,8 @@ class SimulationRequest(BaseModel):
     counting_system: CountingSystem = CountingSystem()
     deviations: List[Deviation] = Field(default_factory=list)
     bet_ramp: BetRamp
-    bankroll: Optional[float] = None
-    unit_size: float = 10.0
+    bankroll: Optional[float] = None  # Calculator-only (RoR, etc.) - not used by the unit-first sim core
+    unit_size: float = 10.0  # Display/conversion only; sim core uses table units
     hands: int = Field(2_000_000, ge=100)
     seed: int = 42
     processes: int = Field(4, ge=1, le=64)
@@ -117,16 +117,17 @@ class RoRResult(BaseModel):
 
 
 class SimulationResult(BaseModel):
+    # Unit-first results: these values are expressed in table units (not dollars).
     ev_per_100: float
     stdev_per_100: float
-    variance_per_hand: float
+    variance_per_hand: float  # units^2 per round
     di: float  # desirability index
     score: float
     n0_hands: float
     ror: Optional[float] = None  # Keep for backwards compatibility (simple RoR)
     ror_detail: Optional[RoRResult] = None  # New detailed RoR analysis
-    avg_initial_bet: Optional[float] = None
-    avg_initial_bet_units: Optional[float] = None
+    avg_initial_bet: Optional[float] = None  # in units
+    avg_initial_bet_units: Optional[float] = None  # deprecated; same as avg_initial_bet
     tc_histogram: Dict[int, int] = Field(default_factory=dict)
     tc_histogram_est: Dict[int, int] = Field(default_factory=dict)
     tc_table: List[TcTableEntry] = Field(default_factory=list)

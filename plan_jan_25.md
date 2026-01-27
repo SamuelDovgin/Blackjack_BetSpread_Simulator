@@ -17,6 +17,9 @@
 - Stop no longer wipes the current results/config; it just stops polling and keeps the last results.
 - Run Status uses a persistent rounds count (includes appended hands).
 - Advanced metrics toggle removed; DI always displays in Primary Metrics.
+- Unit-first refactor: backend simulates in units; `Unit size ($)` is now display/conversion only (so changing it scales dollar metrics but not unit metrics).
+- Removed the append guard that blocked adding hands after a Unit size change (safe under unit-first semantics).
+- Fixed stale-results detection: the "Results are from a previous configuration" banner now ignores unit size, bankroll, hands/hour, and debug toggles.
 
 ## To Do (Remaining)
 - Validate that the stale-results banner no longer appears immediately after a run when seed is randomized.
@@ -26,12 +29,13 @@
 - Verify confidence intervals show correct units ($ vs u) and update when toggling Show units.
 - Sanity-check CI ranges for EV/SD and RoR with small and large hand counts.
 - Decide whether auto-continue should cap batch sizes to avoid very large single runs.
-- Consider disabling the relative precision rule when EV is near zero (absolute rule only).
+- Decide whether Precision Target should also require that the CI excludes 0 (optional stricter stop condition).
 
 ## Notes
 - RoR now uses the calculator output directly, so updating bankroll updates both the widget and Primary Metrics instantly.
 - Built-in ramp defaults avoid wong-out thresholds below -1, per recent discussion.
-- Precision targets use max(relative, absolute) half-width so EV near zero uses the absolute target.
+- Precision targets use an absolute 95% CI half-width threshold (u/100). The badge still shows relative CI width vs EV for context.
+- Unit size affects RoR only through bankroll-in-units (bankroll $ / unit size $ per unit).
 
 ## How to Observe (RoR)
 - Run a simulation (so EV/SD are available).

@@ -5,14 +5,16 @@
   - Full hand-by-hand simulation with Hi-Lo counting.
   - Basic strategy logic switches key decisions based on H17 vs S17 (e.g., A7v2 and 11vA).
   - Splits with queue-based resolution respecting: max splits, resplit aces, hit-split-aces toggle, double-after-split, double-any-two, surrender, insurance, H17/S17.
-  - Bet ramp with wong-out and optional cash or unit entry.
+  - Bet ramp with wong-out and optional cash or unit entry (cash is converted to units at request time).
   - Wong-out policy: anytime / after loss only / after hand only.
   - Deviations (Illustrious 18 + Fab 4 preset) applied to actions and insurance.
   - True count histogram (raw) and estimated TC histogram (if deck estimation is enabled).
   - Deck estimation: perfect (0), half-deck, or full-deck quantization with rounding (nearest/floor/ceil) and toggles for using estimated TC for betting and deviations. Defaults to full-deck + floor.
   - Wong-out burns cards to advance the shoe realistically.
-  - Metrics: EV/100, stdev/100, DI, SCORE, N0, RoR (log-ruin approximation), hours_played (from hands_per_hour), tc_histogram, tc_histogram_est.
+  - Unit-first metrics (unit_size is display-only): EV/100 (u), SD/100 (u), DI, SCORE, N0, hours_played, tc_histogram, tc_histogram_est.
+  - Correct split-round accounting: insurance is charged/paid once per round; variance uses round_profit^2 (not per-hand squares).
   - Debug logging: first N hands with cards, bets, actions, outcomes; includes raw and estimated TC.
+  - Optional multiprocessing for large runs (ProcessPoolExecutor). If multiprocessing is not permitted by the runtime environment, the backend falls back to single-process and records the reason in `result.meta.parallel_failed`.
 
 - **Backend API (FastAPI)**
   - `POST /api/simulations` to start a simulation.
@@ -30,7 +32,7 @@
   - Results pane with primary metrics cards, unit toggle, and TC histograms (raw + estimated).
   - Metrics include Bet Average (units), win rate (units/hour + $/hour), RoR percent, and equivalent table time.
   - Confidence intervals (95%) available for primary metrics and performance table tooltips.
-  - Precision Target controls near Run/Stop to continue runs until a CI target is reached (fast/balanced/strict presets).
+  - Precision Target controls near Run/Stop to continue runs until an absolute 95% CI half-width target is reached (u/100; fast/balanced/strict presets).
   - Auto-continue can append multiple batches until the CI target is met (with a minimum hands threshold).
   - Trip outcomes chart with simulated paths, axes/gridlines, and sigma/percentile bands (normal approximation).
   - Risk of Ruin calculator widget (simple + trip) under histograms, driven by EV/SD from the current run (trip uses Brownian/normal approximation) and a shared global bankroll input.
@@ -55,9 +57,10 @@
 
 - **Tests**
   - Pair strategy sanity checks, deck-estimation rounding checks, simulation smoke test (rounds_played, histograms, hours_played).
+  - Unit invariance test: changing `unit_size` does not change unit-based results (EV/SD/variance/avg bet in units).
 
 ## Known Limitations / Future Work
-- Performance: currently single-process, no Numba; add multiprocessing and JIT for speed.
+- Performance: multiprocessing is optional but can be blocked by sandboxed/restricted environments; add Numba/JIT and further profiling for speed.
 - RoR: uses a simple log-ruin approximation; refine with Kelly fraction and variable-bet ruin models.
 - Strategy coverage: basic pair/soft/hard tables are simplified; expand for full rule sets and validate against known benchmarks.
 - Wong-out table consumption: add configurable table hand count to burn cards when sitting out.

@@ -6,10 +6,10 @@ from app.models import Rules, SimulationRequest
 
 
 def test_pair_strategy_basic():
-    rules = SimulationRequest().rules
+    rules = Rules()
     assert pair_strategy_action("8", "T", rules) == "P"  # 8-8 vs T splits
     assert pair_strategy_action("T", "6", rules) == "S"  # tens stand
-    assert pair_strategy_action("9", "7", rules) == "P"
+    assert pair_strategy_action("9", "7", rules) == "S"
 
 def test_pair_strategy_das_sensitive():
     das = Rules(double_after_split=True)
@@ -63,3 +63,25 @@ def test_rounds_played_and_histograms():
     assert len(res.tc_table) > 0
     assert res.hours_played is not None and res.hours_played > 0
     assert res.avg_initial_bet is not None and res.avg_initial_bet > 0
+
+
+def test_unit_size_does_not_affect_unit_results():
+    """Unit-first engine: changing unit_size should not change EV/SD in units."""
+    base_req = SimulationRequest(
+        rules=Rules(decks=1, penetration=0.75, hit_soft_17=True),
+        counting_system=DEFAULT_COUNT,
+        deviations=ILLUSTRIOUS_18_FAB_4,
+        bet_ramp=DEFAULT_RAMP,
+        hands=2000,
+        seed=11,
+        debug_log=False,
+        deck_estimation_step=1.0,
+        deck_estimation_rounding="nearest",
+        hands_per_hour=200,
+    )
+    r1 = run_simulation(base_req.model_copy(update={"unit_size": 5}))
+    r2 = run_simulation(base_req.model_copy(update={"unit_size": 150}))
+    assert math.isclose(r1.ev_per_100, r2.ev_per_100, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(r1.stdev_per_100, r2.stdev_per_100, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(r1.variance_per_hand, r2.variance_per_hand, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose((r1.avg_initial_bet or 0), (r2.avg_initial_bet or 0), rel_tol=0, abs_tol=1e-12)
