@@ -64,6 +64,7 @@ export interface GameState {
 export interface TrainingSettings {
   // Display
   showCount: boolean;
+  showHandTotals: boolean;
   showDeviations: boolean;
   showHints: boolean;
 
@@ -114,6 +115,7 @@ export interface SessionState {
 // Default values
 export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
   showCount: false,        // Hidden by default (realistic practice)
+  showHandTotals: false,   // Hidden by default (realistic practice)
   showDeviations: true,
   showHints: false,        // Opt-in feature
   autoBet: true,

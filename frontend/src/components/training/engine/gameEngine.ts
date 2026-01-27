@@ -203,11 +203,11 @@ export function dealInitialCards(
   shoe = p1.remainingShoe;
   dealtCards.push(p1.card);
 
-  // Deal dealer first card (face up)
+  // Deal dealer first card (face down - hole card)
   const d1 = drawCard(shoe);
   if (!d1) return state;
   shoe = d1.remainingShoe;
-  dealtCards.push(d1.card);
+  const dealerHoleCard: Card = { ...d1.card, faceUp: false };
 
   // Deal player second card
   const p2 = drawCard(shoe);
@@ -215,14 +215,14 @@ export function dealInitialCards(
   shoe = p2.remainingShoe;
   dealtCards.push(p2.card);
 
-  // Deal dealer second card (face down)
+  // Deal dealer second card (face up - upcard)
   const d2 = drawCard(shoe);
   if (!d2) return state;
   shoe = d2.remainingShoe;
-  const dealerHoleCard: Card = { ...d2.card, faceUp: false };
+  dealtCards.push(d2.card);
 
   const playerCards = [p1.card, p2.card];
-  const dealerCards = [d1.card, dealerHoleCard];
+  const dealerCards = [dealerHoleCard, d2.card];
 
   const playerHand: HandState = {
     cards: playerCards,
@@ -234,11 +234,11 @@ export function dealInitialCards(
     isComplete: false,
   };
 
-  // Update running count (only for face-up cards)
+  // Update running count (only for face-up cards: p1, p2, d2)
   const newRunningCount = state.runningCount +
     getCountValue(p1.card) +
-    getCountValue(d1.card) +
-    getCountValue(p2.card);
+    getCountValue(p2.card) +
+    getCountValue(d2.card);
 
   return {
     ...state,
@@ -252,7 +252,7 @@ export function dealInitialCards(
     currentBet: bet,
     bankroll: state.bankroll - bet,
     roundNumber: state.roundNumber + 1,
-    phase: 'player-action',
+    phase: 'dealing',  // Start with dealing animation, TrainingPage will transition to player-action
     lastAction: null,
     lastActionCorrect: null,
     correctAction: null,
@@ -404,7 +404,74 @@ export function double(state: GameState): GameState {
   };
 }
 
-// Split action
+// Split action - Phase 1: Separate cards without dealing new ones (for animation)
+export function splitSeparate(state: GameState): GameState {
+  const handIndex = state.activeHandIndex;
+  const hand = state.playerHands[handIndex];
+  if (!hand || hand.isComplete || !canSplit(hand)) return state;
+
+  // Create two new hands with just one card each (no new cards dealt yet)
+  const hand1: HandState = {
+    cards: [hand.cards[0]], // Bottom card stays in original position
+    bet: hand.bet,
+    isDoubled: false,
+    isSurrendered: false,
+    isBusted: false,
+    isBlackjack: false,
+    isComplete: false,
+  };
+
+  const hand2: HandState = {
+    cards: [hand.cards[1]], // Top card moves to new hand (right side)
+    bet: hand.bet,
+    isDoubled: false,
+    isSurrendered: false,
+    isBusted: false,
+    isBlackjack: false,
+    isComplete: false,
+  };
+
+  const newHands = [...state.playerHands];
+  newHands.splice(handIndex, 1, hand1, hand2);
+
+  return {
+    ...state,
+    playerHands: newHands,
+    bankroll: state.bankroll - hand.bet, // Deduct additional bet for split
+    lastAction: 'split',
+  };
+}
+
+// Split action - Phase 2: Deal card to a specific hand
+export function dealToHand(state: GameState, handIndex: number): GameState {
+  const hand = state.playerHands[handIndex];
+  if (!hand) return state;
+
+  const result = drawCard(state.shoe);
+  if (!result) return state;
+
+  const newCards = [...hand.cards, result.card];
+  const isAceSplit = hand.cards[0]?.rank === 'A';
+
+  const newHand: HandState = {
+    ...hand,
+    cards: newCards,
+    isComplete: isAceSplit, // Aces split only get one card
+  };
+
+  const newHands = [...state.playerHands];
+  newHands[handIndex] = newHand;
+
+  return {
+    ...state,
+    shoe: result.remainingShoe,
+    cardsDealt: state.cardsDealt + 1,
+    runningCount: state.runningCount + getCountValue(result.card),
+    playerHands: newHands,
+  };
+}
+
+// Split action - Full split (legacy, deals both cards at once)
 export function split(state: GameState): GameState {
   const handIndex = state.activeHandIndex;
   const hand = state.playerHands[handIndex];

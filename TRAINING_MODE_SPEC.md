@@ -2,9 +2,20 @@
 
 ## Task #36 & #37: Play-by-Play Training + Counting Practice
 
-**Document Version:** 1.1
-**Status:** Design Complete - Ready for Implementation
-**Last Updated:** Based on user input session
+**Document Version:** 1.2
+**Status:** Phase 1-2 Implementation Complete - Core UI Working
+**Last Updated:** January 2026
+
+### Implementation Progress
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| Phase 1: Core Infrastructure | ✅ Complete | Types, game engine, card component |
+| Phase 2: Basic Gameplay | ✅ Mostly Complete | All actions work, basic UI done |
+| Phase 3: Decision Validation | 🔲 Not Started | Need basic strategy checking |
+| Phase 4: Mobile Optimization | 🔲 Not Started | CSS is responsive but needs testing |
+| Phase 5: Counting Practice | 🔲 Not Started | Count display exists, drills needed |
+| Phase 6: Statistics & Polish | 🔲 Not Started | Need session stats, history |
 
 ---
 
@@ -2127,20 +2138,20 @@ const MILESTONES = [
 
 ## 12. Implementation Phases
 
-### Phase 1: Core Infrastructure (Week 1)
-- [ ] Set up routing (React Router or tab-based)
-- [ ] Create TrainingModeProvider context
-- [ ] Create TrainingGameEngine class
-- [ ] Basic state management with useReducer
-- [ ] Basic card component (no animations yet)
+### Phase 1: Core Infrastructure (Week 1) ✅ COMPLETE
+- [x] Set up routing (state-based page switching, no router needed)
+- [x] Create TrainingModeProvider context (simplified to props passing)
+- [x] Create TrainingGameEngine class (`engine/gameEngine.ts`)
+- [x] Basic state management with useState hooks
+- [x] Basic card component with animations (`Card.tsx`)
 
-### Phase 2: Basic Gameplay (Week 2)
-- [ ] Implement dealing flow
-- [ ] Add action buttons
-- [ ] Implement all player actions (H/S/D/P/R)
-- [ ] Add dealer play logic
-- [ ] Implement payout resolution
-- [ ] Basic feedback display
+### Phase 2: Basic Gameplay (Week 2) ✅ MOSTLY COMPLETE
+- [x] Implement dealing flow
+- [x] Add action buttons (`ActionButtons.tsx`)
+- [x] Implement all player actions (H/S/D/P/R)
+- [x] Add dealer play logic
+- [x] Implement payout resolution
+- [ ] Basic feedback display (in progress)
 
 ### Phase 3: Decision Validation (Week 3)
 - [ ] Implement basic strategy lookup
@@ -2175,22 +2186,33 @@ const MILESTONES = [
 
 ## 13. File Structure
 
+### Implemented Structure (Current)
+
 ```
 frontend/src/
 ├── components/
 │   ├── training/
-│   │   ├── TrainingModePage.tsx       # Main page component
-│   │   ├── TrainingHeader.tsx         # Header with back button, settings
-│   │   ├── ModeSelector.tsx           # Tab/mode selection
-│   │   │
-│   │   ├── game/
-│   │   │   ├── GameTable.tsx          # Main game area container
-│   │   │   ├── DealerArea.tsx         # Dealer cards display
-│   │   │   ├── PlayerArea.tsx         # Player hands display
-│   │   │   ├── PlayerHand.tsx         # Single hand component
-│   │   │   ├── ActionButtons.tsx      # Hit/Stand/Double/Split/Surrender
-│   │   │   ├── BettingControls.tsx    # Bet placement UI
-│   │   │   └── ShoeIndicator.tsx      # Cards remaining display
+│   │   ├── index.ts                   # Module exports
+│   │   ├── types.ts                   # Type definitions
+│   │   ├── TrainingPage.tsx           # Main page component (✅)
+│   │   ├── TrainingPage.css           # Page styles (✅)
+│   │   ├── Table.tsx                  # Casino table (✅)
+│   │   ├── Table.css                  # Table styles (✅)
+│   │   ├── Card.tsx                   # Playing card component (✅)
+│   │   ├── Card.css                   # Card styles with animations (✅)
+│   │   ├── ActionButtons.tsx          # Hit/Stand/Double/Split/Surrender (✅)
+│   │   ├── ActionButtons.css          # Action button styles (✅)
+│   │   └── engine/
+│   │       └── gameEngine.ts          # Core game logic (✅)
+```
+
+### Planned Structure (Future)
+
+```
+frontend/src/
+├── components/
+│   ├── training/
+│   │   ├── ...existing files...
 │   │   │
 │   │   ├── feedback/
 │   │   │   ├── FeedbackPanel.tsx      # Correct/incorrect feedback
@@ -3229,3 +3251,378 @@ The implementation is broken into 6 phases over approximately 6 weeks, with clea
 8. **Statistics Tracking**: Know your weak spots and track improvement
 
 The implementation is broken into 6 phases over approximately 6 weeks, with clear milestones and file structure.
+
+---
+
+## TODO / Implementation Status
+
+### ✅ Phase 1 & 2: Core Implementation - COMPLETE
+
+**Completed Items:**
+- [x] Types and interfaces (types.ts)
+- [x] Game engine with all actions (engine/gameEngine.ts)
+- [x] Card component with realistic casino styling
+- [x] Card dealing animation from off-screen right (linear speed)
+- [x] Card removal animation to off-screen left after hand completes
+- [x] Table component with green felt
+- [x] ActionButtons component
+- [x] TrainingPage component with header, settings, stats
+- [x] Integration with main App (page switching)
+- [x] All player actions working (hit, stand, double, split, surrender)
+- [x] Dealer play automation
+- [x] Bankroll tracking
+- [x] Running/True count calculation
+- [x] Settings panel (show count, hints, auto-bet, etc.)
+- [x] Default to NOT showing count (realistic practice)
+- [x] Card stacking: Player cards overlap diagonally (first on bottom, subsequent on top going up-right)
+- [x] Card stacking: Dealer cards side by side (not overlapping), then stack after hole card reveal
+- [x] Full green felt background across entire training page
+- [x] Shoe visual on desktop (hidden on mobile) - cards deal from shoe location
+- [x] Discard pile visual on desktop (hidden on mobile) - cards animate to discard
+- [x] Mobile: Cards deal from off-screen right, discard to off-screen left
+- [x] Dealer cards animate horizontally only (no vertical arc) for predictable motion
+- [x] Player cards animate with slight vertical arc for visual variety
+- [x] 3D card flip animation for hole card reveal (natural rotation showing front at 50%)
+- [x] Hole card always uses flip container so DOM doesn't swap during/after flip
+- [x] Fixed stale closure bug in handleAction - now uses functional setState
+- [x] Player cards have no transition (land in final position immediately, no drift)
+
+### 🔄 Phase 3: Decision Validation - IN PROGRESS
+
+**Next Priority Items:**
+1. **Basic Strategy Checker** - Implement strategy checking against configured strategy
+   - Need to import/integrate basic strategy from main simulator
+   - Calculate correct action for current hand situation
+   - Compare player action to correct action
+   - Display inline warning or modal based on settings
+
+2. **Deviation Checker** - Validate playing deviations
+   - Import deviation rules from main simulator
+   - Check if deviation is correct given true count
+   - Provide feedback on deviation usage
+
+3. **Statistics Tracking** - Track accuracy by situation
+   - Update stats after each decision
+   - Track by action type (hit, stand, double, split, surrender)
+   - Track by hand total ranges
+   - Track by dealer upcard
+   - Track by true count ranges
+
+4. **Session History** - Store hand-by-hand history
+   - Save to localStorage
+   - Display recent hands with outcomes
+   - Allow review of previous decisions
+
+### 🔲 Phase 4: Mobile Optimization - NOT STARTED
+
+**Pending Items:**
+- [ ] Test on actual mobile devices (iOS Safari, Android Chrome)
+- [ ] Optimize touch target sizes (ensure 44x44px minimum)
+- [ ] Test landscape mode on mobile
+- [ ] Ensure keyboard shortcuts work on mobile with Bluetooth keyboard
+- [ ] Add PWA manifest for "Add to Home Screen"
+
+### 🔲 Phase 5: Counting Practice - PARTIALLY COMPLETE
+
+**Completed:**
+- [x] Running count calculation in game engine
+- [x] True count calculation
+- [x] Toggle to show/hide count
+- [x] Default to hidden (realistic practice)
+
+**Pending Items:**
+- [ ] Counting drill mode (rapid-fire cards, no gameplay)
+- [ ] Speed settings (0.5s to 0.1s per card)
+- [ ] Periodic count checks during free play
+- [ ] End-of-shoe count verification
+- [ ] Count accuracy tracking
+- [ ] Speed progression (start slow, build to casino speed)
+
+### 🔲 Phase 6: Statistics & Polish - NOT STARTED
+
+**Pending Items:**
+- [ ] Comprehensive session statistics dashboard
+- [ ] Accuracy by hand type breakdown
+- [ ] Accuracy by dealer upcard
+- [ ] Accuracy by true count range
+- [ ] Time-series accuracy trends
+- [ ] Achievement milestones
+- [ ] Export session data to CSV
+- [ ] Hand replay viewer
+
+### 🔲 Phase 7: Advanced Features - NOT STARTED
+
+**Pending Items:**
+- [ ] Scenario generation (high count drills)
+- [ ] Weak spot identification
+- [ ] Custom situation selection
+- [ ] Insurance decision prompts (when dealer shows Ace)
+- [ ] Deck estimation training with rendered discard tray
+- [ ] Sound effects (optional, off by default)
+- [ ] Animation speed settings
+- [ ] Keyboard shortcuts (H/S/D/P/R)
+
+---
+
+## Logical Next Steps
+
+Based on the current implementation status, here's the recommended order of next tasks:
+
+### 1. **Basic Strategy Integration** (Highest Priority)
+**Why:** Without strategy checking, training mode has no feedback mechanism. This is the core value proposition.
+
+**Tasks:**
+- Import basic strategy tables from main simulator
+- Create `getCorrectAction(playerHand, dealerUpcard, canDouble, canSplit, canSurrender)` function
+- Add strategy checking in `handleAction` callback
+- Display feedback (inline warning or toast) when player makes incorrect decision
+- Update stats to track correct/incorrect
+
+**Files to modify:**
+- `frontend/src/components/training/engine/gameEngine.ts` - Add strategy lookup
+- `frontend/src/components/training/TrainingPage.tsx` - Add strategy checking in handleAction
+- `frontend/src/components/training/types.ts` - Update stats tracking
+
+### 2. **Counting Drill Mode** (High Priority)
+**Why:** Many users want pure counting practice without gameplay complexity.
+
+**Tasks:**
+- Add new practice mode: 'counting-drill'
+- Implement rapid card display (no hands, just cards appearing and disappearing)
+- Add speed selector (0.5s to 0.1s per card)
+- Show count at end and calculate accuracy
+- Track best speed achieved
+
+**Files to create:**
+- `frontend/src/components/training/CountingDrill.tsx`
+- `frontend/src/components/training/CountingDrill.css`
+
+### 3. **Session Statistics** (Medium Priority)
+**Why:** Users need to see progress and identify weak spots.
+
+**Tasks:**
+- Implement localStorage persistence
+- Create statistics dashboard
+- Add charts showing accuracy trends
+- Break down accuracy by situation type
+- Add export to CSV functionality
+
+**Files to create:**
+- `frontend/src/components/training/StatsPanel.tsx`
+- `frontend/src/components/training/StatsPanel.css`
+
+### 4. **Insurance Prompts** (Medium Priority)
+**Why:** Insurance is an important decision that's not currently prompted.
+
+**Tasks:**
+- Detect when dealer shows Ace
+- Pause gameplay and show insurance dialog
+- Calculate correct insurance decision based on count
+- Track insurance accuracy in stats
+
+**Files to modify:**
+- `frontend/src/components/training/TrainingPage.tsx` - Add insurance phase
+- `frontend/src/components/training/types.ts` - Add insurance to GamePhase
+
+### 5. **Mobile Testing & PWA** (Medium Priority)
+**Why:** Training mode is designed for mobile use, need to verify it works well.
+
+**Tasks:**
+- Test on real devices
+- Fix any touch issues
+- Add PWA manifest
+- Enable "Add to Home Screen"
+- Test offline functionality
+
+### 6. **Advanced Features** (Lower Priority)
+- Deck estimation training
+- Scenario generation
+- Weak spot drills
+- Sound effects
+- Keyboard shortcuts
+
+---
+
+## Known Issues
+
+- [x] Initial deal now reveals cards sequentially (P,D,P,D) with no overlap (verify visually)
+- [x] Fixed: Stand after hit was broken due to stale closure - now uses functional state updates
+- [x] Fixed: Card flip faces were not full-size (had padding/sizing issues) - CSS corrected
+- [x] Fixed: Player cards had unwanted "flash and drift" transition after dealing - removed transitions
+- [ ] Need to test split hand dealing sequence
+- [ ] Need to verify double down only deals one card
+- [ ] Card z-index stacking needs visual verification
+- [ ] Green felt background needs to look good on all screen sizes
+
+---
+
+## Questions for User
+
+1. **Strategy Source:** Should we import strategy from the main simulator's config, or use a hardcoded basic strategy table?
+2. **Feedback Mode:** Prefer inline warnings (current card gets red border) or modal popup (blocks gameplay)?
+3. **Count Drills:** Should counting drills be separate page or integrated into training page?
+4. **Statistics Granularity:** How detailed should accuracy tracking be? By hand total? By dealer upcard? By TC?
+
+
+---
+
+## Dealer Card Stacking Animation Flow
+
+This section documents the specific dealer card animation behavior for iteration.
+
+## Animation Sequencing & Auto-Advance (Implemented Jan 2026)
+
+Goals this implements:
+- No overlap: the next card does not appear until the previous card finishes moving.
+- Desktop: cards deal from the visible shoe placeholder; discard pile is visible and cards animate toward it.
+- Mobile: shoe/discard are hidden; cards deal from off-screen and discard off-screen.
+- Natural hole-card flip: front becomes visible mid-flip (no "flip then swap").
+- No in-between "loading" labels between animations; hands auto-advance.
+
+Implementation summary:
+- Sequential initial deal is gated via `visibleCardCount` and timed reveals in `frontend/src/components/training/TrainingPage.tsx`.
+- Player action buttons stay mounted (no layout pop-in/out). While a card is moving, inputs are locked briefly after `hit/double/split`.
+- If the user taps `Stand`/`Surrender` during that brief lock, the action is queued and applied automatically as soon as the deal animation finishes.
+- Dealer turn plays out one card at a time:
+  - Hole card is revealed in state at half of the flip duration.
+  - Dealer hit cards are dealt one-by-one with horizontal-only motion.
+- After payout, cards animate to discard/off-screen and the next hand is dealt automatically.
+
+Key constants (ms) and why they exist:
+- `CARD_DEAL_ANIM_MS = 350`: matches CSS deal animation duration.
+- `DEAL_CARD_INTERVAL = 380`: slightly longer than `CARD_DEAL_ANIM_MS` so previous motion completes before next card appears.
+- `HOLE_CARD_REVEAL_TIME = 500`: matches CSS flip duration.
+- `DEALER_STACK_TRANSITION_MS = 400`: matches CSS stack transition.
+- `CARD_REMOVE_ANIM_MS = 400`: matches CSS remove-to-discard duration.
+
+Related files:
+- `frontend/src/components/training/TrainingPage.tsx` (sequencing + dealer loop + auto-advance)
+- `frontend/src/components/training/Table.tsx` (visibility gating + dealer stacking offsets)
+- `frontend/src/components/training/Card.tsx` (stable hole-card flip container, no DOM swap)
+- `frontend/src/components/training/Card.css` (desktop/mobile deal origins, dealer horizontal-only, remove-to-discard)
+
+Recent polish fixes (Jan 2026):
+- Removed player-hand left/top transitions so cards do not "drift" upward after the deal animation finishes.
+  - Only the dealer stack uses left/top transitions (for the post-flip stack slide).
+- Removed flip-container background/border framing so the hole card does not look like it flips inside a smaller inset panel.
+  - The visible card faces now fully define the card visuals; the flip container is transparent and only clips to rounded corners.
+- Suit symbols are rendered via Unicode escapes to avoid mojibake in some Windows setups.
+- Stand after Hit UX:
+  - While a hit/double/split card is animating, only Hit/Double/Split are temporarily disabled.
+  - Stand/Surrender remain clickable; if tapped during the brief lock, the action is queued and applied automatically after the animation finishes.
+- Card-back fill:
+  - Removed extra padding/border on the back pattern so the card back fills the full card (avoids the "small card inside a frame" look on the hole card).
+
+### Visual Flow (Step by Step)
+
+```
+STEP 1: Initial Deal
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│     ┌──────┐         ┌──────┐                          │
+│     │░░░░░░│         │  A   │                          │
+│     │░FACE░│         │  ♠   │                          │
+│     │░DOWN░│         │      │                          │
+│     │░░░░░░│         │      │                          │
+│     └──────┘         └──────┘                          │
+│     Hole Card        Upcard                            │
+│     (left)           (right, 100px gap)                │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+
+STEP 2: After Player Done - Flip Hole Card (0.5s animation)
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│     ┌──────┐         ┌──────┐                          │
+│     │  K   │  FLIP!  │  A   │                          │
+│     │  ♥   │ ←─────  │  ♠   │                          │
+│     │      │         │      │                          │
+│     │      │         │      │                          │
+│     └──────┘         └──────┘                          │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+
+STEP 3: Stack Cards - Slide Upcard Left (0.4s transition)
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│     ┌──┬──────┐                                        │
+│     │K │  A   │  ← Upcard slides LEFT                  │
+│     │♥ │  ♠   │    Only left edge (28px) of           │
+│     │  │      │    hole card visible                   │
+│     │  │      │                                        │
+│     └──┴──────┘                                        │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+
+STEP 4: Dealer Hits (if needed) - Cards stack vertically
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│     ┌──┬──┬──────┐                                     │
+│     │K │A │  5   │  ← Each new card covers previous    │
+│     │♥ │♠ │  ♣   │    showing only left edge (28px)   │
+│     │  │  │      │                                     │
+│     │  │  │      │                                     │
+│     └──┴──┴──────┘                                     │
+│                                                         │
+│     Visible: K edge, A edge, 5 full card              │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Implementation Details
+
+**Constants:**
+- `DEALER_INITIAL_OFFSET = { x: 100, y: 0 }` - Side by side during initial deal
+- `DEALER_STACKED_OFFSET = { x: 28, y: 0 }` - Stacked after hole card reveal
+- `HOLE_CARD_REVEAL_TIME = 500ms` - Flip animation duration
+- Card transition: `transition: left 0.4s ease, top 0.4s ease;`
+
+**State Management:**
+- `isDealerStacked: boolean` - Controls which offset to use
+- Set to `false` on new hand
+- Set to `true` after hole card reveal completes
+
+**Trigger Points:**
+1. Deal button pressed → `isDealerStacked = false`
+2. Dealing animation plays (cards appear side by side)
+3. Player finishes (stand, bust, surrender, or 21)
+4. Phase changes to 'dealer-turn'
+5. Hole card flips (isRevealingHoleCard = true for 0.5s)
+6. After flip: `isDealerStacked = true` (triggers CSS transition)
+7. Cards animate to stacked position
+8. Dealer hits if needed (new cards stack with same offset)
+
+**Auto-Stand on 21:**
+- If player has 21 (including after hit), automatically stand
+- Triggers dealer turn immediately
+- No player action required
+
+### Player Card Stacking
+
+Player cards use diagonal stacking to show both top-left AND bottom-right corners:
+- `PLAYER_CARD_OFFSET = { x: 28, y: -20 }`
+- First card on bottom, subsequent cards go up and to the right
+- Z-index increases with card index so later cards appear on top
+
+```
+Player card stack visualization:
+        ┌──────┐
+       ┌┴─────┐│  ← Card 3 (top)
+      ┌┴─────┐││
+      │  9   │││  ← Card 2
+      │  ♦   │┘│
+      │      ├─┘
+      │      │    ← Card 1 (bottom)
+      └──────┘
+
+Each card offset: x: +28px, y: -20px
+All corners visible for card counting practice
+```
+
+### Known Issues to Fix
+
+- [ ] Verify the stacking transition looks smooth (hole card reveal -> stack slide)
+- [ ] Test with 5+ dealer cards to ensure layout doesn't overflow
+- [ ] Verify player card corners are actually visible with current offsets
+- [ ] Test on mobile screens with smaller card sizes
+- [ ] Consider swapping timer-based sequencing for `animationend` events to handle slow devices perfectly

@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import { TrainingPage } from "./components/training";
 import {
   BetRamp,
   BetRampEntry,
@@ -17,6 +18,7 @@ import {
 
 type UiStatus = "idle" | "running" | "done" | "error" | "stopped";
 type PresetType = "rules" | "ramp" | "deviations" | "scenario";
+type AppPage = "simulator" | "training";
 
 type Preset = {
   id: string;
@@ -273,6 +275,7 @@ function savePresets(presets: Preset[]) {
 }
 
 function App() {
+  const [currentPage, setCurrentPage] = useState<AppPage>("simulator");
   const [defaults, setDefaults] = useState<DefaultLibraries | null>(null);
   const [rules, setRules] = useState<Rules | null>(null);
   const [betRamp, setBetRamp] = useState<BetRamp | null>(null);
@@ -2003,6 +2006,7 @@ function App() {
 
   return (
     <div className="app">
+      {currentPage === "simulator" && (
       <header className="topbar">
         <div className="scenario">
           <input
@@ -2091,6 +2095,12 @@ function App() {
           <button className="btn" onClick={handleExport}>
             Export JSON
           </button>
+          <button
+            className="btn training-mode-btn"
+            onClick={() => setCurrentPage("training")}
+          >
+            Training Mode
+          </button>
         </div>
         <label className="toggle">
           Show units
@@ -2098,7 +2108,19 @@ function App() {
         </label>
         <div className={`status-chip ${status}`}>{statusLabel()}</div>
       </header>
+      )}
 
+      {currentPage === "training" ? (
+        <TrainingPage
+          onBack={() => setCurrentPage("simulator")}
+          numDecks={rules?.decks ?? 6}
+          penetration={rules?.penetration ?? 0.75}
+          hitSoft17={rules?.hit_soft_17 ?? true}
+          allowSurrender={rules?.surrender ?? true}
+          blackjackPayout={rules?.blackjack_payout ?? 1.5}
+        />
+      ) : (
+        <>
       {isStale && (
         <div className="banner">
           Results are from a previous configuration. {" "}
@@ -3847,6 +3869,8 @@ function App() {
           )}
         </main>
       </div>
+        </>
+      )}
 
       {showSavePreset && (
         <div className="modal-backdrop" onClick={() => setShowSavePreset(false)}>
