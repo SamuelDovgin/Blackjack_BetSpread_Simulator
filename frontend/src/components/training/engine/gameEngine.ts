@@ -410,25 +410,38 @@ export function splitSeparate(state: GameState): GameState {
   const hand = state.playerHands[handIndex];
   if (!hand || hand.isComplete || !canSplit(hand)) return state;
 
+  const isSplitAces = hand.cards[0]?.rank === 'A' && hand.cards[1]?.rank === 'A';
+
   // Create two new hands with just one card each (no new cards dealt yet)
   const hand1: HandState = {
-    cards: [hand.cards[0]], // Bottom card stays in original position
+    // Keep the visually "top" card (second card in our stacked layout) on the left.
+    // This makes the remaining base card feel natural when the other card slides away.
+    cards: [hand.cards[1]],
     bet: hand.bet,
     isDoubled: false,
     isSurrendered: false,
     isBusted: false,
     isBlackjack: false,
     isComplete: false,
+    isSplitHand: true,
+    needsSplitCard: true,
+    splitCardJustDealt: false,
+    isSplitAces,
   };
 
   const hand2: HandState = {
-    cards: [hand.cards[1]], // Top card moves to new hand (right side)
+    // Move the other card to the new right-hand position.
+    cards: [hand.cards[0]],
     bet: hand.bet,
     isDoubled: false,
     isSurrendered: false,
     isBusted: false,
     isBlackjack: false,
     isComplete: false,
+    isSplitHand: true,
+    needsSplitCard: true,
+    splitCardJustDealt: false,
+    isSplitAces,
   };
 
   const newHands = [...state.playerHands];
@@ -451,12 +464,14 @@ export function dealToHand(state: GameState, handIndex: number): GameState {
   if (!result) return state;
 
   const newCards = [...hand.cards, result.card];
-  const isAceSplit = hand.cards[0]?.rank === 'A';
+  const isAceSplit = hand.isSplitAces || hand.cards[0]?.rank === 'A';
 
   const newHand: HandState = {
     ...hand,
     cards: newCards,
     isComplete: isAceSplit, // Aces split only get one card
+    needsSplitCard: false,
+    splitCardJustDealt: true,
   };
 
   const newHands = [...state.playerHands];
@@ -471,60 +486,95 @@ export function dealToHand(state: GameState, handIndex: number): GameState {
   };
 }
 
-// Split action - Full split (legacy, deals both cards at once)
+// Split action - Immediate split (legacy helper; deals the right hand immediately, left waits)
 export function split(state: GameState): GameState {
   const handIndex = state.activeHandIndex;
   const hand = state.playerHands[handIndex];
   if (!hand || hand.isComplete || !canSplit(hand)) return state;
 
-  // Draw two new cards
+  const isSplitAces = hand.cards[0].rank === 'A' && hand.cards[1].rank === 'A';
+
+  // Draw one card immediately for the RIGHT-hand split (player will act on it first)
   let shoe = [...state.shoe];
-  const draw1 = drawCard(shoe);
-  if (!draw1) return state;
-  shoe = draw1.remainingShoe;
+  const drawRight = drawCard(shoe);
+  if (!drawRight) return state;
+  shoe = drawRight.remainingShoe;
 
-  const draw2 = drawCard(shoe);
-  if (!draw2) return state;
-  shoe = draw2.remainingShoe;
-
-  // Create two new hands
-  const hand1: HandState = {
-    cards: [hand.cards[0], draw1.card],
-    bet: hand.bet,
-    isDoubled: false,
-    isSurrendered: false,
-    isBusted: false,
-    isBlackjack: false, // Split hands can't be blackjack
-    isComplete: false,
-  };
-
-  const hand2: HandState = {
-    cards: [hand.cards[1], draw2.card],
+  // Left hand waits for its first post-split card until it becomes active.
+  const leftHand: HandState = {
+    // Keep the visually top card on the left (consistent with splitSeparate).
+    cards: [hand.cards[1]],
     bet: hand.bet,
     isDoubled: false,
     isSurrendered: false,
     isBusted: false,
     isBlackjack: false,
     isComplete: false,
+    isSplitHand: true,
+    needsSplitCard: true,
+    splitCardJustDealt: false,
+    isSplitAces,
   };
 
-  // Check for aces split (usually only one card)
-  if (hand.cards[0].rank === 'A') {
-    hand1.isComplete = true;
-    hand2.isComplete = true;
-  }
+  const rightHandCards = [hand.cards[0], drawRight.card];
+  const rightHand: HandState = {
+    cards: rightHandCards,
+    bet: hand.bet,
+    isDoubled: false,
+    isSurrendered: false,
+    isBusted: isBusted(rightHandCards),
+    isBlackjack: false,
+    isComplete: isSplitAces, // Split aces get one card then stand
+    isSplitHand: true,
+    needsSplitCard: false,
+    splitCardJustDealt: true,
+    isSplitAces,
+  };
 
   const newHands = [...state.playerHands];
-  newHands.splice(handIndex, 1, hand1, hand2);
+  newHands.splice(handIndex, 1, leftHand, rightHand);
 
   return {
     ...state,
     shoe,
-    cardsDealt: state.cardsDealt + 2,
-    runningCount: state.runningCount + getCountValue(draw1.card) + getCountValue(draw2.card),
+    cardsDealt: state.cardsDealt + 1,
+    runningCount: state.runningCount + getCountValue(drawRight.card),
     playerHands: newHands,
+    activeHandIndex: handIndex + 1, // Play the right hand first
     bankroll: state.bankroll - hand.bet, // Deduct additional bet for split
     lastAction: 'split',
+  };
+}
+
+// Deal the first post-split card to a hand that is waiting for it.
+export function dealSplitHandCard(state: GameState, handIndex: number): GameState {
+  const hand = state.playerHands[handIndex];
+  if (!hand || !hand.needsSplitCard) return state;
+
+  const result = drawCard(state.shoe);
+  if (!result) return state;
+
+  const newCards = [...hand.cards, result.card];
+  const busted = isBusted(newCards);
+
+  const newHand: HandState = {
+    ...hand,
+    cards: newCards,
+    isBusted: busted,
+    needsSplitCard: false,
+    splitCardJustDealt: true,
+    isComplete: hand.isSplitAces ? true : false,
+  };
+
+  const newHands = [...state.playerHands];
+  newHands[handIndex] = newHand;
+
+  return {
+    ...state,
+    shoe: result.remainingShoe,
+    cardsDealt: state.cardsDealt + 1,
+    runningCount: state.runningCount + getCountValue(result.card),
+    playerHands: newHands,
   };
 }
 
@@ -597,16 +647,15 @@ export function advanceGame(state: GameState): GameState {
     return state;
   }
 
-  // Check for more player hands
-  const nextIncomplete = state.playerHands.findIndex(
-    (h, i) => i > state.activeHandIndex && !h.isComplete
-  );
-
-  if (nextIncomplete !== -1) {
-    return {
-      ...state,
-      activeHandIndex: nextIncomplete,
-    };
+  // Training-mode rule: always play split hands from right-to-left.
+  // That means: whenever a hand completes, jump to the *rightmost* incomplete hand.
+  for (let i = state.playerHands.length - 1; i >= 0; i--) {
+    if (!state.playerHands[i].isComplete) {
+      return {
+        ...state,
+        activeHandIndex: i,
+      };
+    }
   }
 
   // All player hands complete, move to dealer turn

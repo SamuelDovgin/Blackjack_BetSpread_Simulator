@@ -30,6 +30,11 @@ export interface HandState {
   isBusted: boolean;
   isBlackjack: boolean;
   isComplete: boolean;
+  // Split-hand flow helpers (optional)
+  isSplitHand?: boolean;
+  needsSplitCard?: boolean;
+  splitCardJustDealt?: boolean;
+  isSplitAces?: boolean;
 }
 
 export interface GameState {

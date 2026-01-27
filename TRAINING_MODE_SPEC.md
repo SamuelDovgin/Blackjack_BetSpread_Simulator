@@ -3512,6 +3512,33 @@ Recent polish fixes (Jan 2026):
   - Stand/Surrender remain clickable; if tapped during the brief lock, the action is queued and applied automatically after the animation finishes.
 - Card-back fill:
   - Removed extra padding/border on the back pattern so the card back fills the full card (avoids the "small card inside a frame" look on the hole card).
+- Split flow (right hand first):
+  - Split now separates the cards, deals the first post-split card ONLY to the right hand, and lets you play it immediately.
+  - Card ordering: the visually top card (second card in the stacked layout) becomes the base card of the left hand; the other card slides to become the base of the new right hand.
+  - The left hand receives its first card only when it becomes active (after the right hand completes).
+  - `advanceGame()` always selects the rightmost incomplete hand next (right-to-left play), so it never jumps straight to the dealer while any split hand is still unfinished.
+  - Multi-splits follow the same rule: every split deals to the newly-created right hand first (index = activeHandIndex + 1 during the split animation), then play continues right-to-left.
+  - Input safety: if the active hand is waiting on its first post-split card (`needsSplitCard`), all action buttons are disabled immediately to avoid a 1-frame window where the user could Hit/Stand on a 1-card split hand.
+- Double-down flow:
+  - Double ends the current hand even when the total is not 21/bust; after the double card finishes animating, the game advances to the next hand or dealer turn automatically.
+- Dealing z-order:
+  - Any card being dealt is temporarily rendered above existing cards to avoid "dealing under" in split scenarios.
+  - Split hands are also given a container `z-index` boost while dealing so a dealt card never animates underneath a busted/complete split hand (opacity can create stacking contexts).
+- Badges / indicators layout stability:
+  - The per-hand info area reserves a compact fixed-height zone (~1/3 of a card) so that showing BUST/2x/SUR/etc never pushes the card stacks upward mid-hand.
+  - Status indicators are rendered as small tags (e.g., `BJ`, `2x`, `SUR`, and bet size in `u`) to keep the reserved area tight and consistent across multi-split hands.
+  - The info area is rendered ABOVE the card stacks (not below) so there is no bottom margin under the cards during multi-split play.
+- Active-hand highlight:
+  - Highlight is applied behind the player card stack only (via a pseudo-element on the stack), so it stays exactly card-height and never becomes taller than the cards.
+  - The active glow is slightly brighter for visibility without changing layout; no container-level backgrounds are used.
+- Split layout (single row + active-hand centering):
+  - Player hands never wrap into multiple rows. The row is translated so the active hand stays centered (other hands can slide off-screen).
+  - Hand spacing is dynamic: each hand's allocated width grows with its card count (card width + overlapX * (n-1)), so long hit sequences push neighboring hands outward instead of overlapping them.
+  - Centering is based on the actual visible card stack width (and accounts for the hand container padding) so the currently playable hand is visually dead-center.
+- Outcome banner layering:
+  - WIN/LOSE/PUSH banner `z-index` is set above all dealing cards so it always renders on top of the table.
+- Dealer behavior when all player hands bust:
+  - Dealer still reveals the hole card, then immediately clears the table (no additional dealer hits are drawn).
 
 ### Visual Flow (Step by Step)
 
