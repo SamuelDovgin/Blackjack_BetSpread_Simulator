@@ -1208,327 +1208,1290 @@ def test_strategy_import_export():
 
 ### Task #36: Implement Play-by-Play Training Mode
 
-**Priority:** 🟡 MEDIUM (but high user value)
+**Priority:** 🔴 HIGH (critical for casino readiness)
+
+**📋 Full Specification:** See `TRAINING_MODE_SPEC.md` for comprehensive design document including:
+- UI/UX mockups (desktop & mobile)
+- Component architecture and file structure
+- Game engine implementation details
+- State management patterns
+- Deck estimation training (Section 16)
+- All user-approved design decisions
 
 #### Why This Matters
 
-The simulator currently only runs batch simulations. It doesn't help users **learn** the strategy. A training mode:
-- Deals one hand at a time
-- Asks user for decision
-- Shows correct answer and why
-- Tracks accuracy over time
-- Focuses on commonly-missed hands
+The simulator currently only runs batch simulations. It doesn't help users **learn** the strategy in a realistic casino environment. A full play-by-play training mode:
+- Simulates an actual blackjack table with visual card dealing
+- Lets users practice playing hands exactly like they would in a casino
+- Provides immediate feedback on basic strategy and deviation mistakes
+- Supports playing up to 2 hands simultaneously
+- Tracks the count through shoes just like real play
+- Allows focused practice on high-count scenarios
+- Prepares users for real casino conditions with muscle memory
 
-**Real-world impact:** Users can practice perfect basic strategy and deviations before risking money. Deliberate practice with feedback is the most effective way to learn.
+**Real-world impact:** Users can practice thousands of hands in a realistic environment before risking money. This is the bridge between knowing the strategy and being able to execute it flawlessly under casino pressure. Visual card dealing builds the neural pathways needed for fast, accurate decisions.
+
+**Critical features for casino readiness:**
+- Realistic card animations and table layout
+- Time pressure options to simulate casino speed
+- Count tracking practice integrated with playing decisions
+- Scenario generation for high-count shoes and specific situations
+- Optional correction mode that stops you when you make mistakes
+- Statistics on weak spots and accuracy trends
 
 #### Acceptance Criteria
 
-- [ ] Single-hand dealing mode
-- [ ] User selects action via buttons
-- [ ] Immediate feedback: correct/incorrect
-- [ ] Shows reasoning for correct action
-- [ ] Running accuracy statistics
-- [ ] Filter by hand type (hard/soft/pairs)
-- [ ] Focus mode: repeat missed hands
-- [ ] Include deviation situations
-- [ ] True count display (for deviation practice)
-- [ ] Session summary with weak spots
+**Core Gameplay:**
+- [ ] Dedicated training tab/page in the UI (separate from simulator)
+- [ ] Realistic blackjack table visual layout (dealer area, player area, chip tray)
+- [ ] Animated card dealing (cards "move" from deck to table positions)
+- [ ] Play 1 or 2 hands simultaneously (user choice)
+- [ ] User selects actions via clearly labeled buttons (Hit, Stand, Double, Split, Surrender)
+- [ ] Based on the current rules configuration (H17/S17, DAS, surrender, etc.)
+- [ ] Proper game flow: initial deal, player decisions, dealer play, payouts
+- [ ] Visual bet placement before each hand
+- [ ] Running bankroll display (starts with configurable amount)
+
+**Count Tracking Integration:**
+- [ ] Running count display (toggleable - can hide for practice)
+- [ ] True count calculation and display
+- [ ] Deck estimation indicators (cards remaining, estimated decks left)
+- [ ] Count maintained across entire shoe
+- [ ] New shoe shuffles when penetration reached
+- [ ] Visual indicator of cut card position
+
+**Feedback & Correction:**
+- [ ] Immediate feedback: correct/incorrect action
+- [ ] Shows reasoning for correct action (basic strategy or deviation)
+- [ ] Optional "Correction Mode" - stops you and asks if you want to correct mistakes
+  - [ ] Pause the hand when wrong action is chosen
+  - [ ] Show correct action with explanation
+  - [ ] Option to "Take It Back" and choose again, or "Continue Anyway"
+  - [ ] Different from auto-advance mode where it just shows feedback and continues
+- [ ] Visual indicators (green checkmark for correct, red X for incorrect)
+- [ ] Detailed explanation of why the action is correct
+
+**Statistics & Progress:**
+- [ ] Running accuracy statistics (overall %)
+- [ ] Breakdown by hand type (hard totals, soft totals, pairs)
+- [ ] Breakdown by decision type (hit/stand, double, split, surrender, insurance)
+- [ ] Deviation accuracy tracking (separate from basic strategy)
+- [ ] Session summary with weak spots highlighted
+- [ ] Hand history review (last 10-20 hands with decisions)
+- [ ] Count accuracy tracking (if count display is hidden, periodic count checks)
+
+**Practice Modes:**
+- [ ] **Free Play Mode** - Continuous play through shoes, just like a casino
+- [ ] **Basic Strategy Only** - No deviations, just practice perfect basic strategy
+- [ ] **Deviations Mode** - Includes playing deviations based on true count
+- [ ] **High Count Practice** - Pre-generated shoes with high counts (TC +3 to +6)
+- [ ] **Specific Scenario Practice** - Focus on particular hands (16v10, 12v2-3, soft 18, etc.)
+- [ ] **Focus Mode** - Repeats hands you got wrong until mastered
+- [ ] **Timed Practice** - Adds time pressure to simulate casino speed
+
+**Scenario Generation (Advanced):**
+- [ ] Pre-generate multiple shoes and play them out (backend simulation)
+- [ ] Identify high-count situations and bookmark them
+- [ ] Let user "jump into" specific scenarios:
+  - [ ] High count (+4 to +6) for deviation practice
+  - [ ] Difficult basic strategy spots (stiff hands vs dealer 7-A)
+  - [ ] Surrender situations
+  - [ ] Pair splitting edge cases
+  - [ ] Insurance decisions at high counts
+- [ ] Filter scenarios by true count range
+- [ ] Shuffle scenarios to avoid memorization
+
+**UI/UX Features:**
+- [ ] Card graphics with suits and ranks clearly visible
+- [ ] Smooth animations (card flip, slide, fade)
+- [ ] Responsive button layout (disabled states when action not allowed)
+- [ ] Keyboard shortcuts (H, S, D, P, R for actions)
+- [ ] Mobile-friendly layout option
+- [ ] Settings panel:
+  - [ ] Animation speed control
+  - [ ] Number of hands (1 or 2)
+  - [ ] Show/hide count
+  - [ ] Correction mode on/off
+  - [ ] Sound effects on/off
+  - [ ] Starting bankroll
+  - [ ] Auto-advance delay after feedback
+
+**Future Enhancements (not MVP):**
+- [ ] Multiple players at table (NPCs playing other spots)
+- [ ] Table heat simulation (dealer, pit boss reactions to big bets)
+- [ ] Camouflage play suggestions
+- [ ] Voice commands for actions (accessibility)
+- [ ] VR mode for full immersion
 
 #### Implementation Steps
 
-**Step 1: Create training state management**
+This is a complex, multi-phase implementation. Build it incrementally in these phases:
 
-New file `frontend/src/components/TrainingMode.tsx`:
+**Phase 1: Core Game Engine & State Management**
+
+New file `frontend/src/components/training/TrainingGameEngine.ts`:
+
+This handles the actual blackjack game logic - dealing, hitting, standing, dealer play, payouts, etc.
 
 ```tsx
-interface TrainingState {
-  mode: "basic" | "deviations" | "mixed";
-  currentHand: TrainingHand | null;
-  history: HandResult[];
-  stats: {
-    total: number;
-    correct: number;
-    byType: Record<string, { total: number; correct: number }>;
-  };
-  focusQueue: TrainingHand[];  // Hands to repeat
-  showCount: boolean;
-  deckState: DeckState;
-}
-
-interface TrainingHand {
-  playerCards: string[];
-  dealerUpcard: string;
-  trueCount: number;
+// Core game state
+interface GameState {
+  // Shoe state
+  shoe: Card[];
+  cutCard: number;
+  pointer: number;
   runningCount: number;
-  correctAction: string;
-  correctReason: string;
-  isDeviation: boolean;
-  deviationName?: string;
+  shoeNumber: number;
+
+  // Current round state
+  phase: "betting" | "dealing" | "player_action" | "dealer_action" | "payout" | "complete";
+  playerHands: Hand[];  // Support 1-2 hands
+  dealerHand: Hand;
+  activeHandIndex: number;
+
+  // Betting & bankroll
+  bankroll: number;
+  currentBet: number[];  // Bet for each hand
+  suggestedBet: number;  // Based on count and bet ramp
+
+  // Configuration
+  rules: Rules;
+  countingSystem: CountingSystem;
+  deviations: Deviation[];
+  betRamp: BetRamp;
+  settings: TrainingSettings;
+
+  // Feedback & correction
+  lastDecision: Decision | null;
+  correctionPending: boolean;
+
+  // Statistics
+  stats: SessionStats;
 }
 
-interface HandResult {
-  hand: TrainingHand;
-  userAction: string;
-  correct: boolean;
+interface Hand {
+  cards: Card[];
+  bet: number;
+  status: "active" | "stand" | "busted" | "blackjack" | "surrender";
+  isSplit: boolean;
+  isSplitAces: boolean;
+  canDouble: boolean;
+  canSplit: boolean;
+  canSurrender: boolean;
+  profit: number;
+}
+
+interface Card {
+  rank: string;  // "2"-"9", "T", "J", "Q", "K", "A"
+  suit: string;  // "♠", "♥", "♦", "♣"
+  id: string;    // Unique ID for animation tracking
+}
+
+interface Decision {
+  action: "H" | "S" | "D" | "P" | "R" | "I";  // Hit, Stand, Double, sPlit, suRrender, Insurance
+  wasCorrect: boolean;
+  correctAction: string;
+  explanation: string;
+  handKey: string;
+  isDeviation: boolean;
+  trueCount: number;
   timestamp: number;
 }
-```
 
-**Step 2: Implement hand generation**
-
-```tsx
-function generateTrainingHand(
-  mode: "basic" | "deviations" | "mixed",
-  rules: Rules,
-  deviations: Deviation[],
-  deckState: DeckState,
-  focusQueue: TrainingHand[]
-): TrainingHand {
-  // 30% chance to pull from focus queue if available
-  if (focusQueue.length > 0 && Math.random() < 0.3) {
-    return focusQueue[Math.floor(Math.random() * focusQueue.length)];
-  }
-
-  // Generate hand based on mode
-  const { playerCards, dealerUpcard } = dealRandomHand(deckState);
-  const trueCount = deckState.runningCount / Math.max(deckState.remainingDecks, 0.25);
-
-  // Check for deviation
-  const handKey = getHandKey(playerCards, dealerUpcard);
-  const applicableDeviation = findApplicableDeviation(handKey, trueCount, deviations);
-
-  let correctAction: string;
-  let correctReason: string;
-  let isDeviation = false;
-
-  if (applicableDeviation && (mode === "deviations" || mode === "mixed")) {
-    correctAction = applicableDeviation.action;
-    correctReason = `Deviation: ${applicableDeviation.hand_key} at TC >= ${applicableDeviation.tc_floor}`;
-    isDeviation = true;
-  } else {
-    correctAction = getBasicStrategyAction(playerCards, dealerUpcard, rules);
-    correctReason = getBasicStrategyReason(playerCards, dealerUpcard, rules);
-  }
-
-  return {
-    playerCards,
-    dealerUpcard,
-    trueCount,
-    runningCount: deckState.runningCount,
-    correctAction,
-    correctReason,
-    isDeviation,
-    deviationName: applicableDeviation?.hand_key,
-  };
+interface TrainingSettings {
+  numHands: 1 | 2;
+  practiceMode: "free_play" | "basic_only" | "deviations" | "high_count" | "specific_scenario";
+  showCount: boolean;
+  correctionMode: boolean;
+  animationSpeed: "slow" | "normal" | "fast" | "instant";
+  soundEnabled: boolean;
+  autoAdvanceDelay: number;  // ms
+  specificScenario?: ScenarioFilter;
 }
 
-function getBasicStrategyReason(cards: string[], dealerUp: string, rules: Rules): string {
-  const { total, soft } = handValue(cards);
-  const up = upcardKey(dealerUp);
+interface ScenarioFilter {
+  tcRange?: [number, number];
+  handTypes?: ("hard" | "soft" | "pair")[];
+  dealerUpcards?: string[];
+  playerTotals?: number[];
+}
 
-  // Generate human-readable explanation
-  if (soft) {
-    if (total === 18 && ["3", "4", "5", "6"].includes(up)) {
-      return "Soft 18 vs weak upcard: Double to maximize value. Stand if can't double.";
+interface SessionStats {
+  handsPlayed: number;
+  decisionsCorrect: number;
+  decisionsTotal: number;
+  byHandType: Record<string, { correct: number; total: number }>;
+  byAction: Record<string, { correct: number; total: number }>;
+  basicStrategyAccuracy: number;
+  deviationAccuracy: number;
+  countAccuracyChecks: Array<{ actual: number; user: number; error: number }>;
+  profitLoss: number;
+  weakSpots: Array<{ hand: string; accuracy: number; count: number }>;
+}
+```
+
+**Phase 2: Game Engine Implementation**
+
+Implement core game functions:
+
+```tsx
+class TrainingGameEngine {
+  private state: GameState;
+  private rng: typeof Math.random;
+
+  constructor(config: { rules: Rules; countingSystem: CountingSystem; deviations: Deviation[]; betRamp: BetRamp; settings: TrainingSettings }) {
+    this.state = this.initializeState(config);
+    this.rng = Math.random;  // Can be seeded for testing
+  }
+
+  // Shoe management
+  buildShoe(): Card[] {
+    const cards: Card[] = [];
+    const suits = ["♠", "♥", "♦", "♣"];
+    const ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
+
+    for (let d = 0; d < this.state.rules.decks; d++) {
+      for (const rank of ranks) {
+        for (const suit of suits) {
+          cards.push({ rank, suit, id: `${d}-${rank}${suit}` });
+        }
+      }
     }
-    // ... more explanations
+
+    return this.shuffle(cards);
   }
 
-  if (total === 16 && up === "T") {
-    return "16 vs 10: Surrender if allowed. The dealer has ~77% chance to make 17+.";
+  shuffle(cards: Card[]): Card[] {
+    // Fisher-Yates shuffle
+    const shuffled = [...cards];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(this.rng() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
   }
 
-  // Default explanation
-  return `${soft ? "Soft" : "Hard"} ${total} vs ${up}: Standard basic strategy.`;
-}
-```
+  // Card dealing with count tracking
+  drawCard(): Card {
+    if (this.state.pointer >= this.state.cutCard) {
+      // Reshuffle
+      this.state.shoe = this.buildShoe();
+      this.state.cutCard = Math.floor(this.state.shoe.length * this.state.rules.penetration);
+      this.state.pointer = 0;
+      this.state.runningCount = 0;
+      this.state.shoeNumber++;
+    }
 
-**Step 3: Build training UI component**
+    const card = this.state.shoe[this.state.pointer++];
+    this.state.runningCount += this.state.countingSystem.tags[card.rank] || 0;
+    return card;
+  }
 
-```tsx
-export function TrainingMode({ rules, deviations }: TrainingModeProps) {
-  const [state, dispatch] = useReducer(trainingReducer, initialState);
+  // Game flow methods
+  startNewRound() {
+    this.state.phase = "betting";
+    this.state.playerHands = [];
+    this.state.dealerHand = { cards: [], bet: 0, status: "active", /* ... */ };
+    this.state.currentBet = [];
 
-  const handleAction = (action: string) => {
-    const correct = action === state.currentHand?.correctAction;
+    // Calculate suggested bet based on true count
+    const trueCount = this.getTrueCount();
+    this.state.suggestedBet = this.calculateBet(trueCount);
+  }
 
-    dispatch({
-      type: "ANSWER_SUBMITTED",
-      payload: { action, correct },
-    });
+  placeBet(handIndex: number, amount: number) {
+    this.state.currentBet[handIndex] = amount;
 
-    // If wrong, add to focus queue
-    if (!correct && state.currentHand) {
-      dispatch({
-        type: "ADD_TO_FOCUS",
-        payload: state.currentHand,
+    if (this.state.currentBet.length === this.state.settings.numHands) {
+      this.dealInitialCards();
+    }
+  }
+
+  dealInitialCards() {
+    this.state.phase = "dealing";
+
+    // Create hands
+    for (let i = 0; i < this.state.settings.numHands; i++) {
+      this.state.playerHands.push({
+        cards: [],
+        bet: this.state.currentBet[i],
+        status: "active",
+        isSplit: false,
+        /* ... */
       });
     }
 
-    // Show feedback briefly, then next hand
-    setTimeout(() => {
-      dispatch({ type: "NEXT_HAND" });
-    }, correct ? 800 : 2000);  // Longer pause on mistakes
+    // Deal pattern: P1, P2 (if 2 hands), Dealer, P1, P2, Dealer
+    for (let round = 0; round < 2; round++) {
+      for (const hand of this.state.playerHands) {
+        hand.cards.push(this.drawCard());
+      }
+      this.state.dealerHand.cards.push(this.drawCard());
+    }
+
+    // Check for dealer peek (if upcard is A or T and rules.dealer_peeks)
+    if (this.state.rules.dealer_peeks && this.isDealerPeekCard(this.state.dealerHand.cards[0])) {
+      if (this.isBlackjack(this.state.dealerHand.cards)) {
+        this.resolveDealerBlackjack();
+        return;
+      }
+    }
+
+    // Check for player blackjacks
+    for (const hand of this.state.playerHands) {
+      if (this.isBlackjack(hand.cards)) {
+        hand.status = "blackjack";
+      }
+    }
+
+    this.state.phase = "player_action";
+    this.state.activeHandIndex = 0;
+  }
+
+  // Player actions
+  hit() {
+    const hand = this.state.playerHands[this.state.activeHandIndex];
+    hand.cards.push(this.drawCard());
+
+    if (this.handValue(hand.cards).total > 21) {
+      hand.status = "busted";
+      this.moveToNextHand();
+    }
+  }
+
+  stand() {
+    this.state.playerHands[this.state.activeHandIndex].status = "stand";
+    this.moveToNextHand();
+  }
+
+  double() {
+    const hand = this.state.playerHands[this.state.activeHandIndex];
+    hand.bet *= 2;
+    hand.cards.push(this.drawCard());
+
+    if (this.handValue(hand.cards).total > 21) {
+      hand.status = "busted";
+    } else {
+      hand.status = "stand";
+    }
+
+    this.moveToNextHand();
+  }
+
+  split() {
+    const hand = this.state.playerHands[this.state.activeHandIndex];
+    const card1 = hand.cards[0];
+    const card2 = hand.cards[1];
+
+    // Create new hand
+    const newHand: Hand = {
+      cards: [card2],
+      bet: hand.bet,
+      status: "active",
+      isSplit: true,
+      /* ... */
+    };
+
+    hand.cards = [card1];
+    hand.isSplit = true;
+
+    // Insert new hand after current
+    this.state.playerHands.splice(this.state.activeHandIndex + 1, 0, newHand);
+
+    // Deal second card to each
+    hand.cards.push(this.drawCard());
+    newHand.cards.push(this.drawCard());
+
+    // Handle split aces (auto-stand if rules.hit_split_aces === false)
+    if (card1.rank === "A" && !this.state.rules.hit_split_aces) {
+      hand.status = "stand";
+      newHand.status = "stand";
+      this.state.activeHandIndex++;
+      this.moveToNextHand();
+    }
+  }
+
+  surrender() {
+    const hand = this.state.playerHands[this.state.activeHandIndex];
+    hand.status = "surrender";
+    hand.profit = -hand.bet / 2;
+    this.moveToNextHand();
+  }
+
+  // Decision validation
+  validateAction(action: string): { valid: boolean; correct: boolean; explanation: string } {
+    const hand = this.state.playerHands[this.state.activeHandIndex];
+    const dealerUpcard = this.state.dealerHand.cards[0];
+    const trueCount = this.getTrueCount();
+
+    const correctAction = this.getCorrectAction(hand, dealerUpcard, trueCount);
+    const correct = action === correctAction.action;
+
+    return {
+      valid: this.isActionAllowed(action, hand),
+      correct,
+      explanation: correctAction.explanation
+    };
+  }
+
+  getCorrectAction(hand: Hand, dealerUpcard: Card, trueCount: number): { action: string; explanation: string; isDeviation: boolean } {
+    // Check for applicable deviation first
+    const handKey = this.getHandKey(hand.cards, dealerUpcard.rank);
+    const deviation = this.findApplicableDeviation(handKey, trueCount);
+
+    if (deviation && this.state.settings.practiceMode !== "basic_only") {
+      return {
+        action: deviation.action,
+        explanation: `DEVIATION: ${deviation.hand_key} at TC ${deviation.tc_floor}+. ${this.getDeviationExplanation(deviation)}`,
+        isDeviation: true
+      };
+    }
+
+    // Fall back to basic strategy
+    const action = this.getBasicStrategyAction(hand.cards, dealerUpcard.rank);
+    return {
+      action,
+      explanation: this.getBasicStrategyExplanation(hand.cards, dealerUpcard.rank, action),
+      isDeviation: false
+    };
+  }
+
+  // Dealer play
+  playDealerHand() {
+    this.state.phase = "dealer_action";
+
+    // Flip hole card (for animation)
+    // ...
+
+    while (true) {
+      const { total, soft } = this.handValue(this.state.dealerHand.cards);
+
+      // H17 vs S17
+      if (total > 17 || (total === 17 && (!soft || !this.state.rules.hit_soft_17))) {
+        break;
+      }
+
+      this.state.dealerHand.cards.push(this.drawCard());
+    }
+
+    this.resolvePayout();
+  }
+
+  // Payout resolution
+  resolvePayout() {
+    this.state.phase = "payout";
+    const dealerValue = this.handValue(this.state.dealerHand.cards).total;
+    const dealerBusted = dealerValue > 21;
+
+    for (const hand of this.state.playerHands) {
+      if (hand.status === "busted") {
+        hand.profit = -hand.bet;
+      } else if (hand.status === "surrender") {
+        // Already set
+      } else if (hand.status === "blackjack") {
+        if (this.isBlackjack(this.state.dealerHand.cards)) {
+          hand.profit = 0;  // Push
+        } else {
+          hand.profit = hand.bet * this.state.rules.blackjack_payout;
+        }
+      } else {
+        const playerValue = this.handValue(hand.cards).total;
+
+        if (dealerBusted || playerValue > dealerValue) {
+          hand.profit = hand.bet;
+        } else if (playerValue === dealerValue) {
+          hand.profit = 0;  // Push
+        } else {
+          hand.profit = -hand.bet;
+        }
+      }
+
+      this.state.bankroll += hand.profit;
+    }
+
+    this.updateStats();
+  }
+
+  // Helper methods
+  getTrueCount(): number {
+    const cardsRemaining = this.state.shoe.length - this.state.pointer;
+    const decksRemaining = Math.max(cardsRemaining / 52, 0.25);
+    return this.state.runningCount / decksRemaining;
+  }
+
+  calculateBet(trueCount: number): number {
+    const steps = this.state.betRamp.steps;
+    let units = steps[0].units;
+
+    for (const step of steps) {
+      if (Math.floor(trueCount) >= step.tc_floor) {
+        units = step.units;
+      }
+    }
+
+    return units * this.state.rules.unit_size;  // Assume unit_size in settings
+  }
+
+  // ... more helper methods
+}
+```
+
+**Phase 3: Visual Components & Card Animations**
+
+New file `frontend/src/components/training/TrainingTable.tsx`:
+
+```tsx
+export function TrainingTable() {
+  const engine = useRef(new TrainingGameEngine(config));
+  const [gameState, setGameState] = useState<GameState>(engine.current.getState());
+  const [animatingCards, setAnimatingCards] = useState<AnimatedCard[]>([]);
+
+  const handlePlayerAction = (action: string) => {
+    // Validate action
+    const validation = engine.current.validateAction(action);
+
+    if (!validation.valid) {
+      // Show error message
+      return;
+    }
+
+    // Record decision
+    const decision: Decision = {
+      action,
+      wasCorrect: validation.correct,
+      correctAction: validation.correctAction,
+      explanation: validation.explanation,
+      /* ... */
+    };
+
+    // If correction mode and incorrect, pause for user input
+    if (!validation.correct && gameState.settings.correctionMode) {
+      setGameState({ ...gameState, correctionPending: true, lastDecision: decision });
+      return;
+    }
+
+    // Execute action
+    engine.current.executeAction(action);
+
+    // Update state with animations
+    const newState = engine.current.getState();
+    setGameState(newState);
+
+    // Trigger card animations if needed
+    if (action === "H" || action === "D") {
+      animateCardDeal(newState.playerHands[newState.activeHandIndex].cards);
+    }
+  };
+
+  const handleCorrectionChoice = (takeBack: boolean) => {
+    if (takeBack) {
+      // Reset to before wrong action
+      setGameState({ ...gameState, correctionPending: false, lastDecision: null });
+    } else {
+      // Continue anyway (for learning purposes)
+      const action = gameState.lastDecision!.action;
+      engine.current.executeAction(action);
+      setGameState({ ...engine.current.getState(), correctionPending: false });
+    }
   };
 
   return (
-    <div className="training-mode">
+    <div className="training-table">
+      {/* Header with stats */}
       <div className="training-header">
-        <h2>Strategy Training</h2>
-        <div className="training-stats">
-          <span>Accuracy: {((state.stats.correct / state.stats.total) * 100 || 0).toFixed(1)}%</span>
-          <span>({state.stats.correct}/{state.stats.total})</span>
+        <div className="bankroll">
+          Bankroll: ${gameState.bankroll.toFixed(2)}
+        </div>
+        <div className="session-stats">
+          Accuracy: {((gameState.stats.decisionsCorrect / gameState.stats.decisionsTotal) * 100 || 0).toFixed(1)}%
+          ({gameState.stats.decisionsCorrect}/{gameState.stats.decisionsTotal})
+        </div>
+        <div className="shoe-info">
+          Shoe {gameState.shoeNumber} | Cards Remaining: {gameState.shoe.length - gameState.pointer}
         </div>
       </div>
 
-      <div className="training-controls">
-        <select value={state.mode} onChange={e => dispatch({ type: "SET_MODE", payload: e.target.value })}>
-          <option value="basic">Basic Strategy Only</option>
-          <option value="deviations">Deviations Only</option>
-          <option value="mixed">Mixed</option>
-        </select>
-        <label>
-          <input
-            type="checkbox"
-            checked={state.showCount}
-            onChange={e => dispatch({ type: "SET_SHOW_COUNT", payload: e.target.checked })}
-          />
-          Show True Count
-        </label>
+      {/* Count display (toggleable) */}
+      {gameState.settings.showCount && (
+        <div className="count-display">
+          <span className="running-count">RC: {gameState.runningCount >= 0 ? '+' : ''}{gameState.runningCount}</span>
+          <span className="true-count">TC: {engine.current.getTrueCount().toFixed(1)}</span>
+          <span className="decks-remaining">{((gameState.shoe.length - gameState.pointer) / 52).toFixed(1)} decks left</span>
+        </div>
+      )}
+
+      {/* Dealer area */}
+      <div className="dealer-area">
+        <div className="dealer-label">Dealer</div>
+        <div className="dealer-cards">
+          {gameState.dealerHand.cards.map((card, i) => (
+            <AnimatedCard
+              key={card.id}
+              card={card}
+              faceDown={i === 1 && gameState.phase !== "dealer_action" && gameState.phase !== "payout"}
+              delay={i * 200}
+            />
+          ))}
+        </div>
+        {gameState.phase === "payout" && (
+          <div className="dealer-total">
+            {engine.current.handValue(gameState.dealerHand.cards).total}
+            {engine.current.handValue(gameState.dealerHand.cards).total > 21 && " - BUST"}
+          </div>
+        )}
       </div>
 
-      {state.currentHand && (
-        <div className="training-hand">
-          <div className="cards-display">
-            <div className="dealer-area">
-              <span className="label">Dealer</span>
-              <div className="cards">
-                <Card value={state.currentHand.dealerUpcard} />
-                <Card value="?" faceDown />
+      {/* Player area (supports 1-2 hands) */}
+      <div className="player-area">
+        {gameState.playerHands.map((hand, handIndex) => (
+          <div
+            key={handIndex}
+            className={`player-hand ${handIndex === gameState.activeHandIndex ? "active" : ""}`}
+          >
+            <div className="hand-label">
+              {gameState.settings.numHands === 2 ? `Hand ${handIndex + 1}` : "Your Hand"}
+              {hand.isSplit && " (Split)"}
+            </div>
+
+            <div className="hand-cards">
+              {hand.cards.map((card, cardIndex) => (
+                <AnimatedCard
+                  key={card.id}
+                  card={card}
+                  delay={cardIndex * 200 + handIndex * 50}
+                />
+              ))}
+            </div>
+
+            <div className="hand-info">
+              <span className="hand-total">
+                {engine.current.handValue(hand.cards).total}
+                {engine.current.handValue(hand.cards).soft && " (soft)"}
+              </span>
+              <span className="hand-bet">Bet: ${hand.bet.toFixed(2)}</span>
+            </div>
+
+            {gameState.phase === "payout" && (
+              <div className={`hand-result ${hand.profit > 0 ? "win" : hand.profit < 0 ? "loss" : "push"}`}>
+                {hand.status === "blackjack" && "BLACKJACK! "}
+                {hand.status === "busted" && "BUST "}
+                {hand.profit > 0 ? `+$${hand.profit.toFixed(2)}` : hand.profit < 0 ? `-$${Math.abs(hand.profit).toFixed(2)}` : "PUSH"}
               </div>
-            </div>
-
-            <div className="player-area">
-              <span className="label">Your Hand ({describeHand(state.currentHand.playerCards)})</span>
-              <div className="cards">
-                {state.currentHand.playerCards.map((card, i) => (
-                  <Card key={i} value={card} />
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {state.showCount && (
-            <div className="count-display">
-              <span>Running: {state.currentHand.runningCount}</span>
-              <span>True Count: {state.currentHand.trueCount.toFixed(1)}</span>
-            </div>
-          )}
-
-          <div className="action-buttons">
-            <button onClick={() => handleAction("H")} className="action-hit">Hit</button>
-            <button onClick={() => handleAction("S")} className="action-stand">Stand</button>
-            <button onClick={() => handleAction("D")} className="action-double">Double</button>
-            <button onClick={() => handleAction("P")} className="action-split"
-                    disabled={!isPair(state.currentHand.playerCards)}>Split</button>
-            {rules.surrender && (
-              <button onClick={() => handleAction("R")} className="action-surrender">Surrender</button>
             )}
           </div>
+        ))}
+      </div>
 
-          {state.lastResult && (
-            <div className={`feedback ${state.lastResult.correct ? "correct" : "incorrect"}`}>
-              {state.lastResult.correct ? (
-                <span>Correct!</span>
-              ) : (
-                <div>
-                  <span>Incorrect. Correct action: {state.lastResult.hand.correctAction}</span>
-                  <p className="reason">{state.lastResult.hand.correctReason}</p>
-                </div>
-              )}
+      {/* Action buttons */}
+      {gameState.phase === "betting" && (
+        <div className="betting-controls">
+          <div className="suggested-bet">
+            Suggested Bet (TC {engine.current.getTrueCount().toFixed(1)}): ${gameState.suggestedBet.toFixed(2)}
+          </div>
+          <div className="bet-buttons">
+            <button onClick={() => placeBet(gameState.suggestedBet)}>Place Suggested Bet</button>
+            <button onClick={() => setCustomBetting(true)}>Custom Bet</button>
+          </div>
+        </div>
+      )}
+
+      {gameState.phase === "player_action" && (
+        <div className="action-controls">
+          <button
+            onClick={() => handlePlayerAction("H")}
+            className="btn-action btn-hit"
+            disabled={!canHit(gameState.playerHands[gameState.activeHandIndex])}
+          >
+            Hit (H)
+          </button>
+          <button
+            onClick={() => handlePlayerAction("S")}
+            className="btn-action btn-stand"
+          >
+            Stand (S)
+          </button>
+          <button
+            onClick={() => handlePlayerAction("D")}
+            className="btn-action btn-double"
+            disabled={!canDouble(gameState.playerHands[gameState.activeHandIndex])}
+          >
+            Double (D)
+          </button>
+          <button
+            onClick={() => handlePlayerAction("P")}
+            className="btn-action btn-split"
+            disabled={!canSplit(gameState.playerHands[gameState.activeHandIndex])}
+          >
+            Split (P)
+          </button>
+          {gameState.rules.surrender && (
+            <button
+              onClick={() => handlePlayerAction("R")}
+              className="btn-action btn-surrender"
+              disabled={!canSurrender(gameState.playerHands[gameState.activeHandIndex])}
+            >
+              Surrender (R)
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Feedback panel */}
+      {gameState.lastDecision && !gameState.correctionPending && (
+        <div className={`feedback-panel ${gameState.lastDecision.wasCorrect ? "correct" : "incorrect"}`}>
+          {gameState.lastDecision.wasCorrect ? (
+            <div className="feedback-correct">
+              <span className="feedback-icon">✓</span>
+              <span>Correct!</span>
+              {gameState.lastDecision.isDeviation && <span className="deviation-badge">Deviation</span>}
+            </div>
+          ) : (
+            <div className="feedback-incorrect">
+              <span className="feedback-icon">✗</span>
+              <span>Incorrect. Correct action: {gameState.lastDecision.correctAction}</span>
+              <p className="feedback-explanation">{gameState.lastDecision.explanation}</p>
+              {gameState.lastDecision.isDeviation && <span className="deviation-badge">Missed Deviation</span>}
             </div>
           )}
         </div>
       )}
 
-      <div className="weak-spots">
-        <h4>Areas to Improve</h4>
-        {getWeakSpots(state.stats.byType).map(spot => (
-          <div key={spot.type} className="weak-spot">
-            {spot.type}: {spot.accuracy.toFixed(0)}% ({spot.correct}/{spot.total})
+      {/* Correction modal */}
+      {gameState.correctionPending && gameState.lastDecision && (
+        <div className="correction-modal">
+          <div className="correction-content">
+            <h3>Incorrect Action</h3>
+            <p>You chose: <strong>{gameState.lastDecision.action}</strong></p>
+            <p>Correct action: <strong>{gameState.lastDecision.correctAction}</strong></p>
+            <p className="correction-explanation">{gameState.lastDecision.explanation}</p>
+
+            <div className="correction-buttons">
+              <button onClick={() => handleCorrectionChoice(true)} className="btn-take-back">
+                Take It Back
+              </button>
+              <button onClick={() => handleCorrectionChoice(false)} className="btn-continue">
+                Continue Anyway
+              </button>
+            </div>
           </div>
-        ))}
+        </div>
+      )}
+
+      {/* Settings panel (collapsible) */}
+      <div className="training-settings">
+        {/* Mode selector, show count toggle, etc. */}
       </div>
     </div>
   );
 }
 ```
 
-**Step 4: Add CSS for training mode**
+**Phase 4: Card Animation Component**
 
-```css
-.training-mode {
-  max-width: 600px;
-  margin: 0 auto;
-  padding: 20px;
+New file `frontend/src/components/training/AnimatedCard.tsx`:
+
+```tsx
+interface AnimatedCardProps {
+  card: Card;
+  faceDown?: boolean;
+  delay?: number;
+  onClick?: () => void;
 }
 
-.cards-display {
+export function AnimatedCard({ card, faceDown = false, delay = 0, onClick }: AnimatedCardProps) {
+  const [isDealing, setIsDealing] = useState(true);
+  const [isFlipping, setIsFlipping] = useState(false);
+
+  useEffect(() => {
+    const dealTimer = setTimeout(() => {
+      setIsDealing(false);
+    }, delay);
+
+    return () => clearTimeout(dealTimer);
+  }, [delay]);
+
+  useEffect(() => {
+    // Flip animation when faceDown changes from true to false
+    if (!faceDown && isDealing === false) {
+      setIsFlipping(true);
+      setTimeout(() => setIsFlipping(false), 300);
+    }
+  }, [faceDown]);
+
+  const getSuitColor = (suit: string) => {
+    return suit === "♥" || suit === "♦" ? "#d32f2f" : "#000";
+  };
+
+  return (
+    <div
+      className={`card ${isDealing ? "dealing" : ""} ${isFlipping ? "flipping" : ""} ${faceDown ? "face-down" : ""}`}
+      onClick={onClick}
+      style={{
+        animationDelay: `${delay}ms`
+      }}
+    >
+      {faceDown ? (
+        <div className="card-back">
+          {/* Card back pattern */}
+          <div className="card-back-pattern"></div>
+        </div>
+      ) : (
+        <div className="card-front">
+          <div className="card-rank" style={{ color: getSuitColor(card.suit) }}>
+            {card.rank}
+          </div>
+          <div className="card-suit" style={{ color: getSuitColor(card.suit) }}>
+            {card.suit}
+          </div>
+          <div className="card-center-suit" style={{ color: getSuitColor(card.suit) }}>
+            {card.suit}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+**Phase 5: Scenario Generation (Advanced Feature)**
+
+New file `frontend/src/components/training/ScenarioGenerator.ts`:
+
+```tsx
+// Pre-generate interesting scenarios for practice
+class ScenarioGenerator {
+  generateHighCountScenarios(count: number = 100): Scenario[] {
+    const scenarios: Scenario[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const scenario = this.generateSingleHighCountScenario();
+      scenarios.push(scenario);
+    }
+
+    return scenarios;
+  }
+
+  generateSingleHighCountScenario(): Scenario {
+    // Build shoe with artificially high count
+    const shoe = this.buildBiasedShoe(3, 6);  // TC range +3 to +6
+
+    // Play through until we hit an interesting decision point
+    // (e.g., 16v10, 12v2, insurance opportunity, etc.)
+
+    return {
+      shoe,
+      position: /* ... */,
+      runningCount: /* ... */,
+      dealerUpcard: /* ... */,
+      playerCards: /* ... */,
+      correctAction: /* ... */,
+      /* ... */
+    };
+  }
+
+  buildBiasedShoe(tcMin: number, tcMax: number): Card[] {
+    // Remove low cards to create high count
+    // This is tricky - need to maintain realistic ratios
+
+    const targetTC = (tcMin + tcMax) / 2;
+    const decks = 6;
+
+    // Normal shoe
+    let shoe = this.buildNormalShoe(decks);
+
+    // Remove cards to achieve target TC
+    const cardsPerDeck = 52;
+    const totalCards = decks * cardsPerDeck;
+    const targetRC = targetTC * (totalCards / cardsPerDeck);
+
+    // Remove low cards (2-6) to increase count
+    const lowCards = shoe.filter(c => ["2", "3", "4", "5", "6"].includes(c.rank));
+    const removeCount = Math.floor(Math.abs(targetRC) / 1);  // Each low card is +1
+
+    for (let i = 0; i < removeCount && lowCards.length > 0; i++) {
+      const removeIndex = Math.floor(Math.random() * lowCards.length);
+      const cardToRemove = lowCards[removeIndex];
+      const shoeIndex = shoe.indexOf(cardToRemove);
+      shoe.splice(shoeIndex, 1);
+      lowCards.splice(removeIndex, 1);
+    }
+
+    return this.shuffle(shoe);
+  }
+
+  filterScenariosByHand(scenarios: Scenario[], handType: string): Scenario[] {
+    return scenarios.filter(s => {
+      const { total, soft } = this.handValue(s.playerCards);
+
+      if (handType === "hard_16") {
+        return total === 16 && !soft;
+      } else if (handType === "hard_12-15") {
+        return total >= 12 && total <= 15 && !soft;
+      } else if (handType === "soft_totals") {
+        return soft;
+      } else if (handType === "pairs") {
+        return s.playerCards.length === 2 && s.playerCards[0].rank === s.playerCards[1].rank;
+      }
+      // ... more filters
+    });
+  }
+}
+```
+
+**Phase 6: Statistics & Progress Tracking**
+
+```tsx
+// Track detailed statistics
+class SessionTracker {
+  private stats: SessionStats;
+
+  recordDecision(decision: Decision) {
+    this.stats.decisionsTotal++;
+    if (decision.wasCorrect) {
+      this.stats.decisionsCorrect++;
+    }
+
+    // By hand type
+    const handType = this.getHandType(decision.playerCards);
+    if (!this.stats.byHandType[handType]) {
+      this.stats.byHandType[handType] = { correct: 0, total: 0 };
+    }
+    this.stats.byHandType[handType].total++;
+    if (decision.wasCorrect) {
+      this.stats.byHandType[handType].correct++;
+    }
+
+    // By action type
+    const actionType = decision.action;
+    if (!this.stats.byAction[actionType]) {
+      this.stats.byAction[actionType] = { correct: 0, total: 0 };
+    }
+    this.stats.byAction[actionType].total++;
+    if (decision.wasCorrect) {
+      this.stats.byAction[actionType].correct++;
+    }
+
+    // Track deviations separately
+    if (decision.isDeviation) {
+      // Deviation-specific stats
+    } else {
+      // Basic strategy stats
+    }
+
+    // Identify weak spots
+    if (!decision.wasCorrect) {
+      this.addWeakSpot(decision.handKey, decision.trueCount);
+    }
+  }
+
+  getWeakSpots(): Array<{ hand: string; accuracy: number; count: number }> {
+    // Return hands where accuracy < 70%
+    const weakSpots: Array<{ hand: string; accuracy: number; count: number }> = [];
+
+    for (const [handType, stats] of Object.entries(this.stats.byHandType)) {
+      const accuracy = stats.correct / stats.total;
+      if (accuracy < 0.7 && stats.total >= 5) {  // At least 5 instances
+        weakSpots.push({
+          hand: handType,
+          accuracy: accuracy * 100,
+          count: stats.total
+        });
+      }
+    }
+
+    return weakSpots.sort((a, b) => a.accuracy - b.accuracy);
+  }
+
+  exportSession(): SessionReport {
+    return {
+      timestamp: new Date(),
+      duration: /* ... */,
+      stats: this.stats,
+      weakSpots: this.getWeakSpots(),
+      recommendations: this.generateRecommendations(),
+    };
+  }
+
+  generateRecommendations(): string[] {
+    const recommendations: string[] = [];
+
+    // Analyze weak spots and suggest practice
+    const weakSpots = this.getWeakSpots();
+    if (weakSpots.length > 0) {
+      recommendations.push(`Focus on: ${weakSpots[0].hand} (${weakSpots[0].accuracy.toFixed(0)}% accuracy)`);
+    }
+
+    // Check deviation accuracy
+    if (this.stats.deviationAccuracy < 0.8) {
+      recommendations.push("Practice counting deviations at high true counts");
+    }
+
+    // ... more analysis
+
+    return recommendations;
+  }
+}
+```
+
+**Phase 7: CSS & Styling**
+
+```css
+/* Training table layout */
+.training-table {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  background: linear-gradient(135deg, #1e5128 0%, #2d6a4f 100%);
+  border-radius: 20px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.dealer-area, .player-area {
   display: flex;
   flex-direction: column;
-  gap: 30px;
   align-items: center;
+  padding: 30px;
+}
+
+.dealer-cards, .hand-cards {
+  display: flex;
+  gap: -40px;  /* Overlap cards slightly */
+  perspective: 1000px;
+}
+
+/* Card animations */
+.card {
+  width: 100px;
+  height: 140px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.3s ease;
+}
+
+.card.dealing {
+  animation: deal 0.4s ease-out forwards;
+}
+
+@keyframes deal {
+  from {
+    transform: translateY(-200px) scale(0.5);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.card.flipping {
+  animation: flip 0.6s ease-in-out;
+}
+
+@keyframes flip {
+  0% { transform: rotateY(0deg); }
+  50% { transform: rotateY(90deg); }
+  100% { transform: rotateY(0deg); }
+}
+
+.card-front, .card-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 8px;
+}
+
+.card-front {
+  background: white;
+  border: 1px solid #333;
+}
+
+.card-back {
+  background: linear-gradient(45deg, #1a1a2e 25%, #16213e 25%, #16213e 50%, #1a1a2e 50%, #1a1a2e 75%, #16213e 75%);
+  background-size: 20px 20px;
+  transform: rotateY(180deg);
+}
+
+.card-rank {
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.card-suit {
+  font-size: 20px;
+}
+
+.card-center-suit {
+  font-size: 48px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0.3;
+}
+
+/* Action buttons */
+.action-controls {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
   margin: 30px 0;
 }
 
-.cards {
-  display: flex;
-  gap: 10px;
-}
-
-.action-buttons {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.action-buttons button {
+.btn-action {
   padding: 15px 30px;
   font-size: 18px;
   font-weight: bold;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
 }
 
-.action-hit { background: #4ecdc4; }
-.action-stand { background: #95a5a6; }
-.action-double { background: #f39c12; }
-.action-split { background: #9b59b6; }
-.action-surrender { background: #e74c3c; }
-
-.feedback {
-  margin-top: 20px;
-  padding: 15px;
-  border-radius: 8px;
-  text-align: center;
+.btn-action:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
 }
 
-.feedback.correct {
+.btn-action:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-hit { background: #4ecdc4; }
+.btn-stand { background: #95a5a6; }
+.btn-double { background: #f39c12; }
+.btn-split { background: #9b59b6; }
+.btn-surrender { background: #e74c3c; }
+
+/* Feedback panel */
+.feedback-panel {
+  margin: 20px auto;
+  max-width: 600px;
+  padding: 20px;
+  border-radius: 10px;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.feedback-panel.correct {
   background: #27ae60;
   color: white;
 }
 
-.feedback.incorrect {
+.feedback-panel.incorrect {
   background: #e74c3c;
   color: white;
 }
 
-.feedback .reason {
-  margin-top: 10px;
-  font-size: 14px;
-  opacity: 0.9;
+.feedback-icon {
+  font-size: 32px;
+  margin-right: 10px;
+}
+
+.deviation-badge {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  margin-left: 10px;
+}
+
+/* Correction modal */
+.correction-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s;
+}
+
+.correction-content {
+  background: white;
+  padding: 40px;
+  border-radius: 20px;
+  max-width: 500px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.correction-buttons {
+  display: flex;
+  gap: 15px;
+  margin-top: 30px;
+}
+
+.btn-take-back {
+  flex: 1;
+  padding: 12px 24px;
+  background: #27ae60;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.btn-continue {
+  flex: 1;
+  padding: 12px 24px;
+  background: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+/* Count display */
+.count-display {
+  background: rgba(0, 0, 0, 0.6);
+  padding: 15px 30px;
+  border-radius: 10px;
+  display: flex;
+  gap: 30px;
+  justify-content: center;
+  margin: 20px 0;
+  font-family: monospace;
+  font-size: 18px;
+  color: #fff;
+}
+
+.running-count, .true-count {
+  font-weight: bold;
+}
+
+.true-count {
+  color: #4ecdc4;
 }
 ```
 
@@ -1536,31 +2499,74 @@ export function TrainingMode({ rules, deviations }: TrainingModeProps) {
 
 ### Task #37: Add Counting Practice Module
 
-**Priority:** 🟡 MEDIUM (but high user value)
+**Priority:** 🔴 HIGH (essential for count accuracy)
 
 #### Why This Matters
 
-Card counting accuracy is crucial. A player who miscounts by even 1-2 points will:
-- Make wrong bet decisions
-- Miss deviation opportunities
-- Potentially wong out at wrong times
+Card counting accuracy is the foundation of advantage play. A player who miscounts by even 1-2 points will:
+- Make wrong bet decisions (sizing bets incorrectly)
+- Miss deviation opportunities (not recognizing +3 vs +2 situations)
+- Wong out at wrong times (leaving profitable shoes or staying in negative ones)
+- Lose their edge entirely
 
-The counting practice module helps users:
-- Build speed and accuracy
-- Practice with realistic card dealing
-- Identify problem cards (e.g., forgetting 7 is neutral)
+**Real-world data**: Studies show most card counters lose money not because they don't know the system, but because they miscount under casino conditions (distractions, speed, fatigue).
+
+The counting practice module addresses this by:
+- Building muscle memory for card value recognition
+- Increasing counting speed to casino-level (0.3s per card)
+- Identifying problem areas (forgetting 7 is neutral, missing face cards)
+- Practicing with realistic casino distractions
+- Training true count conversion speed
+- Integrating count practice directly with play decisions
+
+**Integration with Training Mode**: The counting practice should be part of the same training tab/page as the play-by-play mode. Users should be able to:
+1. Practice pure counting (no decisions)
+2. Practice counting while playing hands (realistic!)
+3. Get quizzed on the count during game play
 
 #### Acceptance Criteria
 
+**Standalone Counting Drills:**
 - [ ] Cards flash one at a time at configurable speed
-- [ ] User tracks running count mentally
-- [ ] Periodic checkpoints ask for current count
-- [ ] End-of-deck score with accuracy
-- [ ] Multiple counting system support (Hi-Lo, KO, etc.)
-- [ ] Speed levels: Slow (2s), Medium (1s), Fast (0.5s), Casino (0.3s)
-- [ ] Multi-card mode (2-3 cards at once, like real dealing)
-- [ ] Session statistics and progress tracking
-- [ ] Audio cues option
+- [ ] User tracks running count mentally (not displayed until checkpoint)
+- [ ] Periodic checkpoints ask for current running count
+- [ ] True count conversion quizzes (given RC and cards remaining, calculate TC)
+- [ ] End-of-deck score with accuracy metrics
+- [ ] Multiple counting system support (Hi-Lo, KO, Hi-Opt I, Hi-Opt II, etc.)
+- [ ] Speed levels: Learning (2s), Slow (1.5s), Medium (1s), Fast (0.5s), Casino (0.3s), Expert (0.2s)
+- [ ] Multi-card mode (2-3 cards at once, simulating real dealer dealing)
+- [ ] Countdown mode (single deck from start to finish without checkpoints - final answer)
+- [ ] Deck estimation practice with rendered discard tray (see Section 16 of TRAINING_MODE_SPEC.md)
+  - Rendered 3D/2D discard tray (not photos) for infinite scenarios
+  - Multiple tray templates (standard slanted, vertical holder, deep tray)
+  - Camera angle variance to prevent memorization
+  - Difficulty progression: whole → half → quarter decks
+  - Standalone drill mode + integrated with Free Play
+  - User's deck estimate used for TC calculation (makes errors hurt)
+  - TC combo drill: estimate decks → calculate true count
+
+**Integrated Counting (with Gameplay):**
+- [ ] Count while playing hands in training mode
+- [ ] Random count checks during gameplay ("What's the running count?")
+- [ ] True count displayed after each round (in training mode) for self-verification
+- [ ] Statistics on counting accuracy during actual play
+- [ ] Option to hide count and rely 100% on mental tracking
+
+**Advanced Features:**
+- [ ] Speed ramp mode (starts slow, gradually increases to casino speed)
+- [ ] High-count practice (decks biased toward high counts for deviation practice)
+- [ ] Error analysis (which cards you consistently miscount)
+- [ ] Multi-deck practice (1, 2, 4, 6, 8 decks)
+- [ ] Distraction mode (background sounds, popup messages to simulate casino)
+- [ ] Session statistics and progress tracking over time
+- [ ] Audio cues option (cards announced for accessibility)
+- [ ] Leaderboard / personal records for speed and accuracy
+
+**UI Integration:**
+- [ ] Integrated into training tab/page (not separate page)
+- [ ] Switchable modes: "Pure Counting Drill" vs "Count While Playing"
+- [ ] Quick-start presets for different skill levels
+- [ ] Progress tracking dashboard
 
 #### Implementation Steps
 

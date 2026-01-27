@@ -265,6 +265,7 @@ function App() {
   const [hands, setHands] = useState<number>(2_000_000);
   const [seed, setSeed] = useState<number>(() => Math.floor(Math.random() * 1_000_000_000));
   const [randomizeSeedEachRun, setRandomizeSeedEachRun] = useState<boolean>(true);
+  const [useMultiprocessing, setUseMultiprocessing] = useState<boolean>(true);
   const [unitSize, setUnitSize] = useState<number>(10);
   const [bankroll, setBankroll] = useState<number | null>(null);
   const [handsPerHour, setHandsPerHour] = useState<number>(100);
@@ -636,6 +637,7 @@ function App() {
         use_estimated_tc_for_bet: runConfig.settings.use_estimated_tc_for_bet,
         use_estimated_tc_for_deviations: runConfig.settings.use_estimated_tc_for_deviations,
         hands_per_hour: runConfig.settings.hands_per_hour,
+        use_multiprocessing: useMultiprocessing,
       };
       const { id } = await startSimulation(payload);
       setSimId(id);
@@ -681,6 +683,7 @@ function App() {
         use_estimated_tc_for_bet: runConfig.settings.use_estimated_tc_for_bet,
         use_estimated_tc_for_deviations: runConfig.settings.use_estimated_tc_for_deviations,
         hands_per_hour: runConfig.settings.hands_per_hour,
+        use_multiprocessing: useMultiprocessing,
       };
       const { id } = await startSimulation(payload);
       setSimId(id);
@@ -823,6 +826,7 @@ function App() {
         use_estimated_tc_for_bet: scenarioConfig.settings.use_estimated_tc_for_bet,
         use_estimated_tc_for_deviations: scenarioConfig.settings.use_estimated_tc_for_deviations,
         hands_per_hour: scenarioConfig.settings.hands_per_hour,
+        use_multiprocessing: useMultiprocessing,
       };
       const { id } = await startSimulation(payload);
       setSimId(id);
@@ -2569,6 +2573,13 @@ function App() {
                   <HelpIcon text="When enabled, each run uses a new random seed for independent samples." />
                 </span>
                 <input type="checkbox" checked={randomizeSeedEachRun} onChange={(e) => setRandomizeSeedEachRun(e.target.checked)} />
+              </label>
+              <label className="toggle">
+                <span className="label-row">
+                  Use multi-processing
+                  <HelpIcon text="Use multiple CPU cores for faster simulations. Recommended for 100k+ hands." />
+                </span>
+                <input type="checkbox" checked={useMultiprocessing} onChange={(e) => setUseMultiprocessing(e.target.checked)} />
               </label>
               <label className="toggle">
                 <span className="label-row">
