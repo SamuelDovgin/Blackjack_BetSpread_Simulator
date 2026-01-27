@@ -89,7 +89,9 @@
 
 .player-hands-viewport {
   width: 100%;
-  overflow: hidden;
+  /* Clip horizontally (so we can keep 1 row), but allow vertical overflow for stacked cards + labels. */
+  overflow: visible;
+  clip-path: inset(-240px 0 -240px 0);
 }
 
 .player-hands {
@@ -135,22 +137,25 @@
   transition: width 0.25s ease;
 }
 
-.player-hand-container.active .card-stack.player-stack::before {
-  content: '';
+/* Active hand outline: a single continuous contour around the overlapping card stack. */
+.stack-outline {
   position: absolute;
-  inset: -6px;
-  border-radius: 18px;
-  background: radial-gradient(
-    60% 80% at 50% 50%,
-    rgba(255, 255, 255, 0.10) 0%,
-    rgba(255, 255, 255, 0.04) 55%,
-    rgba(255, 255, 255, 0.00) 100%
-  );
-  box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.18),
-    0 0 26px rgba(255, 255, 255, 0.20);
-  z-index: -1;
   pointer-events: none;
+  z-index: -1;
+  overflow: visible;
+}
+
+.stack-outline path {
+  /* Prefer a soft "shaded" highlight over a sharp outline. */
+  fill: rgba(255, 255, 255, 0.06);
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 2px;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  filter:
+    blur(0.3px)
+    drop-shadow(0 0 18px rgba(255, 255, 255, 0.14))
+    drop-shadow(0 0 34px rgba(255, 255, 255, 0.08));
 }
 
 .player-hand-container.busted {
@@ -165,6 +170,8 @@
   gap: 3px;
   /* Reserve a compact area so badges never push the cards up. */
   min-height: 42px;
+  transition: transform 0.25s ease;
+  will-change: transform;
 }
 
 .hand-meta-row {

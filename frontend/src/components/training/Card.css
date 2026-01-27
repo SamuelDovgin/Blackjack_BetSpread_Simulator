@@ -504,10 +504,25 @@
 @keyframes splitSlide {
   0% {
     /* Start at original position (stacked on first hand) */
-    transform: translateX(-120px) translateY(0);
+    transform: translateX(var(--split-slide-x, -120px)) translateY(0);
   }
   100% {
     /* End at new hand position */
+    transform: translateX(0) translateY(0);
+  }
+}
+
+/* Split settle: the "top" card becomes the left-hand base card and should glide into place. */
+.card.split-settle {
+  animation: splitSettle 0.4s ease-out forwards;
+}
+
+@keyframes splitSettle {
+  0% {
+    /* Start at the prior stacked offset (player overlap offset). */
+    transform: translateX(28px) translateY(-20px);
+  }
+  100% {
     transform: translateX(0) translateY(0);
   }
 }
@@ -516,7 +531,16 @@
 @media (max-width: 768px) {
   @keyframes splitSlide {
     0% {
-      transform: translateX(-100px) translateY(0);
+      transform: translateX(var(--split-slide-x, -100px)) translateY(0);
+    }
+    100% {
+      transform: translateX(0) translateY(0);
+    }
+  }
+
+  @keyframes splitSettle {
+    0% {
+      transform: translateX(22px) translateY(-16px);
     }
     100% {
       transform: translateX(0) translateY(0);
