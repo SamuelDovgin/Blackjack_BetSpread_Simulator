@@ -22,6 +22,8 @@ export type GamePhase =
   | 'payout'         // Showing results
   | 'feedback';      // Showing feedback for incorrect play
 
+export type HandResult = 'win' | 'lose' | 'push' | 'blackjack' | null;
+
 export interface HandState {
   cards: Card[];
   bet: number;
@@ -30,6 +32,8 @@ export interface HandState {
   isBusted: boolean;
   isBlackjack: boolean;
   isComplete: boolean;
+  // Result after payout resolution
+  result?: HandResult;
   // Split-hand flow helpers (optional)
   isSplitHand?: boolean;
   needsSplitCard?: boolean;
@@ -78,6 +82,7 @@ export interface TrainingSettings {
   defaultBet: number;
   correctionMode: 'inline' | 'modal' | 'off';
   autoAdvanceDelay: number; // ms
+  onlyShowMistakes: boolean; // Only show feedback when player makes a mistake
 
   // Sound
   soundEnabled: boolean;
@@ -95,12 +100,20 @@ export interface TrainingStats {
   correctDecisions: number;
   incorrectDecisions: number;
 
-  // By action type
+  // By action type (what the correct action was)
   hitAccuracy: { correct: number; total: number };
   standAccuracy: { correct: number; total: number };
   doubleAccuracy: { correct: number; total: number };
   splitAccuracy: { correct: number; total: number };
   surrenderAccuracy: { correct: number; total: number };
+
+  // By hand type
+  hardAccuracy: { correct: number; total: number };
+  softAccuracy: { correct: number; total: number };
+  pairAccuracy: { correct: number; total: number };
+
+  // Per-hand tracking for weak spots
+  handStats: Record<string, { correct: number; total: number; mistakes: Record<string, number> }>;
 
   // Counting
   countChecksPassed: number;
@@ -117,6 +130,67 @@ export interface SessionState {
   gameState: GameState;
 }
 
+// Decision Result Taxonomy
+// Distinguishes between basic strategy and deviation outcomes
+export type DecisionResultType =
+  | 'correct_basic'      // No deviation applies, user did basic correctly
+  | 'correct_deviation'  // Deviation applies, user took deviation correctly
+  | 'missed_deviation'   // Deviation applies, user did basic instead of deviation
+  | 'wrong_deviation'    // User took deviation action but TC wasn't right for it
+  | 'incorrect_basic';   // No deviation, user was just wrong
+
+// Decision tracking for feedback
+export interface LastDecision {
+  /** What the user chose */
+  userAction: PlayerAction;
+  /** What basic strategy says */
+  basicAction: PlayerAction;
+  /** What the deviation says (if applicable) */
+  deviationAction?: PlayerAction;
+  /** The final expected action (deviation if applicable, else basic) */
+  correctAction: PlayerAction;
+  /** Whether the user was correct */
+  isCorrect: boolean;
+  /** Decision result classification */
+  resultType: DecisionResultType;
+  /** Whether a deviation was available for this hand/count */
+  deviationApplies: boolean;
+  /** Deviation name if applicable (e.g., "I18: 16 vs 10 Stand") */
+  deviationName?: string;
+  /** TC threshold for the deviation */
+  deviationThreshold?: number;
+  /** Short explanation of why the correct action is correct */
+  reason: string;
+  /** Hand key for stats tracking (e.g., "H16vT") */
+  handKey: string;
+  /** Hand classification */
+  handType: 'hard' | 'soft' | 'pair';
+  /** Player's total at decision time */
+  total: number;
+  /** Whether hand was soft */
+  isSoft: boolean;
+  /** Dealer's upcard value */
+  dealerUp: number;
+  /** True count at decision time (for deviation tracking) */
+  trueCount?: number;
+  /** Timestamp */
+  timestamp: number;
+}
+
+// Weak spot tracking
+export interface WeakSpot {
+  /** Hand key (e.g., "hard-16-v10") */
+  handKey: string;
+  /** Number of times this hand was seen */
+  occurrences: number;
+  /** Number of correct decisions */
+  correct: number;
+  /** Accuracy percentage */
+  accuracy: number;
+  /** Most common mistake */
+  commonMistake?: PlayerAction;
+}
+
 // Default values
 export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
   showCount: false,        // Hidden by default (realistic practice)
@@ -127,6 +201,7 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
   defaultBet: 1,
   correctionMode: 'inline',
   autoAdvanceDelay: 2000,
+  onlyShowMistakes: true,  // Only show feedback on mistakes by default
   soundEnabled: false,     // Off by default
   practiceMode: 'free-play',
   highCountTcMin: 2,
@@ -142,6 +217,10 @@ export const DEFAULT_TRAINING_STATS: TrainingStats = {
   doubleAccuracy: { correct: 0, total: 0 },
   splitAccuracy: { correct: 0, total: 0 },
   surrenderAccuracy: { correct: 0, total: 0 },
+  hardAccuracy: { correct: 0, total: 0 },
+  softAccuracy: { correct: 0, total: 0 },
+  pairAccuracy: { correct: 0, total: 0 },
+  handStats: {},
   countChecksPassed: 0,
   countChecksFailed: 0,
   sessionStart: Date.now(),

@@ -22,11 +22,6 @@ interface TableProps {
   showDealerTotal?: boolean;
   /** Whether to show hand totals (default: false for realistic practice) */
   showHandTotals?: boolean;
-  result?: {
-    playerTotal: number;
-    dealerTotal: number;
-    outcome: 'win' | 'lose' | 'push' | 'blackjack' | null;
-  } | null;
   /** Number of cards remaining in shoe */
   cardsRemaining?: number;
   /** Total cards in shoe (for percentage display) */
@@ -187,7 +182,6 @@ export const Table: React.FC<TableProps> = ({
   phase,
   showDealerTotal = false,
   showHandTotals = false,
-  result = null,
   cardsRemaining = 312,
   totalCards = 312,
   cardsDiscarded = 0,
@@ -348,16 +342,6 @@ export const Table: React.FC<TableProps> = ({
           )}
         </div>
 
-        {/* Outcome display */}
-        {result && phase === 'payout' && (
-          <div className={`outcome-display outcome-${result.outcome}`}>
-            {result.outcome === 'win' && 'WIN!'}
-            {result.outcome === 'lose' && 'LOSE'}
-            {result.outcome === 'push' && 'PUSH'}
-            {result.outcome === 'blackjack' && 'BLACKJACK!'}
-          </div>
-        )}
-
         {/* Player area */}
         <div className="player-area">
           {playerHands.length > 0 ? (
@@ -421,9 +405,19 @@ export const Table: React.FC<TableProps> = ({
                         <div className="hand-total busted">BUST</div>
                       )}
 
+                      {/* Outcome badges during payout phase */}
+                      {phase === 'payout' && showBadges && hand.result && (
+                        <div className={`hand-result result-${hand.result}`}>
+                          {hand.result === 'win' && 'WIN'}
+                          {hand.result === 'push' && 'PUSH'}
+                          {hand.result === 'blackjack' && 'BLACKJACK'}
+                          {hand.result === 'lose' && !hand.isBusted && 'LOSE'}
+                        </div>
+                      )}
+
                       <div className="hand-meta-row">
                         {playerHands.length > 1 && <span className="hand-tag tag-bet">{hand.bet}u</span>}
-                        {hand.isBlackjack && showBadges && <span className="hand-tag tag-blackjack">Blackjack</span>}
+                        {hand.isBlackjack && showBadges && phase !== 'payout' && <span className="hand-tag tag-blackjack">Blackjack</span>}
                         {hand.isDoubled && showBadges && <span className="hand-tag tag-doubled">Double</span>}
                         {hand.isSurrendered && showBadges && <span className="hand-tag tag-surrendered">SUR</span>}
                       </div>

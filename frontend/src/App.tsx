@@ -2118,6 +2118,12 @@ function App() {
           hitSoft17={rules?.hit_soft_17 ?? true}
           allowSurrender={rules?.surrender ?? true}
           blackjackPayout={rules?.blackjack_payout ?? 1.5}
+          tcEstimationMethod={
+            tcEstStep === 0 ? 'perfect' :
+            tcEstRounding === 'floor' ? 'floor' :
+            (tcEstRounding === 'nearest' && tcEstStep === 0.5) ? 'halfDeck' :
+            'floor'
+          }
         />
       ) : (
         <>

@@ -5,17 +5,33 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Table } from './Table';
 import { ActionButtons } from './ActionButtons';
+import { FeedbackPanel, CorrectionModal } from './FeedbackPanel';
+import { StatsPanel } from './StatsPanel';
 import type {
   GameState,
   GamePhase,
   PlayerAction,
   TrainingSettings,
   TrainingStats,
+  LastDecision,
+  DecisionResultType,
 } from './types';
 import {
   DEFAULT_TRAINING_SETTINGS,
   DEFAULT_TRAINING_STATS,
 } from './types';
+import {
+  getBasicStrategyAction,
+  DEFAULT_RULES,
+  calculateHand,
+  isPair,
+  getPairValue,
+  type RuleSet,
+} from './engine/basicStrategy';
+import {
+  checkDeviation,
+  shouldTakeInsurance,
+} from './engine/deviations';
 import {
   createInitialGameState,
   dealInitialCards,
@@ -50,6 +66,66 @@ const CARD_REMOVE_ANIM_MS = 400; // Matches Card.css removal animation
 const SPLIT_SEPARATE_MS = 400; // Matches Card.css splitSlide / splitSettle
 const PLAYER_CENTER_SLIDE_MS = 350; // Matches Table.css .player-hands transition
 
+// localStorage keys for persistence
+const STORAGE_KEY_SETTINGS = 'blackjack-training-settings';
+const STORAGE_KEY_STATS = 'blackjack-training-stats';
+
+/**
+ * Load settings from localStorage, merging with defaults
+ */
+function loadSettings(): TrainingSettings {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_SETTINGS);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Merge with defaults to handle any new settings added in updates
+      return { ...DEFAULT_TRAINING_SETTINGS, ...parsed };
+    }
+  } catch (e) {
+    console.warn('Failed to load training settings from localStorage:', e);
+  }
+  return DEFAULT_TRAINING_SETTINGS;
+}
+
+/**
+ * Save settings to localStorage
+ */
+function saveSettings(settings: TrainingSettings): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+  } catch (e) {
+    console.warn('Failed to save training settings to localStorage:', e);
+  }
+}
+
+/**
+ * Load stats from localStorage, resetting session start time
+ */
+function loadStats(): TrainingStats {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_STATS);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Keep the stored session start time for continuity
+      return { ...DEFAULT_TRAINING_STATS, ...parsed };
+    }
+  } catch (e) {
+    console.warn('Failed to load training stats from localStorage:', e);
+  }
+  return { ...DEFAULT_TRAINING_STATS, sessionStart: Date.now() };
+}
+
+/**
+ * Save stats to localStorage
+ */
+function saveStats(stats: TrainingStats): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_STATS, JSON.stringify(stats));
+  } catch (e) {
+    console.warn('Failed to save training stats to localStorage:', e);
+  }
+}
+
 interface TrainingPageProps {
   onBack: () => void;
   // Config from main app
@@ -58,6 +134,8 @@ interface TrainingPageProps {
   hitSoft17?: boolean;
   allowSurrender?: boolean;
   blackjackPayout?: number;
+  // TC estimation method from simulator settings (perfect, floor, or halfDeck)
+  tcEstimationMethod?: 'perfect' | 'floor' | 'halfDeck';
 }
 
 export const TrainingPage: React.FC<TrainingPageProps> = ({
@@ -67,21 +145,21 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   hitSoft17 = true,
   allowSurrender = true,
   blackjackPayout = 1.5,
+  tcEstimationMethod = 'floor',
 }) => {
   // Game state
   const [gameState, setGameState] = useState<GameState>(() =>
     createInitialGameState(numDecks, 1000)
   );
 
-  // Settings (will be persisted to localStorage later)
-  const [settings, setSettings] = useState<TrainingSettings>(DEFAULT_TRAINING_SETTINGS);
+  // Settings (persisted to localStorage)
+  const [settings, setSettings] = useState<TrainingSettings>(() => loadSettings());
 
-  // Stats
-  const [stats, setStats] = useState<TrainingStats>(DEFAULT_TRAINING_STATS);
+  // Stats (persisted to localStorage)
+  const [stats, setStats] = useState<TrainingStats>(() => loadStats());
 
   // UI state
   const [showSettings, setShowSettings] = useState(false);
-  const [resultOutcome, setResultOutcome] = useState<'win' | 'lose' | 'push' | 'blackjack' | null>(null);
   const [isRevealingHoleCard, setIsRevealingHoleCard] = useState(false);
   const [isRemovingCards, setIsRemovingCards] = useState(false);
   const [isDealerStacked, setIsDealerStacked] = useState(false);
@@ -91,6 +169,26 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   const [isSplitting, setIsSplitting] = useState(false); // During split card separation animation
   const [splitDealingPhase, setSplitDealingPhase] = useState<number>(0); // 0=none, 1=dealing to right, 2=dealing to left, 3=centering (no dealing)
   const [splitOriginHandIndex, setSplitOriginHandIndex] = useState<number | null>(null); // for split animations/layout
+
+  // Decision validation state
+  const [lastDecision, setLastDecision] = useState<LastDecision | null>(null);
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+  const preActionStateRef = useRef<GameState | null>(null);
+
+  // Stats panel state
+  const [showStats, setShowStats] = useState(false);
+
+  // Insurance state
+  const [showInsurancePrompt, setShowInsurancePrompt] = useState(false);
+  const [insuranceDecisionMade, setInsuranceDecisionMade] = useState(false);
+
+  // Build RuleSet from props
+  const ruleSet: RuleSet = {
+    ...DEFAULT_RULES,
+    hitSoft17,
+    surrenderAllowed: allowSurrender,
+    numDecks,
+  };
 
   const timersRef = useRef<number[]>([]);
   const queuedActionRef = useRef<PlayerAction | null>(null);
@@ -117,16 +215,50 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     return () => clearTimers();
   }, []);
 
+  // Persist settings to localStorage when they change
+  useEffect(() => {
+    saveSettings(settings);
+  }, [settings]);
+
+  // Persist stats to localStorage when they change (debounced to avoid excessive writes)
+  const statsTimeoutRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (statsTimeoutRef.current) {
+      window.clearTimeout(statsTimeoutRef.current);
+    }
+    statsTimeoutRef.current = window.setTimeout(() => {
+      saveStats(stats);
+    }, 500); // Debounce 500ms
+    return () => {
+      if (statsTimeoutRef.current) {
+        window.clearTimeout(statsTimeoutRef.current);
+      }
+    };
+  }, [stats]);
+
   // Total cards in full shoe
   const totalCards = numDecks * 52;
 
   // Calculate derived values
   const decksRemaining = (gameState.shoe.length / 52);
-  const trueCount = calculateTrueCount(gameState.runningCount, decksRemaining);
+  const rawTrueCount = calculateTrueCount(gameState.runningCount, decksRemaining);
+
+  // Helper to apply TC estimation method (floor for realistic casino play)
+  const applyTcEstimation = useCallback((rawTc: number): number => {
+    if (tcEstimationMethod === 'floor') {
+      return Math.floor(rawTc);
+    } else if (tcEstimationMethod === 'halfDeck') {
+      return Math.round(rawTc * 2) / 2; // Round to nearest 0.5
+    }
+    return rawTc;
+  }, [tcEstimationMethod]);
+
+  const trueCount = applyTcEstimation(rawTrueCount);
 
   // Current hand
   const currentHand = gameState.playerHands[gameState.activeHandIndex];
-  const dealerUpcard = gameState.dealerHand[0];
+  // Dealer's upcard is the second card dealt (index 1), first card is hole card (face down)
+  const dealerUpcard = gameState.dealerHand[1];
 
   // Check available actions
   const canHitAction = currentHand && !currentHand.isComplete;
@@ -146,11 +278,12 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     setIsRemovingCards(false);
     setIsRevealingHoleCard(false);
     setIsDealerStacked(false);
-    setResultOutcome(null);
     setIsSplitting(false);
     setSplitDealingPhase(0);
     setSplitOriginHandIndex(null);
     setShowBadges(true);
+    setLastDecision(null);
+    setShowCorrectionModal(false);
 
     // Gate visibility so cards appear sequentially (P, D, P, D) with no overlap.
     // Show the first card immediately so there is no "empty table" frame.
@@ -171,9 +304,12 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     // After the last card finishes moving, transition to player-action or dealer-turn.
     const doneId = window.setTimeout(() => {
       setVisibleCardCount(999);
+      setInsuranceDecisionMade(false);
       setGameState((prev) => {
         const playerHand = prev.playerHands[0];
         const dealerHand = prev.dealerHand;
+        // Upcard is index 1 (second card dealt), hole card is index 0
+        const dealerUpcard = dealerHand[1];
         const playerHasBJ = playerHand?.isBlackjack;
         const dealerHasBJ = calculateFullHandTotal(dealerHand).total === 21 && dealerHand.length === 2;
         const playerTotal = playerHand ? calculateFullHandTotal(playerHand.cards).total : 0;
@@ -182,11 +318,6 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           // Resolve instantly; the payout phase will handle auto-advance + discard animation.
           const revealed = revealDealerHoleCard(prev);
           const resolved = resolveRound(revealed, blackjackPayout);
-
-          if (playerHasBJ && !dealerHasBJ) setResultOutcome('blackjack');
-          else if (dealerHasBJ && !playerHasBJ) setResultOutcome('lose');
-          else setResultOutcome('push');
-
           return { ...resolved, phase: 'payout' as GamePhase };
         }
 
@@ -196,11 +327,435 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           return { ...prev, playerHands: [updatedHand], phase: 'dealer-turn' as GamePhase };
         }
 
+        // Check if dealer shows Ace - offer insurance
+        if (dealerUpcard?.rank === 'A') {
+          setShowInsurancePrompt(true);
+          return { ...prev, phase: 'insurance' as GamePhase };
+        }
+
         return { ...prev, phase: 'player-action' as GamePhase };
       });
     }, INITIAL_DEAL_TOTAL_TIME);
     timersRef.current.push(doneId);
   }, [numDecks, penetration, settings.defaultBet, blackjackPayout]);
+
+  // Validate action against basic strategy and track decision
+  const validateAndTrackDecision = useCallback((
+    action: PlayerAction,
+    state: GameState
+  ): { decision: LastDecision; shouldBlock: boolean } => {
+    const hand = state.playerHands[state.activeHandIndex];
+    // Upcard is index 1 (second card dealt), hole card is index 0
+    const dealerUpcard = state.dealerHand[1];
+
+    if (!hand || !dealerUpcard) {
+      // Shouldn't happen, but return a dummy decision
+      return {
+        decision: {
+          userAction: action,
+          basicAction: action,
+          correctAction: action,
+          isCorrect: true,
+          resultType: 'correct_basic',
+          deviationApplies: false,
+          reason: '',
+          handKey: '',
+          handType: 'hard',
+          total: 0,
+          isSoft: false,
+          dealerUp: 0,
+          timestamp: Date.now(),
+        },
+        shouldBlock: false,
+      };
+    }
+
+    // Get basic strategy recommendation
+    const strategyResult = getBasicStrategyAction({
+      playerCards: hand.cards,
+      dealerUpcard,
+      rules: ruleSet,
+      isSplitHand: hand.isSplitHand,
+      canDouble: canDouble(hand),
+      canSplit: canSplit(hand),
+      canSurrender: canSurrender(hand, dealerUpcard, allowSurrender),
+    });
+
+    const rawTc = calculateTrueCount(state.runningCount, state.shoe.length / 52);
+    const tc = applyTcEstimation(rawTc);
+    const basicAction = strategyResult.action;
+
+    // Default to basic strategy
+    let correctAction = basicAction;
+    let reason = strategyResult.reason;
+    let deviationApplies = false;
+    let deviationAction: PlayerAction | undefined;
+    let deviationName: string | undefined;
+    let deviationThreshold: number | undefined;
+
+    // Check for deviations if enabled
+    if (settings.showDeviations) {
+      const { total, isSoft } = calculateHand(hand.cards);
+      const pairVal = isPair(hand.cards) ? getPairValue(hand.cards) : null;
+      const dealerUp = strategyResult.dealerUp;
+
+      const deviationResult = checkDeviation(
+        total,
+        isSoft,
+        isPair(hand.cards) && canSplit(hand),
+        pairVal,
+        dealerUp,
+        tc,
+        allowSurrender
+      );
+
+      if (deviationResult.hasDeviation && deviationResult.deviation) {
+        // A deviation exists for this hand/dealer combo
+        deviationName = deviationResult.deviation.name;
+        deviationThreshold = deviationResult.deviation.tcThreshold;
+        deviationAction = deviationResult.deviation.deviationAction;
+
+        if (deviationResult.shouldDeviate) {
+          // TC meets threshold - deviation applies
+          deviationApplies = true;
+          correctAction = deviationResult.deviation.deviationAction;
+          reason = deviationResult.reason;
+        }
+        // If TC doesn't meet threshold, basic strategy applies (deviationApplies stays false)
+      }
+    }
+
+    const isCorrect = action === correctAction;
+
+    // Determine result type based on taxonomy
+    let resultType: DecisionResultType;
+    if (deviationApplies) {
+      // A deviation was applicable at this TC
+      if (action === correctAction) {
+        resultType = 'correct_deviation';
+      } else if (action === basicAction) {
+        resultType = 'missed_deviation';
+      } else {
+        resultType = 'incorrect_basic';
+      }
+    } else {
+      // No deviation applies (either no deviation exists, or TC doesn't meet threshold)
+      if (action === correctAction) {
+        resultType = 'correct_basic';
+      } else if (deviationAction && action === deviationAction) {
+        // User tried to deviate when they shouldn't have
+        resultType = 'wrong_deviation';
+      } else {
+        resultType = 'incorrect_basic';
+      }
+    }
+
+    const decision: LastDecision = {
+      userAction: action,
+      basicAction,
+      deviationAction,
+      correctAction,
+      isCorrect,
+      resultType,
+      deviationApplies,
+      deviationName,
+      deviationThreshold,
+      reason,
+      handKey: strategyResult.handKey,
+      handType: strategyResult.handType,
+      total: strategyResult.total,
+      isSoft: strategyResult.isSoft,
+      dealerUp: strategyResult.dealerUp,
+      trueCount: tc,
+      timestamp: Date.now(),
+    };
+
+    // Block if correction mode is modal and decision was incorrect
+    const shouldBlock = !isCorrect && settings.correctionMode === 'modal';
+
+    return { decision, shouldBlock };
+  }, [ruleSet, allowSurrender, settings.correctionMode, settings.showDeviations, applyTcEstimation]);
+
+  // Update stats after a decision
+  const updateStatsForDecision = useCallback((decision: LastDecision) => {
+    setStats(prev => {
+      const newStats = { ...prev };
+
+      // Update overall accuracy
+      if (decision.isCorrect) {
+        newStats.correctDecisions++;
+      } else {
+        newStats.incorrectDecisions++;
+      }
+
+      // Update accuracy by correct action type
+      const actionKey = `${decision.correctAction}Accuracy` as keyof TrainingStats;
+      const actionStat = prev[actionKey] as { correct: number; total: number } | undefined;
+      if (actionStat) {
+        (newStats[actionKey] as { correct: number; total: number }) = {
+          correct: actionStat.correct + (decision.isCorrect ? 1 : 0),
+          total: actionStat.total + 1,
+        };
+      }
+
+      // Update accuracy by hand type
+      const handTypeKey = `${decision.handType}Accuracy` as keyof TrainingStats;
+      const handTypeStat = prev[handTypeKey] as { correct: number; total: number } | undefined;
+      if (handTypeStat) {
+        (newStats[handTypeKey] as { correct: number; total: number }) = {
+          correct: handTypeStat.correct + (decision.isCorrect ? 1 : 0),
+          total: handTypeStat.total + 1,
+        };
+      }
+
+      // Update per-hand stats for weak spot tracking
+      const handKey = decision.handKey;
+      const existing = prev.handStats[handKey] || { correct: 0, total: 0, mistakes: {} };
+      const newHandStat = {
+        correct: existing.correct + (decision.isCorrect ? 1 : 0),
+        total: existing.total + 1,
+        mistakes: { ...existing.mistakes },
+      };
+      if (!decision.isCorrect) {
+        const mistakeKey = decision.userAction;
+        newHandStat.mistakes[mistakeKey] = (newHandStat.mistakes[mistakeKey] || 0) + 1;
+      }
+      newStats.handStats = { ...newStats.handStats, [handKey]: newHandStat };
+
+      return newStats;
+    });
+  }, []);
+
+  // Handle "Take it back" from correction modal - restore pre-action state
+  const handleTakeBack = useCallback(() => {
+    setShowCorrectionModal(false);
+    // Restore state is automatic since we blocked the action
+    // Just clear the decision so user can try again
+    setLastDecision(null);
+  }, []);
+
+  // Handle insurance decision
+  const handleTakeInsurance = useCallback(() => {
+    setShowInsurancePrompt(false);
+    setInsuranceDecisionMade(true);
+
+    // Validate insurance decision against deviations
+    if (settings.correctionMode !== 'off') {
+      const rawTc = calculateTrueCount(gameState.runningCount, gameState.shoe.length / 52);
+      const tc = applyTcEstimation(rawTc);
+      const shouldTake = shouldTakeInsurance(tc);
+      const isCorrect = shouldTake; // Taking insurance is correct at TC +3 or higher
+
+      // Determine result type for insurance
+      let resultType: DecisionResultType;
+      if (shouldTake) {
+        resultType = 'correct_deviation'; // Taking insurance at high count is a deviation play
+      } else {
+        resultType = 'wrong_deviation'; // Took insurance when TC didn't support it
+      }
+
+      const decision: LastDecision = {
+        userAction: 'insurance',
+        basicAction: 'hit', // Basic strategy is to decline insurance
+        deviationAction: 'insurance',
+        correctAction: shouldTake ? 'insurance' : 'hit',
+        isCorrect,
+        resultType,
+        deviationApplies: shouldTake,
+        deviationName: 'Insurance',
+        deviationThreshold: 3,
+        reason: shouldTake
+          ? `Correct! Take insurance at TC ${tc.toFixed(1)} (threshold: +3)`
+          : `Insurance is -EV at TC ${tc.toFixed(1)}. Only take at TC +3 or higher.`,
+        handKey: 'insurance-vA',
+        handType: 'hard',
+        total: 0,
+        isSoft: false,
+        dealerUp: 11,
+        trueCount: tc,
+        timestamp: Date.now(),
+      };
+
+      updateStatsForDecision(decision);
+      setLastDecision(decision);
+    }
+
+    // Continue to player action phase
+    setGameState(prev => ({ ...prev, phase: 'player-action' as GamePhase }));
+  }, [gameState.runningCount, gameState.shoe.length, settings.correctionMode, updateStatsForDecision, applyTcEstimation]);
+
+  const handleDeclineInsurance = useCallback(() => {
+    setShowInsurancePrompt(false);
+    setInsuranceDecisionMade(true);
+
+    // Validate insurance decision against deviations
+    if (settings.correctionMode !== 'off') {
+      const rawTc = calculateTrueCount(gameState.runningCount, gameState.shoe.length / 52);
+      const tc = applyTcEstimation(rawTc);
+      const shouldTake = shouldTakeInsurance(tc);
+      const isCorrect = !shouldTake; // Declining is correct when TC < +3
+
+      // Determine result type for declining insurance
+      let resultType: DecisionResultType;
+      if (!shouldTake) {
+        resultType = 'correct_basic'; // Correct to decline when TC is low
+      } else {
+        resultType = 'missed_deviation'; // Should have taken insurance at high count
+      }
+
+      const decision: LastDecision = {
+        userAction: 'hit', // 'hit' represents declining insurance
+        basicAction: 'hit',
+        deviationAction: 'insurance',
+        correctAction: shouldTake ? 'insurance' : 'hit',
+        isCorrect,
+        resultType,
+        deviationApplies: shouldTake,
+        deviationName: 'Insurance',
+        deviationThreshold: 3,
+        reason: !shouldTake
+          ? `Correct! Decline insurance at TC ${tc.toFixed(1)} (below +3 threshold)`
+          : `Should take insurance at TC ${tc.toFixed(1)} (+3 or higher)`,
+        handKey: 'insurance-vA',
+        handType: 'hard',
+        total: 0,
+        isSoft: false,
+        dealerUp: 11,
+        trueCount: tc,
+        timestamp: Date.now(),
+      };
+
+      updateStatsForDecision(decision);
+      setLastDecision(decision);
+    }
+
+    // Continue to player action phase
+    setGameState(prev => ({ ...prev, phase: 'player-action' as GamePhase }));
+  }, [gameState.runningCount, gameState.shoe.length, settings.correctionMode, updateStatsForDecision, applyTcEstimation]);
+
+  // Handle "Continue anyway" from correction modal - execute the incorrect action
+  const handleContinueAnyway = useCallback(() => {
+    setShowCorrectionModal(false);
+
+    // Execute the action that was blocked
+    if (lastDecision) {
+      const action = lastDecision.userAction;
+
+      // Re-run the action logic without validation blocking
+      // (stats already tracked when modal was shown)
+      if (action === 'split') {
+        // Trigger split animation
+        const originIdx = gameState.activeHandIndex;
+        setActionLocked(true);
+        setShowBadges(false);
+        setSplitOriginHandIndex(originIdx);
+        setIsSplitting(true);
+        setGameState((prev) => {
+          if (prev.phase !== 'player-action') return prev;
+          return splitSeparate(prev);
+        });
+        // (split animation continuation handled by existing timer logic)
+        const phase1Id = window.setTimeout(() => {
+          setIsSplitting(false);
+          setSplitDealingPhase(3);
+          setGameState((prev) => {
+            const rightIdx = Math.min(originIdx + 1, prev.playerHands.length - 1);
+            return { ...prev, activeHandIndex: rightIdx };
+          });
+          const phaseCenterId = window.setTimeout(() => {
+            setSplitDealingPhase(1);
+            setGameState((prev) => {
+              const rightIdx = Math.min(originIdx + 1, prev.playerHands.length - 1);
+              return dealToHand(prev, rightIdx);
+            });
+            const phase2Id = window.setTimeout(() => {
+              setSplitDealingPhase(0);
+              setShowBadges(true);
+              setActionLocked(false);
+              setSplitOriginHandIndex(null);
+              setGameState((prev) => {
+                const next = clearSplitDealFlags(prev);
+                const rightIdx = next.activeHandIndex;
+                const right = next.playerHands[rightIdx];
+                return right?.isComplete ? advanceGame(next) : next;
+              });
+            }, CARD_DEAL_ANIM_MS + 40);
+            timersRef.current.push(phase2Id);
+          }, PLAYER_CENTER_SLIDE_MS + 20);
+          timersRef.current.push(phaseCenterId);
+        }, SPLIT_SEPARATE_MS);
+        timersRef.current.push(phase1Id);
+      } else {
+        // Execute non-split action
+        const needsCardAnimation = action === 'hit' || action === 'double';
+
+        setGameState((prev) => {
+          if (prev.phase !== 'player-action') return prev;
+          let newState = prev;
+          switch (action) {
+            case 'hit': newState = hit(newState); break;
+            case 'stand': newState = stand(newState); break;
+            case 'double': newState = double(newState); break;
+            case 'surrender': newState = surrender(newState); break;
+          }
+          if (!needsCardAnimation) {
+            const hand = newState.playerHands[newState.activeHandIndex];
+            if (hand?.isComplete) {
+              newState = advanceGame(newState);
+            }
+          }
+          return newState;
+        });
+
+        if (needsCardAnimation) {
+          setActionLocked(true);
+          setShowBadges(false);
+          const id = window.setTimeout(() => {
+            setShowBadges(true);
+            setGameState((prev) => {
+              if (prev.phase !== 'player-action') {
+                setActionLocked(false);
+                return prev;
+              }
+              const hand = prev.playerHands[prev.activeHandIndex];
+              if (!hand) {
+                setActionLocked(false);
+                return prev;
+              }
+              const total = calculateFullHandTotal(hand.cards).total;
+              const isBust = total > 21;
+              const is21 = total === 21;
+              if (isBust || is21) {
+                let newState = prev;
+                if (!hand.isComplete) {
+                  const updatedHand = { ...hand, isComplete: true, isBusted: isBust };
+                  const newHands = [...newState.playerHands];
+                  newHands[newState.activeHandIndex] = updatedHand;
+                  newState = { ...newState, playerHands: newHands };
+                }
+                const delayId = window.setTimeout(() => {
+                  setActionLocked(false);
+                  setGameState((current) => {
+                    if (current.phase !== 'player-action') return current;
+                    return advanceGame(current);
+                  });
+                }, 800);
+                timersRef.current.push(delayId);
+                return newState;
+              }
+              if (hand.isComplete) {
+                setActionLocked(false);
+                return advanceGame(clearSplitDealFlags(prev));
+              }
+              setActionLocked(false);
+              return clearSplitDealFlags(prev);
+            });
+          }, CARD_DEAL_ANIM_MS + 40);
+          timersRef.current.push(id);
+        }
+      }
+    }
+  }, [lastDecision, gameState.activeHandIndex]);
 
   // Handle player action - uses functional updates to avoid stale closure issues
   const handleAction = useCallback((action: PlayerAction) => {
@@ -214,6 +769,29 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     }
 
     queuedActionRef.current = null;
+
+    // Clear previous decision feedback when starting new action
+    if (settings.correctionMode !== 'off') {
+      setLastDecision(null);
+    }
+
+    // Validate decision against basic strategy
+    const { decision, shouldBlock } = validateAndTrackDecision(action, gameState);
+
+    // Save pre-action state for potential take-back
+    preActionStateRef.current = gameState;
+
+    // Track decision in stats
+    if (settings.correctionMode !== 'off') {
+      updateStatsForDecision(decision);
+      setLastDecision(decision);
+
+      // If modal mode and incorrect, show modal and block action
+      if (shouldBlock) {
+        setShowCorrectionModal(true);
+        return;
+      }
+    }
 
     // Split has special multi-phase animation handling
     if (action === 'split') {
@@ -316,11 +894,6 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       return newState;
     });
 
-    // Update stats
-    setStats(prev => ({
-      ...prev,
-      // TODO: Track correct/incorrect based on basic strategy
-    }));
 
     // Prevent spam-clicking while the dealt card is still moving.
     if (needsCardAnimation) {
@@ -401,10 +974,10 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       }, CARD_DEAL_ANIM_MS + 40);
       timersRef.current.push(id);
     }
-  }, [actionLocked, gameState.activeHandIndex]);
+  }, [actionLocked, gameState, validateAndTrackDecision, updateStatsForDecision, settings.correctionMode]);
 
   // When switching to a split hand that still needs its first post-split card,
-  // deal it before allowing play.
+  // deal it before allowing play. Wait for centering animation first.
   useEffect(() => {
     if (gameState.phase !== 'player-action') return;
     const active = gameState.playerHands[gameState.activeHandIndex];
@@ -414,25 +987,30 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     setActionLocked(true);
     setShowBadges(false);
-    setSplitDealingPhase(2);
 
-    setGameState((prev) => dealToHand(prev, prev.activeHandIndex));
+    // Wait for the centering animation before dealing
+    const centerDelay = window.setTimeout(() => {
+      setSplitDealingPhase(2);
+      setGameState((prev) => dealToHand(prev, prev.activeHandIndex));
 
-    const id = window.setTimeout(() => {
-      setSplitDealingPhase(0);
-      setShowBadges(true);
-      setActionLocked(false);
-      setGameState((prev) => {
-        let next = clearSplitDealFlags(prev);
-        const hand = next.playerHands[next.activeHandIndex];
-        if (hand?.isComplete) {
-          next = advanceGame(next);
-        }
-        return next;
-      });
-    }, CARD_DEAL_ANIM_MS + 40);
+      const id = window.setTimeout(() => {
+        setSplitDealingPhase(0);
+        setShowBadges(true);
+        setActionLocked(false);
+        setGameState((prev) => {
+          let next = clearSplitDealFlags(prev);
+          const hand = next.playerHands[next.activeHandIndex];
+          if (hand?.isComplete) {
+            next = advanceGame(next);
+          }
+          return next;
+        });
+      }, CARD_DEAL_ANIM_MS + 40);
 
-    timersRef.current.push(id);
+      timersRef.current.push(id);
+    }, PLAYER_CENTER_SLIDE_MS);
+
+    timersRef.current.push(centerDelay);
   }, [gameState.phase, gameState.activeHandIndex, isSplitting, splitDealingPhase]);
 
   // Auto-play dealer when it's dealer's turn
@@ -469,7 +1047,6 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           // If every player hand is already busted, the dealer should not draw any
           // additional cards. Reveal the hole card, then go straight to cleanup.
           if (current.playerHands.length > 0 && current.playerHands.every((h) => h.isBusted)) {
-            setResultOutcome('lose');
             const resolved = resolveRound(current, blackjackPayout);
             setGameState({ ...resolved, phase: 'payout' });
             return;
@@ -505,13 +1082,6 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
           // Resolve payouts and show outcome.
           const finalDealerTotal = current.dealerTotal ?? calculateFullHandTotal(current.dealerHand).total;
-          const playerHand = current.playerHands[0];
-          const playerTotal = playerHand ? calculateFullHandTotal(playerHand.cards).total : 0;
-
-          if (playerHand?.isBusted || playerHand?.isSurrendered) setResultOutcome('lose');
-          else if (finalDealerTotal > 21 || playerTotal > finalDealerTotal) setResultOutcome('win');
-          else if (playerTotal === finalDealerTotal) setResultOutcome('push');
-          else setResultOutcome('lose');
 
           const resolved = resolveRound({ ...current, dealerTotal: finalDealerTotal }, blackjackPayout);
           setGameState({ ...resolved, phase: 'payout' });
@@ -527,6 +1097,24 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     }
   }, [gameState.phase, hitSoft17, blackjackPayout]);
 
+  // Track hands played when entering payout phase
+  const prevPhaseRef = useRef<GamePhase>('idle');
+  useEffect(() => {
+    if (prevPhaseRef.current !== 'payout' && gameState.phase === 'payout') {
+      setStats(prev => ({ ...prev, handsPlayed: prev.handsPlayed + 1 }));
+    }
+    prevPhaseRef.current = gameState.phase;
+  }, [gameState.phase]);
+
+  // Auto-dismiss feedback banner after 1.5 seconds
+  useEffect(() => {
+    if (!lastDecision) return;
+    const dismissTimer = window.setTimeout(() => {
+      setLastDecision(null);
+    }, 1500);
+    return () => window.clearTimeout(dismissTimer);
+  }, [lastDecision]);
+
   // Auto-advance after payout display with card removal animation
   useEffect(() => {
     if (gameState.phase === 'payout') {
@@ -540,7 +1128,6 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
         const t2 = window.setTimeout(() => {
           if (cancelled) return;
           setIsRemovingCards(false);
-          setResultOutcome(null);
           setIsDealerStacked(false);
           startNewHand();
         }, CARD_REMOVE_ANIM_MS);
@@ -554,13 +1141,6 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     }
   }, [gameState.phase, settings.autoAdvanceDelay]);
 
-  // Calculate result for display
-  const result = resultOutcome ? {
-    playerTotal: currentHand ? calculateFullHandTotal(currentHand.cards).total : 0,
-    dealerTotal: gameState.dealerTotal ?? 0,
-    outcome: resultOutcome,
-  } : null;
-
   return (
     <div className="training-page">
       {/* Header */}
@@ -569,12 +1149,22 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           <span aria-hidden="true">{'\u2190'}</span> Back to Simulator
         </button>
         <h1 className="training-title">Training Mode</h1>
-        <button
-          className="settings-button"
-          onClick={() => setShowSettings(!showSettings)}
-        >
-          <span aria-hidden="true">{'\u2699'}</span>
-        </button>
+        <div className="header-buttons">
+          <button
+            className="stats-button"
+            onClick={() => setShowStats(true)}
+            title="View Statistics"
+          >
+            <span aria-hidden="true">{'\u{1F4CA}'}</span>
+          </button>
+          <button
+            className="settings-button"
+            onClick={() => setShowSettings(!showSettings)}
+            title="Settings"
+          >
+            <span aria-hidden="true">{'\u2699'}</span>
+          </button>
+        </div>
       </header>
 
       {/* Info bar */}
@@ -613,7 +1203,6 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           activeHandIndex={gameState.activeHandIndex}
           phase={gameState.phase}
           showHandTotals={settings.showHandTotals}
-          result={result}
           cardsRemaining={gameState.shoe.length}
           totalCards={totalCards}
           cardsDiscarded={totalCards - gameState.shoe.length}
@@ -631,6 +1220,19 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       {/* Action buttons */}
       <div className="training-actions">
         <div className="training-actions-inner">
+          {/* Feedback banner overlay - positioned above buttons */}
+          {settings.correctionMode === 'inline' && (
+            <FeedbackPanel
+              lastDecision={lastDecision}
+              visible={
+                !!lastDecision &&
+                gameState.phase === 'player-action' &&
+                (!settings.onlyShowMistakes || !lastDecision.isCorrect)
+              }
+              compact={true}
+            />
+          )}
+
           {/* Only show the Deal button for the initial hand (later hands auto-deal). */}
           {gameState.phase === 'idle' && (
             <button className="deal-button" onClick={startNewHand}>
@@ -704,6 +1306,15 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
             </label>
 
             <label className="setting-row">
+              <span>Use Deviations (I18/Fab4)</span>
+              <input
+                type="checkbox"
+                checked={settings.showDeviations}
+                onChange={e => setSettings(s => ({ ...s, showDeviations: e.target.checked }))}
+              />
+            </label>
+
+            <label className="setting-row">
               <span>Default Bet</span>
               <input
                 type="number"
@@ -726,11 +1337,78 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
               />
             </label>
 
+            <label className="setting-row">
+              <span>Decision Feedback</span>
+              <select
+                value={settings.correctionMode}
+                onChange={e => setSettings(s => ({ ...s, correctionMode: e.target.value as 'inline' | 'modal' | 'off' }))}
+              >
+                <option value="inline">Banner</option>
+                <option value="modal">Popup (blocks play)</option>
+                <option value="off">Off</option>
+              </select>
+            </label>
+
+            <label className="setting-row">
+              <span>Only Show Mistakes</span>
+              <input
+                type="checkbox"
+                checked={settings.onlyShowMistakes}
+                onChange={e => setSettings(s => ({ ...s, onlyShowMistakes: e.target.checked }))}
+              />
+            </label>
+
             <button className="close-settings" onClick={() => setShowSettings(false)}>
               Close
             </button>
           </div>
         </div>
+      )}
+
+      {/* Correction modal for blocking mode */}
+      {showCorrectionModal && lastDecision && (
+        <CorrectionModal
+          lastDecision={lastDecision}
+          onContinue={handleContinueAnyway}
+          onTakeBack={handleTakeBack}
+        />
+      )}
+
+      {/* Insurance prompt overlay */}
+      {showInsurancePrompt && (
+        <div className="insurance-overlay">
+          <div className="insurance-prompt">
+            <h3>Insurance?</h3>
+            <p>Dealer shows an Ace.</p>
+            <div className="insurance-buttons">
+              <button
+                className="insurance-btn insurance-yes"
+                onClick={handleTakeInsurance}
+              >
+                Yes
+              </button>
+              <button
+                className="insurance-btn insurance-no"
+                onClick={handleDeclineInsurance}
+              >
+                No
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stats panel */}
+      {showStats && (
+        <StatsPanel
+          stats={stats}
+          onClose={() => setShowStats(false)}
+          onReset={() => {
+            const newStats = { ...DEFAULT_TRAINING_STATS, sessionStart: Date.now() };
+            setStats(newStats);
+            saveStats(newStats);
+          }}
+        />
       )}
     </div>
   );
