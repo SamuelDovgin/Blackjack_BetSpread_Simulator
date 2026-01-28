@@ -8,7 +8,7 @@
 // 3. Slide upcard LEFT to overlap hole card vertically (only left edge of hole card visible)
 // 4. Additional dealer hits stack the same way - each card covers previous, showing only left edge
 
-import React from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Card, Shoe, DiscardPile } from './Card';
 import type { Card as CardType, HandState, GamePhase } from './types';
 import { calculateHandTotal, calculateFullHandTotal } from './engine/gameEngine';
@@ -53,6 +53,7 @@ interface TableProps {
 // Cards go up and to the right (first card on bottom)
 const PLAYER_CARD_OFFSET_DESKTOP = { x: 28, y: -20 }; // Enough to see corners
 const PLAYER_CARD_OFFSET_MOBILE = { x: 22, y: -16 };
+const CARD_WIDTH_LARGE = 90; // Keep in sync with .card-large width in Card.css
 
 // Dealer cards - two modes:
 // Initial: side by side (hole card left, upcard right)
@@ -116,6 +117,23 @@ export const Table: React.FC<TableProps> = ({
   const isMobile =
     typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
 
+  // Keep the active hand visually centered by translating the entire hand row.
+  // This is especially important on mobile where we never want multiple rows.
+  const playerViewportRef = useRef<HTMLDivElement | null>(null);
+  const [playerViewportWidth, setPlayerViewportWidth] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = playerViewportRef.current;
+    if (!el) return;
+
+    const update = () => setPlayerViewportWidth(el.clientWidth);
+    update();
+
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Calculate visible dealer total (only face-up cards)
   const dealerVisible = calculateHandTotal(dealerHand);
   const dealerFull = calculateFullHandTotal(dealerHand);
@@ -134,6 +152,35 @@ export const Table: React.FC<TableProps> = ({
 
   // Dealer offset changes based on whether cards are stacked
   const dealerOffset = isDealerStacked ? dealerStackedOffset : dealerInitialOffset;
+
+  // Dynamic spacing: each hand's allocated width grows with its card count.
+  // This prevents long hit stacks from overlapping neighboring split hands.
+  const playerHandGapPx = Math.round(playerCardOffset.x * 1.2);
+
+  const playerHandStackWidths = useMemo(() => {
+    return playerHands.map((h) => CARD_WIDTH_LARGE + Math.max(0, h.cards.length - 1) * playerCardOffset.x);
+  }, [playerHands, playerCardOffset.x]);
+
+  // Center the active hand as a whole (not just its first card) so the hand you are
+  // currently playing is visually "dead center" on both desktop and mobile.
+  const playerRowTranslateX = useMemo(() => {
+    if (!playerViewportWidth || playerHands.length === 0) return 0;
+
+    // .player-hand-container has 8px horizontal padding on each side.
+    const handOuterPad = 16;
+    const handInnerOffset = 8; // centered child offset within the padded container
+
+    let left = 0;
+    for (let i = 0; i < activeHandIndex; i++) {
+      const w = (playerHandStackWidths[i] ?? CARD_WIDTH_LARGE) + handOuterPad;
+      left += w + playerHandGapPx;
+    }
+
+    const activeWidth = playerHandStackWidths[activeHandIndex] ?? CARD_WIDTH_LARGE;
+    // Center the visible card stack inside the padded container.
+    const activeCenter = left + handInnerOffset + (activeWidth / 2);
+    return (playerViewportWidth / 2) - activeCenter;
+  }, [playerViewportWidth, playerHands.length, activeHandIndex, playerHandStackWidths, playerHandGapPx]);
 
   // Track global card index for sequential visibility
   let globalCardIndex = 0;
@@ -160,6 +207,7 @@ export const Table: React.FC<TableProps> = ({
                   const isHoleCard = i === 0;
                   // Card is visible if its deal sequence index is less than visibleCardCount
                   const isCardVisible = dealIndex < visibleCardCount;
+                  const cardZ = isThisCardDealing ? 10000 + i : i;
 
                   return (
                     <Card
@@ -173,7 +221,7 @@ export const Table: React.FC<TableProps> = ({
                       isFlipping={isFlipping}
                       isRemoving={isRemovingCards}
                       stackOffset={i > 0 ? { x: dealerOffset.x * i, y: dealerOffset.y * i } : undefined}
-                      zIndex={i}
+                      zIndex={cardZ}
                     />
                   );
                 })}
@@ -203,15 +251,34 @@ export const Table: React.FC<TableProps> = ({
         {/* Player area */}
         <div className="player-area">
           {playerHands.length > 0 ? (
-            <div className={`player-hands ${playerHands.length > 1 ? 'multiple' : ''}`}>
-              {playerHands.map((hand, handIdx) => {
+            <div className="player-hands-viewport" ref={playerViewportRef}>
+              <div
+                className={`player-hands ${playerHands.length > 1 ? 'multiple' : ''}`}
+                style={{
+                  transform: `translateX(${playerRowTranslateX}px)`,
+                  gap: `${playerHandGapPx}px`,
+                }}
+              >
+                {playerHands.map((hand, handIdx) => {
                 const handTotal = calculateFullHandTotal(hand.cards);
                 const isActive = handIdx === activeHandIndex && phase === 'player-action';
+
+                // Ensure any dealing animation renders above other split hands.
+                // NOTE: opacity on a busted hand creates a stacking context, so we must
+                // raise the *hand container* z-index for the currently dealing hand.
+                const splitRightHandIdx = Math.min(activeHandIndex + 1, playerHands.length - 1);
+                const focusHandIdx =
+                  (phase === 'player-action' && (isSplitting || splitDealingPhase === 1))
+                    ? splitRightHandIdx
+                    : activeHandIndex;
+                const handZ = handIdx === focusHandIdx ? 200 : handIdx;
 
                 // Calculate card offset for this hand (if split, cards dealt later)
                 const cardOffsetBase = handIdx > 0
                   ? playerHands.slice(0, handIdx).reduce((sum, h) => sum + h.cards.length, 0)
                   : 0;
+
+                const stackWidth = playerHandStackWidths[handIdx] ?? CARD_WIDTH_LARGE;
 
                 return (
                   <div
@@ -219,43 +286,9 @@ export const Table: React.FC<TableProps> = ({
                     className={`player-hand-container ${isActive ? 'active' : ''} ${
                       hand.isComplete ? 'complete' : ''
                     } ${hand.isBusted ? 'busted' : ''}`}
+                    style={{ zIndex: handZ }}
                   >
-                    <div className="hand">
-                      <div className="card-stack player-stack">
-                        {hand.cards.map((card, cardIdx) => {
-                          // For initial deal: cardIdx 0 = deal seq 0, cardIdx 1 = deal seq 2
-                          // For hits: continue from there
-                          const globalCardIdx = cardOffsetBase + cardIdx;
-                          const dealIndex = getDealSequenceIndex(false, globalCardIdx, totalPlayerCards, totalDealerCards);
-                          const isThisCardDealing = isInitialDeal && cardIdx < 2;
-                          const isHitDealing = phase === 'player-action' && cardIdx >= 2;
-                          const isCardVisible = !isInitialDeal || dealIndex < visibleCardCount;
-
-                          // Split animation: second hand's first card (the "top" card that moved)
-                          const isThisCardSplitting = isSplitting && handIdx === 1 && cardIdx === 0;
-
-                          // During split dealing phase, cards dealt after separation animate in
-                          const isSplitDealCard =
-                            (splitDealingPhase === 1 && handIdx === 1 && cardIdx === 1) ||
-                            (splitDealingPhase === 2 && handIdx === 0 && cardIdx === 1);
-
-                          return (
-                            <Card
-                              key={`player-${handIdx}-${cardIdx}`}
-                              card={card}
-                              size="large"
-                              isVisible={isCardVisible}
-                              isDealing={isThisCardDealing || isHitDealing || isSplitDealCard}
-                              isRemoving={isRemovingCards}
-                              isSplitting={isThisCardSplitting}
-                              stackOffset={cardIdx > 0 ? { x: playerCardOffset.x * cardIdx, y: playerCardOffset.y * cardIdx } : undefined}
-                              zIndex={cardIdx}
-                            />
-                          );
-                        })}
-                      </div>
-                    </div>
-
+                    {/* All labels/badges are above the cards so stacks never shift upward. */}
                     <div className="hand-info">
                       {showHandTotals && (
                         <div className={`hand-total ${hand.isBusted && showBadges ? 'busted' : ''}`}>
@@ -269,25 +302,56 @@ export const Table: React.FC<TableProps> = ({
                         <div className="hand-total busted">BUST</div>
                       )}
 
-                      {hand.isBlackjack && showBadges && (
-                        <div className="blackjack-badge">Blackjack!</div>
-                      )}
+                      <div className="hand-meta-row">
+                        {playerHands.length > 1 && <span className="hand-tag tag-bet">{hand.bet}u</span>}
+                        {hand.isBlackjack && showBadges && <span className="hand-tag tag-blackjack">BJ</span>}
+                        {hand.isDoubled && showBadges && <span className="hand-tag tag-doubled">2x</span>}
+                        {hand.isSurrendered && showBadges && <span className="hand-tag tag-surrendered">SUR</span>}
+                      </div>
+                    </div>
 
-                      {hand.isDoubled && showBadges && (
-                        <div className="doubled-badge">DOUBLED</div>
-                      )}
+                    <div className="hand" style={{ width: `${stackWidth}px` }}>
+                      <div className="card-stack player-stack" style={{ width: `${stackWidth}px` }}>
+                        {hand.cards.map((card, cardIdx) => {
+                          // For initial deal: cardIdx 0 = deal seq 0, cardIdx 1 = deal seq 2
+                          // For hits: continue from there
+                          const globalCardIdx = cardOffsetBase + cardIdx;
+                          const dealIndex = getDealSequenceIndex(false, globalCardIdx, totalPlayerCards, totalDealerCards);
+                          const isThisCardDealing = isInitialDeal && cardIdx < 2;
+                          const isHitDealing = phase === 'player-action' && cardIdx >= 2;
+                          const isCardVisible = !isInitialDeal || dealIndex < visibleCardCount;
 
-                      {hand.isSurrendered && showBadges && (
-                        <div className="surrendered-badge">SURRENDERED</div>
-                      )}
+                          // Split animation: the moved card is the first card of the newly-created right hand.
+                          const isThisCardSplitting = isSplitting && handIdx === splitRightHandIdx && cardIdx === 0;
 
-                      {playerHands.length > 1 && (
-                        <div className="hand-bet">Bet: {hand.bet}u</div>
-                      )}
+                          // During split dealing phase, only the *new* card should animate in.
+                          const isSplitDealCard =
+                            (splitDealingPhase === 1 && handIdx === splitRightHandIdx && cardIdx === hand.cards.length - 1) ||
+                            (splitDealingPhase === 2 && handIdx === activeHandIndex && cardIdx === hand.cards.length - 1);
+
+                          const isDealingNow = isThisCardDealing || isHitDealing || isSplitDealCard;
+                          const cardZ = (isDealingNow || isThisCardSplitting) ? 10000 + cardIdx : cardIdx;
+
+                          return (
+                            <Card
+                              key={`player-${handIdx}-${cardIdx}`}
+                              card={card}
+                              size="large"
+                              isVisible={isCardVisible}
+                              isDealing={isDealingNow}
+                              isRemoving={isRemovingCards}
+                              isSplitting={isThisCardSplitting}
+                              stackOffset={cardIdx > 0 ? { x: playerCardOffset.x * cardIdx, y: playerCardOffset.y * cardIdx } : undefined}
+                              zIndex={cardZ}
+                            />
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 );
               })}
+              </div>
             </div>
           ) : (
             <div className="empty-hand">Place your bet to start</div>

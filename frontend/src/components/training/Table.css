@@ -61,13 +61,14 @@
 
 /* Hand totals */
 .hand-total {
-  font-size: 18px;
+  font-size: 14px;
   font-weight: bold;
   color: #fff;
   background: rgba(0, 0, 0, 0.4);
-  padding: 4px 12px;
-  border-radius: 12px;
+  padding: 2px 10px;
+  border-radius: 10px;
   text-align: center;
+  white-space: nowrap;
 }
 
 .hand-total.busted {
@@ -86,29 +87,70 @@
   gap: 8px;
 }
 
-.player-hands {
-  display: flex;
-  justify-content: center;
-  gap: 24px;
+.player-hands-viewport {
+  width: 100%;
+  overflow: hidden;
 }
 
+.player-hands {
+  display: flex;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 24px;
+  will-change: transform;
+  transition: transform 0.35s ease;
+}
+
+/* Never wrap player hands; we slide the row horizontally instead (active hand stays centered). */
 .player-hands.multiple {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .player-hand-container {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 8px;
   border-radius: 12px;
   transition: all 0.2s ease;
 }
 
 .player-hand-container.active {
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+  /* Active highlight should hug the cards, not the whole container (info is above). */
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Smoothly expand/shrink the card area as hits arrive. */
+.player-hand-container .hand {
+  transition: width 0.25s ease;
+}
+
+/* Active highlight: draw a glow behind the card stack only (exact card height). */
+.player-hand-container.active .card-stack.player-stack {
+  isolation: isolate;
+  transition: width 0.25s ease;
+}
+
+.player-hand-container.active .card-stack.player-stack::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 18px;
+  background: radial-gradient(
+    60% 80% at 50% 50%,
+    rgba(255, 255, 255, 0.10) 0%,
+    rgba(255, 255, 255, 0.04) 55%,
+    rgba(255, 255, 255, 0.00) 100%
+  );
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.18),
+    0 0 26px rgba(255, 255, 255, 0.20);
+  z-index: -1;
+  pointer-events: none;
 }
 
 .player-hand-container.busted {
@@ -120,7 +162,47 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
+  /* Reserve a compact area so badges never push the cards up. */
+  min-height: 42px;
+}
+
+.hand-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.hand-tag {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 7px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+}
+
+.tag-bet {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.tag-blackjack {
+  background: rgba(241, 196, 15, 0.85);
+  color: #1a1a1a;
+}
+
+.tag-doubled {
+  background: rgba(243, 156, 18, 0.85);
+  color: #fff;
+}
+
+.tag-surrendered {
+  background: rgba(231, 76, 60, 0.85);
+  color: #fff;
 }
 
 .blackjack-badge {
@@ -177,7 +259,8 @@
   padding: 16px 32px;
   border-radius: 16px;
   animation: popIn 0.3s ease-out;
-  z-index: 10;
+  /* Must sit above any dealt cards (which use high z-index during animation). */
+  z-index: 30000;
 }
 
 @keyframes popIn {
@@ -243,8 +326,17 @@
   }
 
   .hand-total {
-    font-size: 16px;
-    padding: 3px 10px;
+    font-size: 13px;
+    padding: 2px 9px;
+  }
+
+  .hand-info {
+    min-height: 36px;
+  }
+
+  .hand-tag {
+    font-size: 10px;
+    padding: 2px 6px;
   }
 
   .outcome-display {

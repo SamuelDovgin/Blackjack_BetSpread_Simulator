@@ -97,6 +97,18 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     timersRef.current = [];
   };
 
+  const clearSplitDealFlags = (state: GameState): GameState => {
+    let changed = false;
+    const newHands = state.playerHands.map((hand) => {
+      if (hand.splitCardJustDealt) {
+        changed = true;
+        return { ...hand, splitCardJustDealt: false };
+      }
+      return hand;
+    });
+    return changed ? { ...state, playerHands: newHands } : state;
+  };
+
   useEffect(() => {
     return () => clearTimers();
   }, []);
@@ -214,38 +226,29 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       const phase1Id = window.setTimeout(() => {
         setIsSplitting(false);
         setSplitDealingPhase(1);
-        setGameState((prev) => dealToHand(prev, 1)); // Deal to right hand (split-off)
+        setGameState((prev) => {
+          // During split separate, activeHandIndex remains the "left" hand; the new right hand is +1.
+          const rightIdx = Math.min(prev.activeHandIndex + 1, prev.playerHands.length - 1);
+          return dealToHand(prev, rightIdx);
+        });
 
-        // After right hand card animation, deal to left hand (index 0)
+        // After right hand card animation, allow play on the right hand.
         const phase2Id = window.setTimeout(() => {
-          setSplitDealingPhase(2);
-          setGameState((prev) => dealToHand(prev, 0)); // Deal to left hand (original)
+          setSplitDealingPhase(0);
+          setShowBadges(true);
+          setActionLocked(false);
 
-          // After left hand card animation, complete split
-          const phase3Id = window.setTimeout(() => {
-            setSplitDealingPhase(0);
-            setShowBadges(true);
-            setActionLocked(false);
-
-            // Check if aces were split (both hands complete)
-            setGameState((prev) => {
-              const hand0 = prev.playerHands[0];
-              const hand1 = prev.playerHands[1];
-              if (hand0?.isComplete && hand1?.isComplete) {
-                // Both hands done (aces split), advance to dealer
-                return advanceGame(prev);
-              }
-              // Start with the right-most incomplete hand (play right to left)
-              // Find the rightmost (highest index) incomplete hand
-              for (let i = prev.playerHands.length - 1; i >= 0; i--) {
-                if (!prev.playerHands[i].isComplete) {
-                  return { ...prev, activeHandIndex: i };
-                }
-              }
-              return prev;
-            });
-          }, CARD_DEAL_ANIM_MS + 40);
-          timersRef.current.push(phase3Id);
+          setGameState((prev) => {
+            const next = clearSplitDealFlags(prev);
+            // Ensure we start by playing the right-hand split
+            const rightIdx = Math.min(next.activeHandIndex + 1, next.playerHands.length - 1);
+            let updated: GameState = { ...next, activeHandIndex: rightIdx };
+            const right = updated.playerHands[rightIdx];
+            if (right?.isComplete) {
+              updated = advanceGame(updated);
+            }
+            return updated;
+          });
         }, CARD_DEAL_ANIM_MS + 40);
         timersRef.current.push(phase2Id);
       }, 400); // Card separation animation time
@@ -353,8 +356,15 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
             return newState;
           }
 
+          // Double always ends the hand (even if not bust/21). Advance after the card lands.
+          if (hand.isComplete) {
+            setActionLocked(false);
+            return advanceGame(clearSplitDealFlags(prev));
+          }
+
           // Hand is still in play, unlock actions
           setActionLocked(false);
+          setGameState((prevState) => clearSplitDealFlags(prevState));
 
           // Check for any queued actions
           const queued = queuedActionRef.current;
@@ -377,6 +387,38 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       timersRef.current.push(id);
     }
   }, [actionLocked]);
+
+  // When switching to a split hand that still needs its first post-split card,
+  // deal it before allowing play.
+  useEffect(() => {
+    if (gameState.phase !== 'player-action') return;
+    const active = gameState.playerHands[gameState.activeHandIndex];
+    if (!active?.needsSplitCard) return;
+    // Don't interfere with the initial split animation / right-hand deal.
+    if (isSplitting || splitDealingPhase !== 0) return;
+
+    setActionLocked(true);
+    setShowBadges(false);
+    setSplitDealingPhase(2);
+
+    setGameState((prev) => dealToHand(prev, prev.activeHandIndex));
+
+    const id = window.setTimeout(() => {
+      setSplitDealingPhase(0);
+      setShowBadges(true);
+      setActionLocked(false);
+      setGameState((prev) => {
+        let next = clearSplitDealFlags(prev);
+        const hand = next.playerHands[next.activeHandIndex];
+        if (hand?.isComplete) {
+          next = advanceGame(next);
+        }
+        return next;
+      });
+    }, CARD_DEAL_ANIM_MS + 40);
+
+    timersRef.current.push(id);
+  }, [gameState.phase, gameState.activeHandIndex, isSplitting, splitDealingPhase]);
 
   // Auto-play dealer when it's dealer's turn
   useEffect(() => {
@@ -408,6 +450,15 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           // Play out dealer hand one card at a time (no vertical motion; no overlap).
           let current = revealDealerHoleCard(gameState);
           setGameState(current);
+
+          // If every player hand is already busted, the dealer should not draw any
+          // additional cards. Reveal the hole card, then go straight to cleanup.
+          if (current.playerHands.length > 0 && current.playerHands.every((h) => h.isBusted)) {
+            setResultOutcome('lose');
+            const resolved = resolveRound(current, blackjackPayout);
+            setGameState({ ...resolved, phase: 'payout' });
+            return;
+          }
 
           while (!cancelled) {
             const { total, isSoft } = calculateFullHandTotal(current.dealerHand);
@@ -579,7 +630,9 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
             canDouble={canDoubleAction}
             canSplit={canSplitAction}
             canSurrender={canSurrenderAction}
-            disabled={gameState.phase !== 'player-action'}
+            // If a split hand is waiting for its first post-split card, lock input immediately
+            // (effects run after paint, so this prevents a 1-frame window of invalid actions).
+            disabled={gameState.phase !== 'player-action' || !!currentHand?.needsSplitCard}
             disabledActions={actionLocked ? ['hit', 'double', 'split'] : []}
             showKeyboardHints={settings.showHints}
           />
