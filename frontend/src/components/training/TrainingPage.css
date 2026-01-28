@@ -1,0 +1,367 @@
+/* Training Page Styles */
+/* Main layout and components */
+
+.training-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #0a5f38; /* Casino green felt */
+  background-image:
+    radial-gradient(ellipse at top, rgba(255, 255, 255, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at bottom, rgba(0, 0, 0, 0.2) 0%, transparent 50%);
+  color: #fff;
+}
+
+/* Header */
+.training-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.back-button {
+  background: none;
+  border: none;
+  color: #4ecdc4;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.back-button:hover {
+  background: rgba(78, 205, 196, 0.1);
+}
+
+.training-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.settings-button {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.settings-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* Info bar */
+.training-info-bar {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.2);
+  flex-wrap: wrap;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 60px;
+}
+
+.info-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 1px;
+}
+
+.info-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* Main game area */
+.training-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 16px;
+  overflow: hidden;
+}
+
+/* Action area */
+.training-actions {
+  padding: 16px;
+  display: flex;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.training-actions-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.deal-button,
+.continue-button {
+  padding: 16px 48px;
+  font-size: 18px;
+  font-weight: 600;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.deal-button {
+  background: linear-gradient(145deg, #27ae60 0%, #1e8449 100%);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(39, 174, 96, 0.3);
+}
+
+.deal-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(39, 174, 96, 0.4);
+}
+
+.deal-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.continue-button {
+  background: linear-gradient(145deg, #3498db 0%, #2980b9 100%);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+}
+
+.continue-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(52, 152, 219, 0.4);
+}
+
+.dealing-indicator {
+  font-size: 18px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 16px 48px;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Stats bar */
+.training-stats-bar {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #4ecdc4;
+}
+
+.stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 1px;
+}
+
+/* Settings overlay */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+
+.settings-panel {
+  background: #1a1a2e;
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.settings-panel h2 {
+  margin: 0 0 20px;
+  font-size: 20px;
+  color: #fff;
+}
+
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.setting-row span {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+}
+
+.setting-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.setting-row input[type="number"] {
+  width: 80px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 14px;
+  text-align: right;
+}
+
+.close-settings {
+  width: 100%;
+  margin-top: 20px;
+  padding: 12px;
+  background: linear-gradient(145deg, #4ecdc4 0%, #3db9b1 100%);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.close-settings:hover {
+  transform: translateY(-1px);
+}
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  .training-header {
+    padding: 10px 12px;
+  }
+
+  .back-button {
+    font-size: 13px;
+    padding: 6px 10px;
+  }
+
+  .training-title {
+    font-size: 16px;
+  }
+
+  .training-info-bar {
+    gap: 12px;
+    padding: 10px 12px;
+  }
+
+  .info-item {
+    min-width: 50px;
+  }
+
+  .info-value {
+    font-size: 14px;
+  }
+
+  .training-main {
+    padding: 8px;
+  }
+
+  .deal-button,
+  .continue-button {
+    padding: 14px 40px;
+    font-size: 16px;
+  }
+
+  .training-stats-bar {
+    gap: 24px;
+  }
+
+  .stat-value {
+    font-size: 18px;
+  }
+}
+
+/* Landscape mobile */
+@media (max-width: 896px) and (orientation: landscape) {
+  .training-page {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .training-header {
+    width: 100%;
+    padding: 8px 16px;
+  }
+
+  .training-info-bar {
+    position: absolute;
+    right: 16px;
+    top: 50px;
+    flex-direction: column;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 8px;
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .training-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .training-actions {
+    flex-direction: column;
+    padding: 8px;
+    justify-content: center;
+    min-width: 120px;
+  }
+
+  .training-stats-bar {
+    width: 100%;
+    order: 3;
+    padding: 8px 16px;
+  }
+}

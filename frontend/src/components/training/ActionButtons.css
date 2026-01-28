@@ -1,0 +1,170 @@
+/* Action Buttons Component Styles */
+/* Touch-friendly buttons for player decisions */
+
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 12px;
+}
+
+.action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  min-height: 56px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none;
+}
+
+.action-btn:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.action-btn:not(:disabled):active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Action label */
+.action-label {
+  line-height: 1.2;
+}
+
+/* Keyboard hint */
+.action-key {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 2px;
+  padding: 1px 5px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+/* Button colors */
+.action-hit {
+  background: linear-gradient(145deg, #4ecdc4 0%, #3db9b1 100%);
+  color: white;
+}
+
+.action-hit:not(:disabled):hover {
+  background: linear-gradient(145deg, #5dd9d1 0%, #4ecdc4 100%);
+}
+
+.action-stand {
+  background: linear-gradient(145deg, #7f8c8d 0%, #6b7a7b 100%);
+  color: white;
+}
+
+.action-stand:not(:disabled):hover {
+  background: linear-gradient(145deg, #95a5a6 0%, #7f8c8d 100%);
+}
+
+.action-double {
+  background: linear-gradient(145deg, #f39c12 0%, #d68910 100%);
+  color: white;
+}
+
+.action-double:not(:disabled):hover {
+  background: linear-gradient(145deg, #f5ab35 0%, #f39c12 100%);
+}
+
+.action-split {
+  background: linear-gradient(145deg, #9b59b6 0%, #8344a5 100%);
+  color: white;
+}
+
+.action-split:not(:disabled):hover {
+  background: linear-gradient(145deg, #ae6bc9 0%, #9b59b6 100%);
+}
+
+.action-surrender {
+  background: linear-gradient(145deg, #e74c3c 0%, #c0392b 100%);
+  color: white;
+}
+
+.action-surrender:not(:disabled):hover {
+  background: linear-gradient(145deg, #ec7063 0%, #e74c3c 100%);
+}
+
+/* Highlight animation for correct action hint */
+.action-btn.highlight {
+  animation: highlightPulse 0.6s ease-in-out infinite;
+}
+
+@keyframes highlightPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(46, 204, 113, 0);
+  }
+}
+
+/* Insurance button (special) */
+.action-btn.action-insurance {
+  background: linear-gradient(145deg, #3498db 0%, #2980b9 100%);
+  color: white;
+}
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  .action-buttons {
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .action-btn {
+    min-width: 62px;
+    min-height: 50px;
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+
+  .action-key {
+    display: none; /* Hide keyboard hints on mobile */
+  }
+}
+
+/* Landscape mobile */
+@media (max-width: 896px) and (orientation: landscape) {
+  .action-buttons {
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .action-btn {
+    min-width: 100px;
+    min-height: 44px;
+    flex-direction: row;
+    gap: 8px;
+  }
+}
+
+/* Large touch targets for accessibility */
+@media (pointer: coarse) {
+  .action-btn {
+    min-height: 48px;
+  }
+}

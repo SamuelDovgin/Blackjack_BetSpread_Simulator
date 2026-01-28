@@ -1,0 +1,525 @@
+/* Card Component Styles */
+/* Classic casino-style playing cards */
+
+/* Base card styles */
+.card {
+  position: relative;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  user-select: none;
+  flex-shrink: 0;
+  transform-style: preserve-3d;
+  /* Prevent any inherited animations/transitions */
+  animation: none;
+  transition: none;
+}
+
+/* Card sizes */
+.card-small {
+  width: 50px;
+  height: 70px;
+  font-size: 10px;
+}
+
+.card-medium {
+  width: 70px;
+  height: 98px;
+  font-size: 14px;
+}
+
+.card-large {
+  width: 90px;
+  height: 126px;
+  font-size: 18px;
+}
+
+/* Card front (face up) */
+.card-front {
+  background: linear-gradient(145deg, #ffffff 0%, #f8f8f8 100%);
+  border: 1px solid #ccc;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+
+/* Card colors */
+.card-red {
+  color: #cc0000;
+}
+
+.card-black {
+  color: #1a1a1a;
+}
+
+/* Corner elements */
+.card-corner {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+
+.card-corner-top {
+  top: 4px;
+  left: 4px;
+}
+
+.card-corner-bottom {
+  bottom: 4px;
+  right: 4px;
+  transform: rotate(180deg);
+}
+
+.card-rank {
+  font-weight: bold;
+  font-size: 1em;
+}
+
+.card-corner .card-suit {
+  font-size: 0.8em;
+  margin-top: -2px;
+}
+
+/* Center area */
+.card-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+/* Pip grid for number cards */
+.card-pips {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(5, 1fr);
+  width: 100%;
+  height: 100%;
+  gap: 1px;
+}
+
+.card-pip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1em;
+}
+
+/* Ace center symbol */
+.card-ace-symbol {
+  font-size: 2.5em;
+}
+
+/* Face card symbol */
+.card-face-symbol {
+  font-size: 2em;
+  font-weight: bold;
+  font-family: 'Times New Roman', serif;
+}
+
+/* Card back */
+.card-back {
+  background: linear-gradient(145deg, #1a1a2e 0%, #0f0f1a 100%);
+  border: 1px solid #333;
+  overflow: hidden;
+}
+
+.card-back-pattern {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Fill the full card; avoid an "inset panel" look on the hole-card flip */
+  padding: 0;
+}
+
+.card-back-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      #2a2a4e 0px,
+      #2a2a4e 2px,
+      #1a1a2e 2px,
+      #1a1a2e 8px
+    );
+  border: none;
+}
+
+/* ============================================
+   DEALING ANIMATION - Player cards (with slight vertical arc)
+   Cards come from off-screen right
+   ============================================ */
+
+.card.dealing {
+  animation: dealFromShoe 0.35s linear forwards;
+}
+
+@keyframes dealFromShoe {
+  0% {
+    opacity: 1;
+    /* Desktop: start near the on-table shoe position (not off-screen) */
+    transform: translateX(220px) translateY(-20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+/* ============================================
+   DEALING ANIMATION - Dealer cards (HORIZONTAL ONLY)
+   Pure horizontal motion, no vertical movement for predictability
+   ============================================ */
+
+.card.dealing-dealer {
+  animation: dealFromShoeHorizontal 0.35s linear forwards;
+}
+
+@keyframes dealFromShoeHorizontal {
+  0% {
+    opacity: 1;
+    /* Desktop: horizontal-only motion from the on-table shoe */
+    transform: translateX(220px) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+/* ============================================
+   REMOVAL ANIMATION - Cards to discard (desktop) or off-screen (mobile)
+   ============================================ */
+
+.card.removing {
+  animation: removeToDiscard 0.4s linear forwards;
+}
+
+@keyframes removeToDiscard {
+  0% {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-400px) translateY(0);
+  }
+}
+
+/* ============================================
+   3D FLIP ANIMATION - Natural card flip
+   Back shows first, front appears at 50% rotation
+   ============================================ */
+
+.card-flip-container {
+  perspective: 1000px;
+  /* Container must not have any background - the faces provide the visuals */
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.card-flip-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+
+.card-flip-container.face-up .card-flip-inner {
+  transform: rotateY(180deg);
+}
+
+.card-flip-container.flipping .card-flip-inner {
+  animation: flipCard3D 0.5s ease-in-out forwards;
+}
+
+@keyframes flipCard3D {
+  0% {
+    transform: rotateY(0deg);
+  }
+  100% {
+    transform: rotateY(180deg);
+  }
+}
+
+.card-flip-back,
+.card-flip-front {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 8px;
+  /* Card shadow on each face since container has none */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  /* Override any inherited padding/margin that would shrink the faces */
+  margin: 0;
+  padding: 0;
+}
+
+/* Override card-front padding specifically for flip faces */
+.card-flip-front.card-front {
+  padding: 4px;
+}
+
+.card-flip-back {
+  /* Back is visible at start (0 degrees) */
+  transform: rotateY(0deg);
+}
+
+/* Ensure card-back pattern fills the flip back completely */
+.card-flip-back.card-back {
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.card-flip-back .card-back-pattern {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+.card-flip-back .card-back-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+}
+
+.card-flip-front {
+  /* Front is initially hidden (rotated 180), becomes visible at 90+ degrees */
+  transform: rotateY(180deg);
+}
+
+/* ============================================
+   CARD STACK - Overlapping cards
+   ============================================ */
+
+.card-stack {
+  display: flex;
+  position: relative;
+}
+
+.card-stack .card {
+  position: absolute;
+  /* Force GPU layer to prevent repaints */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* First card is the base position */
+.card-stack .card:first-child {
+  position: relative;
+}
+
+/* Dealer cards animate when stacking after hole-card reveal */
+.card-stack.dealer-stack .card {
+  transition: left 0.4s ease, top 0.4s ease;
+}
+
+/* Player cards never transition - they land in final position immediately */
+.card-stack.player-stack .card {
+  transition: none !important;
+}
+
+/* ============================================
+   SHOE (Deck) Visual - Right side of table (DESKTOP ONLY)
+   ============================================ */
+
+.shoe {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.shoe-stack {
+  position: relative;
+  width: 90px;
+  height: 126px;
+}
+
+/* Stacked cards effect for the shoe */
+.shoe-card {
+  position: absolute;
+  width: 90px;
+  height: 126px;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #1a1a2e 0%, #0f0f1a 100%);
+  border: 1px solid #333;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.shoe-card:nth-child(1) { top: 0; left: 0; }
+.shoe-card:nth-child(2) { top: -2px; left: 1px; }
+.shoe-card:nth-child(3) { top: -4px; left: 2px; }
+.shoe-card:nth-child(4) { top: -6px; left: 3px; }
+.shoe-card:nth-child(5) { top: -8px; left: 4px; }
+
+.shoe-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* ============================================
+   DISCARD PILE - Left side of table (DESKTOP ONLY)
+   ============================================ */
+
+.discard-pile {
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.discard-stack {
+  position: relative;
+  width: 90px;
+  height: 126px;
+}
+
+.discard-card {
+  position: absolute;
+  width: 90px;
+  height: 126px;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #1a1a2e 0%, #0f0f1a 100%);
+  border: 1px solid #333;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  opacity: 0.7;
+}
+
+.discard-card:nth-child(1) { top: 0; left: 0; transform: rotate(-2deg); }
+.discard-card:nth-child(2) { top: -1px; left: 2px; transform: rotate(1deg); }
+.discard-card:nth-child(3) { top: -3px; left: -1px; transform: rotate(-1deg); }
+.discard-card:nth-child(4) { top: -4px; left: 3px; transform: rotate(2deg); }
+.discard-card:nth-child(5) { top: -6px; left: 1px; transform: rotate(-1deg); }
+
+.discard-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* ============================================
+   Mobile responsive - Hide shoe and discard, off-screen animations
+   ============================================ */
+
+@media (max-width: 768px) {
+  /* Hide shoe and discard pile on mobile */
+  .shoe,
+  .discard-pile {
+    display: none;
+  }
+
+  .card-medium {
+    width: 60px;
+    height: 84px;
+    font-size: 12px;
+  }
+
+  .card-large {
+    width: 70px;
+    height: 98px;
+    font-size: 14px;
+  }
+
+  /* Mobile dealing animations - straight from off-screen */
+  @keyframes dealFromShoe {
+    0% {
+      opacity: 1;
+      transform: translateX(300px) translateY(-15px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateX(0) translateY(0);
+    }
+  }
+
+  @keyframes dealFromShoeHorizontal {
+    0% {
+      opacity: 1;
+      transform: translateX(300px) translateY(0);
+    }
+    100% {
+      opacity: 1;
+      transform: translateX(0) translateY(0);
+    }
+  }
+
+  /* Mobile removal - off screen left */
+  @keyframes removeToDiscard {
+    0% {
+      opacity: 1;
+      transform: translateX(0) translateY(0);
+    }
+    100% {
+      opacity: 0;
+      transform: translateX(-300px) translateY(0);
+    }
+  }
+}
+
+/* Landscape mobile */
+@media (max-width: 896px) and (orientation: landscape) {
+  .shoe,
+  .discard-pile {
+    display: none;
+  }
+}
+
+/* ============================================
+   SPLIT ANIMATION - Card slides to new hand position
+   ============================================ */
+
+.card.splitting {
+  animation: splitSlide 0.4s ease-out forwards;
+}
+
+@keyframes splitSlide {
+  0% {
+    /* Start at original position (stacked on first hand) */
+    transform: translateX(-120px) translateY(0);
+  }
+  100% {
+    /* End at new hand position */
+    transform: translateX(0) translateY(0);
+  }
+}
+
+/* Mobile split animation - shorter distance */
+@media (max-width: 768px) {
+  @keyframes splitSlide {
+    0% {
+      transform: translateX(-100px) translateY(0);
+    }
+    100% {
+      transform: translateX(0) translateY(0);
+    }
+  }
+}

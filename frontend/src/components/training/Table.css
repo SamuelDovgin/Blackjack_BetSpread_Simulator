@@ -1,0 +1,269 @@
+/* Table Component Styles */
+/* Green felt casino table */
+
+.table {
+  width: 100%;
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.table-felt {
+  background: linear-gradient(145deg, #1e5128 0%, #2d6a4f 50%, #1e5128 100%);
+  border-radius: 150px 150px 20px 20px;
+  border: 8px solid #143d1e;
+  box-shadow:
+    inset 0 0 50px rgba(0, 0, 0, 0.3),
+    0 4px 20px rgba(0, 0, 0, 0.4);
+  padding: 24px;
+  /* Give dealer/player more separation on desktop */
+  min-height: 520px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+}
+
+/* Felt texture overlay */
+.table-felt::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.08'/%3E%3C/svg%3E");
+  pointer-events: none;
+}
+
+/* Dealer area */
+.dealer-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.dealer-label,
+.player-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.dealer-hand,
+.hand {
+  min-height: 130px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Hand totals */
+.hand-total {
+  font-size: 18px;
+  font-weight: bold;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 4px 12px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.hand-total.busted {
+  background: rgba(231, 76, 60, 0.8);
+}
+
+.dealer-total {
+  margin-top: 8px;
+}
+
+/* Player area */
+.player-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-hands {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+}
+
+.player-hands.multiple {
+  flex-wrap: wrap;
+}
+
+.player-hand-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.player-hand-container.active {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+}
+
+.player-hand-container.busted {
+  opacity: 0.7;
+}
+
+/* Hand info badges */
+.hand-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.blackjack-badge {
+  background: linear-gradient(145deg, #f1c40f 0%, #f39c12 100%);
+  color: #1a1a1a;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: bold;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(241, 196, 15, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(241, 196, 15, 0.8);
+  }
+}
+
+.doubled-badge,
+.surrendered-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.doubled-badge {
+  background: rgba(243, 156, 18, 0.8);
+  color: #fff;
+}
+
+.surrendered-badge {
+  background: rgba(231, 76, 60, 0.8);
+  color: #fff;
+}
+
+.hand-bet {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Outcome display */
+.outcome-display {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 36px;
+  font-weight: bold;
+  padding: 16px 32px;
+  border-radius: 16px;
+  animation: popIn 0.3s ease-out;
+  z-index: 10;
+}
+
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.outcome-win,
+.outcome-blackjack {
+  background: linear-gradient(145deg, #27ae60 0%, #1e8449 100%);
+  color: #fff;
+  box-shadow: 0 0 30px rgba(39, 174, 96, 0.5);
+}
+
+.outcome-lose {
+  background: linear-gradient(145deg, #c0392b 0%, #922b21 100%);
+  color: #fff;
+  box-shadow: 0 0 30px rgba(192, 57, 43, 0.5);
+}
+
+.outcome-push {
+  background: linear-gradient(145deg, #7f8c8d 0%, #5d6d6e 100%);
+  color: #fff;
+  box-shadow: 0 0 30px rgba(127, 140, 141, 0.5);
+}
+
+/* Empty hand placeholder */
+.empty-hand {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 14px;
+  font-style: italic;
+}
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  .table {
+    padding: 8px;
+  }
+
+  .table-felt {
+    border-radius: 80px 80px 16px 16px;
+    border-width: 4px;
+    padding: 16px;
+    min-height: 350px;
+  }
+
+  .dealer-hand,
+  .hand {
+    min-height: 100px;
+  }
+
+  .player-hands {
+    gap: 12px;
+  }
+
+  .hand-total {
+    font-size: 16px;
+    padding: 3px 10px;
+  }
+
+  .outcome-display {
+    font-size: 28px;
+    padding: 12px 24px;
+  }
+}
+
+/* Landscape mobile */
+@media (max-width: 896px) and (orientation: landscape) {
+  .table-felt {
+    min-height: 280px;
+    border-radius: 60px 60px 16px 16px;
+    flex-direction: row;
+    padding: 16px 32px;
+  }
+
+  .dealer-area,
+  .player-area {
+    flex: 1;
+  }
+}

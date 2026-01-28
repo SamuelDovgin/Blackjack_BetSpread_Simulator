@@ -328,6 +328,16 @@ body {
   border-style: dashed;
 }
 
+.training-mode-btn {
+  background: linear-gradient(145deg, #27ae60 0%, #1e8449 100%);
+  border-color: #1e8449;
+  color: #fff;
+}
+
+.training-mode-btn:hover {
+  background: linear-gradient(145deg, #2ecc71 0%, #27ae60 100%);
+}
+
 .link {
   background: none;
   border: none;
