@@ -23,10 +23,14 @@ interface CardProps {
   isRemoving?: boolean;
   /** Whether this card is sliding during a split (from original hand to new position) */
   isSplitting?: boolean;
+  /** Whether this card is settling into the left-hand base position after a split */
+  isSplitSettling?: boolean;
   /** Position offset for overlapping stack (pixels) */
   stackOffset?: { x: number; y: number };
   /** Z-index for stacking order (higher = on top) */
   zIndex?: number;
+  /** Additional inline styles (used for CSS variables like split offsets) */
+  style?: React.CSSProperties;
 }
 
 const SUIT_SYMBOLS: Record<Suit, string> = {
@@ -54,8 +58,10 @@ export const Card: React.FC<CardProps> = ({
   isFlipping = false,
   isRemoving = false,
   isSplitting = false,
+  isSplitSettling = false,
   stackOffset,
   zIndex,
+  style,
 }) => {
   const { rank, suit, faceUp } = card;
 
@@ -77,13 +83,14 @@ export const Card: React.FC<CardProps> = ({
   }
 
   // Stack offset styling
-  const offsetStyle: React.CSSProperties = stackOffset
+  const baseStyle: React.CSSProperties = stackOffset
     ? {
         left: stackOffset.x,
         top: stackOffset.y,
         zIndex: zIndex ?? 'auto',
       }
     : { zIndex: zIndex ?? 'auto' };
+  const offsetStyle: React.CSSProperties = style ? { ...baseStyle, ...style } : baseStyle;
 
   // Don't render if not visible yet (for sequential dealing)
   if (!isVisible) {
@@ -103,6 +110,7 @@ export const Card: React.FC<CardProps> = ({
   const flippingClass = isFlipping ? 'flipping' : '';
   const faceUpClass = faceUp && !isFlipping ? 'face-up' : '';
   const splittingClass = isSplitting ? 'splitting' : '';
+  const splitSettlingClass = isSplitSettling ? 'split-settle' : '';
 
   // For flipping cards, we render both sides and use CSS 3D transform
   // The flip animation shows back first, then rotates to show front at 50%
@@ -111,7 +119,7 @@ export const Card: React.FC<CardProps> = ({
   if (isHoleCard || isFlipping) {
     return (
       <div
-        className={`card card-${size} card-flip-container ${dealingClass} ${removingClass} ${flippingClass} ${faceUpClass} ${splittingClass}`}
+        className={`card card-${size} card-flip-container ${dealingClass} ${removingClass} ${flippingClass} ${faceUpClass} ${splittingClass} ${splitSettlingClass}`}
         style={offsetStyle}
       >
         <div className="card-flip-inner">
@@ -150,7 +158,7 @@ export const Card: React.FC<CardProps> = ({
   if (!faceUp) {
     return (
       <div
-        className={`card card-back card-${size} ${dealingClass} ${removingClass} ${splittingClass}`}
+        className={`card card-back card-${size} ${dealingClass} ${removingClass} ${splittingClass} ${splitSettlingClass}`}
         style={offsetStyle}
       >
         <div className="card-back-pattern">
@@ -163,7 +171,7 @@ export const Card: React.FC<CardProps> = ({
   // Face up card
   return (
     <div
-      className={`card card-front card-${size} ${colorClass} ${dealingClass} ${removingClass} ${splittingClass}`}
+      className={`card card-front card-${size} ${colorClass} ${dealingClass} ${removingClass} ${splittingClass} ${splitSettlingClass}`}
       style={offsetStyle}
     >
       {/* Top-left corner */}

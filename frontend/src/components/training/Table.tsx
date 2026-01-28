@@ -8,7 +8,7 @@
 // 3. Slide upcard LEFT to overlap hole card vertically (only left edge of hole card visible)
 // 4. Additional dealer hits stack the same way - each card covers previous, showing only left edge
 
-import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Card, Shoe, DiscardPile } from './Card';
 import type { Card as CardType, HandState, GamePhase } from './types';
 import { calculateHandTotal, calculateFullHandTotal } from './engine/gameEngine';
@@ -47,13 +47,16 @@ interface TableProps {
   isSplitting?: boolean;
   /** Split dealing phase: 0=none, 1=dealing to right, 2=dealing to left */
   splitDealingPhase?: number;
+  /** Which hand index initiated the current split (used to keep animations stable while centering) */
+  splitOriginHandIndex?: number | null;
 }
 
 // Player card overlap offset - show top-left and bottom-right corners of each card
 // Cards go up and to the right (first card on bottom)
 const PLAYER_CARD_OFFSET_DESKTOP = { x: 28, y: -20 }; // Enough to see corners
 const PLAYER_CARD_OFFSET_MOBILE = { x: 22, y: -16 };
-const CARD_WIDTH_LARGE = 90; // Keep in sync with .card-large width in Card.css
+const CARD_SIZE_LARGE_DESKTOP = { w: 90, h: 126 }; // Keep in sync with .card-large in Card.css
+const CARD_SIZE_LARGE_MOBILE = { w: 70, h: 98 };
 
 // Dealer cards - two modes:
 // Initial: side by side (hole card left, upcard right)
@@ -95,6 +98,88 @@ function getDealSequenceIndex(
   }
 }
 
+type StackOutline = {
+  d: string;
+  width: number;
+  height: number;
+  left: number;
+  top: number;
+};
+
+function buildStackOutlinePath(
+  nCards: number,
+  dx: number,
+  dy: number,
+  cardW: number,
+  cardH: number,
+  margin: number
+): StackOutline | null {
+  if (nCards <= 0) return null;
+
+  const m = margin;
+  const W = cardW;
+  const H = cardH;
+
+  // Expand each card by margin on all sides so the outline "breathes" around the stack.
+  const points: Array<{ x: number; y: number }> = [];
+
+  // Bottom-left of base card (expanded)
+  points.push({ x: -m, y: H + m });
+  // Top-left of base card (expanded)
+  points.push({ x: -m, y: -m });
+
+  // Left-side staircase up to the top of the last card.
+  for (let i = 1; i < nCards; i++) {
+    // Step right at the previous card's top edge
+    points.push({ x: (dx * i) - m, y: (dy * (i - 1)) - m });
+    // Then step up to this card's top edge
+    points.push({ x: (dx * i) - m, y: (dy * i) - m });
+  }
+
+  // Top edge of last card to its top-right.
+  points.push({ x: (dx * (nCards - 1)) + W + m, y: (dy * (nCards - 1)) - m });
+  // Down the right edge of last card (expanded)
+  points.push({ x: (dx * (nCards - 1)) + W + m, y: (dy * (nCards - 1)) + H + m });
+
+  // Right-side staircase back down to the base card bottom.
+  for (let i = nCards - 2; i >= 0; i--) {
+    // Step left at the next card's bottom edge
+    points.push({ x: (dx * i) + W + m, y: (dy * (i + 1)) + H + m });
+    // Then step down to this card's bottom edge
+    points.push({ x: (dx * i) + W + m, y: (dy * i) + H + m });
+  }
+
+  // Close along the bottom back to the origin point.
+  points.push({ x: -m, y: H + m });
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of points) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+
+  const width = Math.max(1, maxX - minX);
+  const height = Math.max(1, maxY - minY);
+
+  const sx = -minX;
+  const sy = -minY;
+
+  const d = points
+    .map((p, idx) => {
+      const x = (p.x + sx).toFixed(2);
+      const y = (p.y + sy).toFixed(2);
+      return `${idx === 0 ? 'M' : 'L'}${x},${y}`;
+    })
+    .join(' ') + ' Z';
+
+  return { d, width, height, left: minX, top: minY };
+}
+
 export const Table: React.FC<TableProps> = ({
   dealerHand,
   playerHands,
@@ -113,26 +198,45 @@ export const Table: React.FC<TableProps> = ({
   showBadges = true, // Default to showing badges
   isSplitting = false,
   splitDealingPhase = 0,
+  splitOriginHandIndex = null,
 }) => {
   const isMobile =
     typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+
+  const cardSize = isMobile ? CARD_SIZE_LARGE_MOBILE : CARD_SIZE_LARGE_DESKTOP;
+  const cardW = cardSize.w;
+  const cardH = cardSize.h;
 
   // Keep the active hand visually centered by translating the entire hand row.
   // This is especially important on mobile where we never want multiple rows.
   const playerViewportRef = useRef<HTMLDivElement | null>(null);
   const [playerViewportWidth, setPlayerViewportWidth] = useState(0);
+  // Disable the translate transition until we've measured the viewport once.
+  // This avoids the "first deal finds its spot" look when the width goes 0 -> measured.
+  const [centerTransitionEnabled, setCenterTransitionEnabled] = useState(false);
 
   useLayoutEffect(() => {
     const el = playerViewportRef.current;
     if (!el) return;
 
-    const update = () => setPlayerViewportWidth(el.clientWidth);
-    update();
+    const measure = () => {
+      const w = el.clientWidth || Math.round(el.getBoundingClientRect().width);
+      setPlayerViewportWidth(w);
+    };
+    measure();
 
-    const ro = new ResizeObserver(update);
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [playerHands.length]);
+
+  useEffect(() => {
+    if (centerTransitionEnabled) return;
+    if (playerViewportWidth <= 0) return;
+
+    const id = window.setTimeout(() => setCenterTransitionEnabled(true), 0);
+    return () => window.clearTimeout(id);
+  }, [playerViewportWidth, centerTransitionEnabled]);
 
   // Calculate visible dealer total (only face-up cards)
   const dealerVisible = calculateHandTotal(dealerHand);
@@ -158,8 +262,8 @@ export const Table: React.FC<TableProps> = ({
   const playerHandGapPx = Math.round(playerCardOffset.x * 1.2);
 
   const playerHandStackWidths = useMemo(() => {
-    return playerHands.map((h) => CARD_WIDTH_LARGE + Math.max(0, h.cards.length - 1) * playerCardOffset.x);
-  }, [playerHands, playerCardOffset.x]);
+    return playerHands.map((h) => cardW + Math.max(0, h.cards.length - 1) * playerCardOffset.x);
+  }, [playerHands, playerCardOffset.x, cardW]);
 
   // Center the active hand as a whole (not just its first card) so the hand you are
   // currently playing is visually "dead center" on both desktop and mobile.
@@ -172,18 +276,24 @@ export const Table: React.FC<TableProps> = ({
 
     let left = 0;
     for (let i = 0; i < activeHandIndex; i++) {
-      const w = (playerHandStackWidths[i] ?? CARD_WIDTH_LARGE) + handOuterPad;
+      const w = (playerHandStackWidths[i] ?? cardW) + handOuterPad;
       left += w + playerHandGapPx;
     }
 
-    const activeWidth = playerHandStackWidths[activeHandIndex] ?? CARD_WIDTH_LARGE;
+    const activeWidth = playerHandStackWidths[activeHandIndex] ?? cardW;
     // Center the visible card stack inside the padded container.
     const activeCenter = left + handInnerOffset + (activeWidth / 2);
     return (playerViewportWidth / 2) - activeCenter;
-  }, [playerViewportWidth, playerHands.length, activeHandIndex, playerHandStackWidths, playerHandGapPx]);
+  }, [playerViewportWidth, playerHands.length, activeHandIndex, playerHandStackWidths, playerHandGapPx, cardW]);
 
   // Track global card index for sequential visibility
   let globalCardIndex = 0;
+
+  // Stable split indices for animations even while the active hand is being centered.
+  const splitLeftHandIdx = splitOriginHandIndex ?? activeHandIndex;
+  const splitRightHandIdx = Math.min(splitLeftHandIdx + 1, playerHands.length - 1);
+  const splitSlideX =
+    -(((playerHandStackWidths[splitLeftHandIdx] ?? cardW) + 16) + playerHandGapPx);
 
   return (
     <div className="table">
@@ -257,6 +367,7 @@ export const Table: React.FC<TableProps> = ({
                 style={{
                   transform: `translateX(${playerRowTranslateX}px)`,
                   gap: `${playerHandGapPx}px`,
+                  transition: centerTransitionEnabled ? undefined : 'none',
                 }}
               >
                 {playerHands.map((hand, handIdx) => {
@@ -266,7 +377,6 @@ export const Table: React.FC<TableProps> = ({
                 // Ensure any dealing animation renders above other split hands.
                 // NOTE: opacity on a busted hand creates a stacking context, so we must
                 // raise the *hand container* z-index for the currently dealing hand.
-                const splitRightHandIdx = Math.min(activeHandIndex + 1, playerHands.length - 1);
                 const focusHandIdx =
                   (phase === 'player-action' && (isSplitting || splitDealingPhase === 1))
                     ? splitRightHandIdx
@@ -278,7 +388,16 @@ export const Table: React.FC<TableProps> = ({
                   ? playerHands.slice(0, handIdx).reduce((sum, h) => sum + h.cards.length, 0)
                   : 0;
 
-                const stackWidth = playerHandStackWidths[handIdx] ?? CARD_WIDTH_LARGE;
+                const stackWidth = playerHandStackWidths[handIdx] ?? cardW;
+
+                // As cards stack upward (negative y offsets), move the info row upward too so it always
+                // clears the top-most card (prevents overlap as the hand grows).
+                const stackRisePx = Math.max(0, hand.cards.length - 1) * Math.abs(playerCardOffset.y);
+
+                const outlineMargin = isMobile ? 10 : 12;
+                const outline = isActive
+                  ? buildStackOutlinePath(hand.cards.length, playerCardOffset.x, playerCardOffset.y, cardW, cardH, outlineMargin)
+                  : null;
 
                 return (
                   <div
@@ -289,7 +408,7 @@ export const Table: React.FC<TableProps> = ({
                     style={{ zIndex: handZ }}
                   >
                     {/* All labels/badges are above the cards so stacks never shift upward. */}
-                    <div className="hand-info">
+                    <div className="hand-info" style={{ transform: `translateY(${-stackRisePx}px)` }}>
                       {showHandTotals && (
                         <div className={`hand-total ${hand.isBusted && showBadges ? 'busted' : ''}`}>
                           {handTotal.total}
@@ -304,8 +423,8 @@ export const Table: React.FC<TableProps> = ({
 
                       <div className="hand-meta-row">
                         {playerHands.length > 1 && <span className="hand-tag tag-bet">{hand.bet}u</span>}
-                        {hand.isBlackjack && showBadges && <span className="hand-tag tag-blackjack">BJ</span>}
-                        {hand.isDoubled && showBadges && <span className="hand-tag tag-doubled">2x</span>}
+                        {hand.isBlackjack && showBadges && <span className="hand-tag tag-blackjack">Blackjack</span>}
+                        {hand.isDoubled && showBadges && <span className="hand-tag tag-doubled">Double</span>}
                         {hand.isSurrendered && showBadges && <span className="hand-tag tag-surrendered">SUR</span>}
                       </div>
                     </div>
@@ -323,6 +442,7 @@ export const Table: React.FC<TableProps> = ({
 
                           // Split animation: the moved card is the first card of the newly-created right hand.
                           const isThisCardSplitting = isSplitting && handIdx === splitRightHandIdx && cardIdx === 0;
+                          const isThisCardSplitSettling = isSplitting && handIdx === splitLeftHandIdx && cardIdx === 0;
 
                           // During split dealing phase, only the *new* card should animate in.
                           const isSplitDealCard =
@@ -330,7 +450,7 @@ export const Table: React.FC<TableProps> = ({
                             (splitDealingPhase === 2 && handIdx === activeHandIndex && cardIdx === hand.cards.length - 1);
 
                           const isDealingNow = isThisCardDealing || isHitDealing || isSplitDealCard;
-                          const cardZ = (isDealingNow || isThisCardSplitting) ? 10000 + cardIdx : cardIdx;
+                          const cardZ = (isDealingNow || isThisCardSplitting || isThisCardSplitSettling) ? 10000 + cardIdx : cardIdx;
 
                           return (
                             <Card
@@ -341,11 +461,32 @@ export const Table: React.FC<TableProps> = ({
                               isDealing={isDealingNow}
                               isRemoving={isRemovingCards}
                               isSplitting={isThisCardSplitting}
+                              isSplitSettling={isThisCardSplitSettling}
+                              style={
+                                isThisCardSplitting
+                                  ? ({ ['--split-slide-x' as any]: `${splitSlideX}px` } as React.CSSProperties)
+                                  : undefined
+                              }
                               stackOffset={cardIdx > 0 ? { x: playerCardOffset.x * cardIdx, y: playerCardOffset.y * cardIdx } : undefined}
                               zIndex={cardZ}
                             />
                           );
                         })}
+                        {/* Render AFTER cards so the first card stays the "base" in CSS (:first-child). */}
+                        {isActive && outline && (
+                          <svg
+                            className="stack-outline"
+                            viewBox={`0 0 ${outline.width} ${outline.height}`}
+                            style={{
+                              left: outline.left,
+                              top: outline.top,
+                              width: outline.width,
+                              height: outline.height,
+                            }}
+                          >
+                            <path d={outline.d} />
+                          </svg>
+                        )}
                       </div>
                     </div>
                   </div>

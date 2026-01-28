@@ -3482,6 +3482,7 @@ Goals this implements:
 Implementation summary:
 - Sequential initial deal is gated via `visibleCardCount` and timed reveals in `frontend/src/components/training/TrainingPage.tsx`.
 - Player action buttons stay mounted (no layout pop-in/out). While a card is moving, inputs are locked briefly after `hit/double/split`.
+- The `Deal` button is only shown for the initial hand (phase `idle`). After that, hands auto-deal, so there is no persistent deal button during normal training flow.
 - If the user taps `Stand`/`Surrender` during that brief lock, the action is queued and applied automatically as soon as the deal animation finishes.
 - Dealer turn plays out one card at a time:
   - Hole card is revealed in state at half of the flip duration.
@@ -3491,9 +3492,12 @@ Implementation summary:
 Key constants (ms) and why they exist:
 - `CARD_DEAL_ANIM_MS = 350`: matches CSS deal animation duration.
 - `DEAL_CARD_INTERVAL = 380`: slightly longer than `CARD_DEAL_ANIM_MS` so previous motion completes before next card appears.
+- `DEALER_DRAW_INTERVAL = 520`: dealer hit cadence is intentionally a bit slower than player hits (feels more like a real table).
 - `HOLE_CARD_REVEAL_TIME = 500`: matches CSS flip duration.
 - `DEALER_STACK_TRANSITION_MS = 400`: matches CSS stack transition.
 - `CARD_REMOVE_ANIM_MS = 400`: matches CSS remove-to-discard duration.
+- `SPLIT_SEPARATE_MS = 400`: matches split separation animations (right-card slide + left-card settle).
+- `PLAYER_CENTER_SLIDE_MS = 350`: matches the active-hand centering slide (hand row translate transition).
 
 Related files:
 - `frontend/src/components/training/TrainingPage.tsx` (sequencing + dealer loop + auto-advance)
@@ -3515,6 +3519,10 @@ Recent polish fixes (Jan 2026):
 - Split flow (right hand first):
   - Split now separates the cards, deals the first post-split card ONLY to the right hand, and lets you play it immediately.
   - Card ordering: the visually top card (second card in the stacked layout) becomes the base card of the left hand; the other card slides to become the base of the new right hand.
+  - Split animations:
+    - Right-hand base card uses `splitSlide` and is given a dynamic `--split-slide-x` so it starts exactly where the card was pre-split.
+    - Left-hand base card uses `splitSettle` so the former top card glides down/left into the base position (no snap).
+  - After the split separation animation completes, the UI first centers the new right-hand split (camera slide), then deals the first post-split card.
   - The left hand receives its first card only when it becomes active (after the right hand completes).
   - `advanceGame()` always selects the rightmost incomplete hand next (right-to-left play), so it never jumps straight to the dealer while any split hand is still unfinished.
   - Multi-splits follow the same rule: every split deals to the newly-created right hand first (index = activeHandIndex + 1 during the split animation), then play continues right-to-left.
@@ -3526,11 +3534,14 @@ Recent polish fixes (Jan 2026):
   - Split hands are also given a container `z-index` boost while dealing so a dealt card never animates underneath a busted/complete split hand (opacity can create stacking contexts).
 - Badges / indicators layout stability:
   - The per-hand info area reserves a compact fixed-height zone (~1/3 of a card) so that showing BUST/2x/SUR/etc never pushes the card stacks upward mid-hand.
-  - Status indicators are rendered as small tags (e.g., `BJ`, `2x`, `SUR`, and bet size in `u`) to keep the reserved area tight and consistent across multi-split hands.
+  - Status indicators are rendered as small tags (e.g., `Blackjack`, `Double`, `SUR`, and bet size in `u`) to keep the reserved area tight and consistent across multi-split hands.
   - The info area is rendered ABOVE the card stacks (not below) so there is no bottom margin under the cards during multi-split play.
+  - The info area also translates upward as the card stack grows (based on the overlap `y` offset) so it always stays above the top-most card.
 - Active-hand highlight:
-  - Highlight is applied behind the player card stack only (via a pseudo-element on the stack), so it stays exactly card-height and never becomes taller than the cards.
-  - The active glow is slightly brighter for visibility without changing layout; no container-level backgrounds are used.
+  - Highlight is applied behind the player card stack only, not the entire hand container.
+  - The highlight is a single continuous outline path (SVG) that follows the "stair-step" contour of the overlapping stack with rounded joins.
+  - For a single (non-split) hand, the player row uses flex centering (no translate) so the initial deal is centered immediately even before any viewport measurement.
+  - No container-level backgrounds are used (prevents tall highlights and layout shifts).
 - Split layout (single row + active-hand centering):
   - Player hands never wrap into multiple rows. The row is translated so the active hand stays centered (other hands can slide off-screen).
   - Hand spacing is dynamic: each hand's allocated width grows with its card count (card width + overlapX * (n-1)), so long hit sequences push neighboring hands outward instead of overlapping them.

@@ -42,10 +42,13 @@ import './TrainingPage.css';
 // Animation timing constants (ms)
 const CARD_DEAL_ANIM_MS = 350;
 const DEAL_CARD_INTERVAL = 380; // Keep > CARD_DEAL_ANIM_MS so the previous card stops before the next appears
+const DEALER_DRAW_INTERVAL = 520; // Dealer hits should feel slightly slower than player cards
 const INITIAL_DEAL_TOTAL_TIME = (DEAL_CARD_INTERVAL * 3) + CARD_DEAL_ANIM_MS + 20; // 4 cards (P,D,P,D)
 const HOLE_CARD_REVEAL_TIME = 500; // Time to flip hole card
 const DEALER_STACK_TRANSITION_MS = 400; // Matches Card.css stack transition
 const CARD_REMOVE_ANIM_MS = 400; // Matches Card.css removal animation
+const SPLIT_SEPARATE_MS = 400; // Matches Card.css splitSlide / splitSettle
+const PLAYER_CENTER_SLIDE_MS = 350; // Matches Table.css .player-hands transition
 
 interface TrainingPageProps {
   onBack: () => void;
@@ -86,7 +89,8 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   const [actionLocked, setActionLocked] = useState(false);
   const [showBadges, setShowBadges] = useState(true); // Hide badges during card animations
   const [isSplitting, setIsSplitting] = useState(false); // During split card separation animation
-  const [splitDealingPhase, setSplitDealingPhase] = useState<number>(0); // 0=none, 1=dealing to right, 2=dealing to left
+  const [splitDealingPhase, setSplitDealingPhase] = useState<number>(0); // 0=none, 1=dealing to right, 2=dealing to left, 3=centering (no dealing)
+  const [splitOriginHandIndex, setSplitOriginHandIndex] = useState<number | null>(null); // for split animations/layout
 
   const timersRef = useRef<number[]>([]);
   const queuedActionRef = useRef<PlayerAction | null>(null);
@@ -145,6 +149,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     setResultOutcome(null);
     setIsSplitting(false);
     setSplitDealingPhase(0);
+    setSplitOriginHandIndex(null);
     setShowBadges(true);
 
     // Gate visibility so cards appear sequentially (P, D, P, D) with no overlap.
@@ -212,8 +217,10 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Split has special multi-phase animation handling
     if (action === 'split') {
+      const originIdx = gameState.activeHandIndex;
       setActionLocked(true);
       setShowBadges(false);
+      setSplitOriginHandIndex(originIdx);
 
       // Phase 1: Separate the cards (top card visually moves to right)
       setIsSplitting(true);
@@ -222,36 +229,44 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
         return splitSeparate(prev);
       });
 
-      // After card separation animation, deal to right hand (index 1) first
+      // After card separation animation:
+      // 1) Slide so the right-hand split is centered (no dealing while sliding)
+      // 2) Deal the first post-split card to the right hand
       const phase1Id = window.setTimeout(() => {
         setIsSplitting(false);
-        setSplitDealingPhase(1);
+
+        // Block auto-deal while we move the camera to the right hand.
+        setSplitDealingPhase(3);
         setGameState((prev) => {
-          // During split separate, activeHandIndex remains the "left" hand; the new right hand is +1.
-          const rightIdx = Math.min(prev.activeHandIndex + 1, prev.playerHands.length - 1);
-          return dealToHand(prev, rightIdx);
+          const rightIdx = Math.min(originIdx + 1, prev.playerHands.length - 1);
+          return { ...prev, activeHandIndex: rightIdx };
         });
 
-        // After right hand card animation, allow play on the right hand.
-        const phase2Id = window.setTimeout(() => {
-          setSplitDealingPhase(0);
-          setShowBadges(true);
-          setActionLocked(false);
-
+        const phaseCenterId = window.setTimeout(() => {
+          setSplitDealingPhase(1);
           setGameState((prev) => {
-            const next = clearSplitDealFlags(prev);
-            // Ensure we start by playing the right-hand split
-            const rightIdx = Math.min(next.activeHandIndex + 1, next.playerHands.length - 1);
-            let updated: GameState = { ...next, activeHandIndex: rightIdx };
-            const right = updated.playerHands[rightIdx];
-            if (right?.isComplete) {
-              updated = advanceGame(updated);
-            }
-            return updated;
+            const rightIdx = Math.min(originIdx + 1, prev.playerHands.length - 1);
+            return dealToHand(prev, rightIdx);
           });
-        }, CARD_DEAL_ANIM_MS + 40);
-        timersRef.current.push(phase2Id);
-      }, 400); // Card separation animation time
+
+          // After right hand card animation, allow play on the right hand.
+          const phase2Id = window.setTimeout(() => {
+            setSplitDealingPhase(0);
+            setShowBadges(true);
+            setActionLocked(false);
+            setSplitOriginHandIndex(null);
+
+            setGameState((prev) => {
+              const next = clearSplitDealFlags(prev);
+              const rightIdx = next.activeHandIndex;
+              const right = next.playerHands[rightIdx];
+              return right?.isComplete ? advanceGame(next) : next;
+            });
+          }, CARD_DEAL_ANIM_MS + 40);
+          timersRef.current.push(phase2Id);
+        }, PLAYER_CENTER_SLIDE_MS + 20);
+        timersRef.current.push(phaseCenterId);
+      }, SPLIT_SEPARATE_MS); // Card separation animation time
       timersRef.current.push(phase1Id);
 
       return;
@@ -386,7 +401,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       }, CARD_DEAL_ANIM_MS + 40);
       timersRef.current.push(id);
     }
-  }, [actionLocked]);
+  }, [actionLocked, gameState.activeHandIndex]);
 
   // When switching to a split hand that still needs its first post-split card,
   // deal it before allowing play.
@@ -482,8 +497,8 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
             };
             setGameState(current);
 
-            // Wait until this new card finishes its deal animation.
-            await new Promise((r) => window.setTimeout(r, DEAL_CARD_INTERVAL));
+            // Wait until this new dealer card finishes its deal animation.
+            await new Promise((r) => window.setTimeout(r, DEALER_DRAW_INTERVAL));
           }
 
           if (cancelled) return;
@@ -609,19 +624,19 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           showBadges={showBadges}
           isSplitting={isSplitting}
           splitDealingPhase={splitDealingPhase}
+          splitOriginHandIndex={splitOriginHandIndex}
         />
       </main>
 
       {/* Action buttons */}
       <div className="training-actions">
         <div className="training-actions-inner">
-          <button
-            className="deal-button"
-            onClick={startNewHand}
-            disabled={gameState.phase !== 'idle'}
-          >
-            {needsReshuffle ? 'Shuffle & Deal' : 'Deal'}
-          </button>
+          {/* Only show the Deal button for the initial hand (later hands auto-deal). */}
+          {gameState.phase === 'idle' && (
+            <button className="deal-button" onClick={startNewHand}>
+              {needsReshuffle ? 'Shuffle & Deal' : 'Deal'}
+            </button>
+          )}
 
           <ActionButtons
             onAction={handleAction}
