@@ -315,10 +315,9 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
         const playerTotal = playerHand ? calculateFullHandTotal(playerHand.cards).total : 0;
 
         if (playerHasBJ || dealerHasBJ) {
-          // Resolve instantly; the payout phase will handle auto-advance + discard animation.
-          const revealed = revealDealerHoleCard(prev);
-          const resolved = resolveRound(revealed, blackjackPayout);
-          return { ...resolved, phase: 'payout' as GamePhase };
+          // Still go through dealer-turn so the hole card flip + dealer stack animation runs.
+          // The dealer-turn effect will detect blackjack and skip dealer draws.
+          return { ...prev, phase: 'dealer-turn' as GamePhase };
         }
 
         // Auto-stand on 21 (non-blackjack, e.g., 3+ cards totaling 21)
@@ -1044,6 +1043,17 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           let current = revealDealerHoleCard(gameState);
           setGameState(current);
 
+          // Blackjack resolution: if either side has a natural, we only reveal the hole card and pay.
+          // Dealer does NOT draw additional cards after a player blackjack.
+          const playerHasBJ = current.playerHands.length === 1 && !!current.playerHands[0]?.isBlackjack;
+          const dealerHasBJ =
+            current.dealerHand.length === 2 && calculateFullHandTotal(current.dealerHand).total === 21;
+          if (playerHasBJ || dealerHasBJ) {
+            const resolved = resolveRound(current, blackjackPayout);
+            setGameState({ ...resolved, phase: 'payout' });
+            return;
+          }
+
           // If every player hand is already busted, the dealer should not draw any
           // additional cards. Reveal the hole card, then go straight to cleanup.
           if (current.playerHands.length > 0 && current.playerHands.every((h) => h.isBusted)) {
@@ -1198,6 +1208,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       {/* Main game area */}
       <main className="training-main">
         <Table
+          roundNumber={gameState.roundNumber}
           dealerHand={gameState.dealerHand}
           playerHands={gameState.playerHands}
           activeHandIndex={gameState.activeHandIndex}

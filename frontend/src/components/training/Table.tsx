@@ -15,6 +15,8 @@ import { calculateHandTotal, calculateFullHandTotal } from './engine/gameEngine'
 import './Table.css';
 
 interface TableProps {
+  /** Monotonically increasing counter for each dealt round. Used to ensure card animations reset per round. */
+  roundNumber: number;
   dealerHand: CardType[];
   playerHands: HandState[];
   activeHandIndex: number;
@@ -176,6 +178,7 @@ function buildStackOutlinePath(
 }
 
 export const Table: React.FC<TableProps> = ({
+  roundNumber,
   dealerHand,
   playerHands,
   activeHandIndex,
@@ -237,6 +240,20 @@ export const Table: React.FC<TableProps> = ({
   const dealerFull = calculateFullHandTotal(dealerHand);
   const showFullDealer = showDealerTotal || phase === 'payout' || phase === 'dealer-turn';
   const dealerIsBusted = dealerFull.total > 21;
+  const dealerIsBlackjack = dealerHand.length === 2 && dealerFull.total === 21;
+
+  // Dealer outcome is only well-defined when there is a single player hand (no splits).
+  const dealerOutcome = useMemo(() => {
+    if (phase !== 'payout') return null;
+    if (playerHands.length !== 1) return null;
+    const r = playerHands[0]?.result ?? null;
+    if (!r) return null;
+    if (r === 'push') return 'push' as const;
+    // Player blackjack is still a player win (dealer lose).
+    if (r === 'win' || r === 'blackjack') return 'lose' as const;
+    if (r === 'lose') return 'win' as const;
+    return null;
+  }, [phase, playerHands]);
 
   // Count total player cards for sequencing
   const totalPlayerCards = playerHands.reduce((sum, h) => sum + h.cards.length, 0);
@@ -316,7 +333,7 @@ export const Table: React.FC<TableProps> = ({
 
                   return (
                     <Card
-                      key={`dealer-${i}`}
+                      key={`dealer-${roundNumber}-${i}`}
                       card={card}
                       size="large"
                       isVisible={isCardVisible}
@@ -347,6 +364,20 @@ export const Table: React.FC<TableProps> = ({
           )}
           {!showHandTotals && dealerHand.length > 0 && dealerIsBusted && showFullDealer && showBadges && (
             <div className="hand-total busted dealer-total">BUST</div>
+          )}
+
+          {/* Dealer outcome badges during payout (single-hand only). */}
+          {phase === 'payout' && showBadges && dealerOutcome && (
+            <div className={`hand-result dealer-result result-${dealerOutcome}`}>
+              {dealerOutcome === 'win' && 'WIN'}
+              {dealerOutcome === 'push' && 'PUSH'}
+              {dealerOutcome === 'lose' && 'LOSE'}
+            </div>
+          )}
+          {phase === 'payout' && showBadges && dealerIsBlackjack && (
+            <div className="hand-meta-row dealer-meta-row">
+              <span className="hand-tag tag-blackjack">Blackjack</span>
+            </div>
           )}
         </div>
 
@@ -415,17 +446,18 @@ export const Table: React.FC<TableProps> = ({
 
                       {/* Outcome badges during payout phase */}
                       {phase === 'payout' && showBadges && hand.result && (
-                        <div className={`hand-result result-${hand.result}`}>
-                          {hand.result === 'win' && 'WIN'}
+                        <div
+                          className={`hand-result result-${hand.result === 'blackjack' ? 'win' : hand.result}`}
+                        >
+                          {(hand.result === 'win' || hand.result === 'blackjack') && 'WIN'}
                           {hand.result === 'push' && 'PUSH'}
-                          {hand.result === 'blackjack' && 'BLACKJACK'}
                           {hand.result === 'lose' && !hand.isBusted && 'LOSE'}
                         </div>
                       )}
 
                       <div className="hand-meta-row">
                         {playerHands.length > 1 && <span className="hand-tag tag-bet">{hand.bet}u</span>}
-                        {hand.isBlackjack && showBadges && phase !== 'payout' && <span className="hand-tag tag-blackjack">Blackjack</span>}
+                        {hand.isBlackjack && showBadges && <span className="hand-tag tag-blackjack">Blackjack</span>}
                         {hand.isDoubled && showBadges && <span className="hand-tag tag-doubled">Double</span>}
                         {hand.isSurrendered && showBadges && <span className="hand-tag tag-surrendered">SUR</span>}
                       </div>
@@ -456,7 +488,7 @@ export const Table: React.FC<TableProps> = ({
 
                           return (
                             <Card
-                              key={`player-${handIdx}-${cardIdx}`}
+                              key={`player-${roundNumber}-${handIdx}-${cardIdx}`}
                               card={card}
                               size="large"
                               isVisible={isCardVisible}

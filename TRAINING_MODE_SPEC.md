@@ -33,6 +33,12 @@
 - ✅ **Decision Result Taxonomy** - categorizes outcomes (correct_basic, correct_deviation, missed_deviation, wrong_deviation, incorrect_basic)
 - ✅ **Session Persistence** - settings and stats saved to localStorage, restored on page reload
 
+### Recent Implementation Notes (Jan 2026)
+
+- Blackjack flow: natural blackjack rounds now transition through `dealer-turn` so the hole-card flip + dealer stack animation always plays; dealer does not draw after a player blackjack.
+- Dealing animation reset: card components are keyed by `roundNumber` so the first card (and all cards) animate reliably every new hand instead of "popping" in.
+- Payout badges: blackjack hands show normal WIN/LOSE/PUSH outcome badges, plus a "Blackjack" tag (instead of replacing the result with a special "BLACKJACK" outcome badge).
+
 ---
 
 ## Design Decisions Summary
