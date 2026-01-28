@@ -1,8 +1,14 @@
 /* Card Component Styles */
 /* Classic casino-style playing cards */
 
-/* Base card styles */
-.card {
+/* Base card styles
+   IMPORTANT: scope these to actual playing cards (they always have a size class).
+   The simulator UI also uses `.card` for panels; we don't want training styles to
+   affect selection/styling outside Training Mode.
+*/
+.card.card-small,
+.card.card-medium,
+.card.card-large {
   position: relative;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);

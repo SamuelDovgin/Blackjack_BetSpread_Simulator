@@ -236,6 +236,7 @@ export const Table: React.FC<TableProps> = ({
   const dealerVisible = calculateHandTotal(dealerHand);
   const dealerFull = calculateFullHandTotal(dealerHand);
   const showFullDealer = showDealerTotal || phase === 'payout' || phase === 'dealer-turn';
+  const dealerIsBusted = dealerFull.total > 21;
 
   // Count total player cards for sequencing
   const totalPlayerCards = playerHands.reduce((sum, h) => sum + h.cards.length, 0);
@@ -335,10 +336,17 @@ export const Table: React.FC<TableProps> = ({
             )}
           </div>
           {showHandTotals && dealerHand.length > 0 && (
-            <div className="hand-total dealer-total">
-              {showFullDealer ? dealerFull.total : dealerVisible.total}
+            <div className={`hand-total dealer-total ${dealerIsBusted && showFullDealer && showBadges ? 'busted' : ''}`}>
+              {dealerIsBusted && showFullDealer && showBadges
+                ? `${dealerFull.total} BUST`
+                : showFullDealer
+                  ? dealerFull.total
+                  : dealerVisible.total}
               {!showFullDealer && dealerHand.some(c => !c.faceUp) && '+'}
             </div>
+          )}
+          {!showHandTotals && dealerHand.length > 0 && dealerIsBusted && showFullDealer && showBadges && (
+            <div className="hand-total busted dealer-total">BUST</div>
           )}
         </div>
 
