@@ -33,11 +33,13 @@ interface CardProps {
   style?: React.CSSProperties;
 }
 
+// NOTE: iOS/Safari may render these as emoji by default, which breaks spacing/alignment.
+// Append Variation Selector-15 (FE0E) to force a text presentation where supported.
 const SUIT_SYMBOLS: Record<Suit, string> = {
-  hearts: '\u2665',
-  diamonds: '\u2666',
-  clubs: '\u2663',
-  spades: '\u2660',
+  hearts: '\u2665\uFE0E',
+  diamonds: '\u2666\uFE0E',
+  clubs: '\u2663\uFE0E',
+  spades: '\u2660\uFE0E',
 };
 
 const RANK_DISPLAY: Record<Rank, string> = {

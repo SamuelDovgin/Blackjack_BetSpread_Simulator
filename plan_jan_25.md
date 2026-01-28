@@ -72,6 +72,7 @@
 - Multi-processing for faster simulations
 - Training Mode Phase 1-3 (core gameplay, animations, decision validation, session persistence)
 - Training Mode: dealer bust now shows a BUST badge under the dealer hand (to match player BUST indicators).
+- Training Mode: suit symbols forced to render as text (not iOS emoji) for consistent pip spacing/alignment on mobile.
 - Added GitHub Pages deployment for the frontend (auto-build + publish on push) so Training Mode can be tested on mobile: `.github/workflows/deploy-frontend.yml` + `frontend/vite.config.ts` + `docs/GITHUB_PAGES.md`.
 - Risk of Ruin Analysis card no longer requires a bankroll to display. If bankroll is unset, Lifetime/Trip RoR show `n/a`, but Required Bankroll (5%/1%) and N0 still display from EV/SD.
 
