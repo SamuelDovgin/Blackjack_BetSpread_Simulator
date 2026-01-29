@@ -150,16 +150,17 @@
 }
 
 .stack-outline path {
-  /* Prefer a soft "shaded" highlight over a sharp outline. */
-  fill: rgba(255, 255, 255, 0.06);
-  stroke: rgba(255, 255, 255, 0.08);
+  /* White gradient highlight: brightest at center, fading at edges */
+  fill: rgba(255, 255, 255, 0.1);
+  stroke: rgba(255, 255, 255, 0.15);
   stroke-width: 2px;
   stroke-linejoin: round;
   stroke-linecap: round;
   filter:
-    blur(0.3px)
-    drop-shadow(0 0 18px rgba(255, 255, 255, 0.14))
-    drop-shadow(0 0 34px rgba(255, 255, 255, 0.08));
+    blur(0.5px)
+    drop-shadow(0 0 8px rgba(255, 255, 255, 0.3))
+    drop-shadow(0 0 20px rgba(255, 255, 255, 0.2))
+    drop-shadow(0 0 40px rgba(255, 255, 255, 0.1));
 }
 
 .player-hand-container.busted {

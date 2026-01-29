@@ -55,23 +55,47 @@ import {
 } from './engine/gameEngine';
 import './TrainingPage.css';
 
-// Animation timing constants (ms)
-const CARD_DEAL_ANIM_MS = 320;
-const DEAL_CARD_INTERVAL = 340; // Keep > CARD_DEAL_ANIM_MS so the previous card stops before the next appears
-const DEALER_DRAW_INTERVAL = 480; // Dealer hits should feel slightly slower than player cards
+// Base animation timing constants (ms) — adjusted by dealingSpeed setting
+const BASE_TIMING = {
+  slow: {
+    cardDealAnim: 380,
+    dealCardInterval: 400,
+    dealerDrawInterval: 540,
+    playerCenterSlide: 360,
+    centerBuffer: 40,
+    settleBuffer: 40,
+  },
+  medium: {
+    cardDealAnim: 320,
+    dealCardInterval: 340,
+    dealerDrawInterval: 480,
+    playerCenterSlide: 320,
+    centerBuffer: 30,
+    settleBuffer: 30,
+  },
+  fast: {
+    cardDealAnim: 240,
+    dealCardInterval: 260,
+    dealerDrawInterval: 380,
+    playerCenterSlide: 240,
+    centerBuffer: 20,
+    settleBuffer: 20,
+  },
+};
+
+function getTimingConstants(speed: 'slow' | 'medium' | 'fast') {
+  return BASE_TIMING[speed];
+}
+
+// Non-speed-dependent constants
 const HOLE_CARD_REVEAL_TIME = 500; // Time to flip hole card
 const DEALER_STACK_TRANSITION_MS = 400; // Matches Card.css stack transition
 const CARD_REMOVE_ANIM_MS = 400; // Matches Card.css removal animation
 const SPLIT_SEPARATE_MS = 400; // Matches Card.css splitSlide / splitSettle
-const PLAYER_CENTER_SLIDE_MS = 320; // Matches Table.css .player-hands transition
-// Small buffer so we never start dealing a card while the player-hand row is still sliding.
-// (The transform transition starts on the next frame; a tiny buffer avoids 1-frame overlap.)
-const PLAYER_CENTER_BUFFER_MS = 30;
-const CARD_SETTLE_BUFFER_MS = 30;
 
-function getInitialDealTotalTimeMs(totalCards: number): number {
-  // The last card starts at (totalCards - 1) * interval, then runs for CARD_DEAL_ANIM_MS.
-  return (DEAL_CARD_INTERVAL * Math.max(0, totalCards - 1)) + CARD_DEAL_ANIM_MS + 20;
+function getInitialDealTotalTimeMs(totalCards: number, timing: ReturnType<typeof getTimingConstants>): number {
+  // The last card starts at (totalCards - 1) * interval, then runs for cardDealAnim.
+  return (timing.dealCardInterval * Math.max(0, totalCards - 1)) + timing.cardDealAnim + 20;
 }
 
 function seatForInitialDealIndex(dealIndex: number, handsToPlay: number): number | null {
@@ -224,6 +248,14 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     hitSplitAces,
   };
 
+  // Timing constants ref — always reflects the current dealingSpeed so every
+  // callback (split animations, hit delays, dealer auto-play, etc.) uses the
+  // correct timing without needing it in its dependency array.
+  const timingRef = useRef(getTimingConstants(settings.dealingSpeed ?? 'medium'));
+  useEffect(() => {
+    timingRef.current = getTimingConstants(settings.dealingSpeed ?? 'medium');
+  }, [settings.dealingSpeed]);
+
   const timersRef = useRef<number[]>([]);
   const queuedActionRef = useRef<PlayerAction | null>(null);
   const clearTimers = () => {
@@ -332,6 +364,13 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     const handsToPlay = settings.handsToPlay ?? 1;
     const initialCardsToShow = (2 * handsToPlay) + 2; // 2 per player hand + dealer hole + dealer upcard
 
+    // Get timing constants based on dealing speed setting
+    const timing = getTimingConstants(settings.dealingSpeed ?? 'medium');
+    const CARD_DEAL_ANIM_MS = timing.cardDealAnim;
+    const CARD_SETTLE_BUFFER_MS = timing.settleBuffer;
+    const PLAYER_CENTER_SLIDE_MS = timing.playerCenterSlide;
+    const PLAYER_CENTER_BUFFER_MS = timing.centerBuffer;
+
     // Gate visibility so cards appear sequentially with no overlap.
     // For multi-hand deals, "pan" the centered hand so every dealt player card lands on the centered hand.
     // (We never deal a card while the row is still sliding.)
@@ -423,9 +462,9 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
         return { ...prev, playerHands: updatedHands, activeHandIndex: nextActive, phase: 'player-action' as GamePhase };
       });
-    }, Math.max(getInitialDealTotalTimeMs(initialCardsToShow), t));
+    }, Math.max(getInitialDealTotalTimeMs(initialCardsToShow, timing), t));
     timersRef.current.push(doneId);
-  }, [numDecks, penetration, settings.defaultBet, settings.handsToPlay, blackjackPayout]);
+  }, [numDecks, penetration, settings.defaultBet, settings.handsToPlay, settings.dealingSpeed, blackjackPayout]);
 
   // Validate action against basic strategy and track decision
   const validateAndTrackDecision = useCallback((
@@ -767,9 +806,9 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
                 const right = next.playerHands[rightIdx];
                 return right?.isComplete ? advanceGame(next) : next;
               });
-            }, CARD_DEAL_ANIM_MS + 40);
+            }, timingRef.current.cardDealAnim + 40);
             timersRef.current.push(phase2Id);
-          }, PLAYER_CENTER_SLIDE_MS + PLAYER_CENTER_BUFFER_MS);
+          }, timingRef.current.playerCenterSlide + timingRef.current.centerBuffer);
           timersRef.current.push(phaseCenterId);
         }, SPLIT_SEPARATE_MS);
         timersRef.current.push(phase1Id);
@@ -838,7 +877,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
               setActionLocked(false);
               return clearSplitDealFlags(prev);
             });
-          }, CARD_DEAL_ANIM_MS + 40);
+          }, timingRef.current.cardDealAnim + 40);
           timersRef.current.push(id);
         }
       }
@@ -928,9 +967,9 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
               const right = next.playerHands[rightIdx];
               return right?.isComplete ? advanceGame(next) : next;
             });
-          }, CARD_DEAL_ANIM_MS + 40);
+          }, timingRef.current.cardDealAnim + 40);
           timersRef.current.push(phase2Id);
-        }, PLAYER_CENTER_SLIDE_MS + PLAYER_CENTER_BUFFER_MS);
+        }, timingRef.current.playerCenterSlide + timingRef.current.centerBuffer);
         timersRef.current.push(phaseCenterId);
       }, SPLIT_SEPARATE_MS); // Card separation animation time
       timersRef.current.push(phase1Id);
@@ -1059,7 +1098,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
           return prev;
         });
-      }, CARD_DEAL_ANIM_MS + 40);
+      }, timingRef.current.cardDealAnim + 40);
       timersRef.current.push(id);
     }
   }, [actionLocked, gameState, validateAndTrackDecision, updateStatsForDecision, settings.correctionMode]);
@@ -1093,10 +1132,10 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           }
           return next;
         });
-      }, CARD_DEAL_ANIM_MS + 40);
+      }, timingRef.current.cardDealAnim + 40);
 
       timersRef.current.push(id);
-    }, PLAYER_CENTER_SLIDE_MS + PLAYER_CENTER_BUFFER_MS);
+    }, timingRef.current.playerCenterSlide + timingRef.current.centerBuffer);
 
     timersRef.current.push(centerDelay);
   }, [gameState.phase, gameState.activeHandIndex, isSplitting, splitDealingPhase]);
@@ -1175,7 +1214,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
             setGameState(current);
 
             // Wait until this new dealer card finishes its deal animation.
-            await new Promise((r) => window.setTimeout(r, DEALER_DRAW_INTERVAL));
+            await new Promise((r) => window.setTimeout(r, timingRef.current.dealerDrawInterval));
           }
 
           if (cancelled) return;
@@ -1506,6 +1545,18 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
                 <option value="small">Small</option>
                 <option value="medium">Medium</option>
                 <option value="large">Large</option>
+              </select>
+            </label>
+
+            <label className="setting-row">
+              <span>Dealing Speed</span>
+              <select
+                value={settings.dealingSpeed ?? 'medium'}
+                onChange={e => setSettings(s => ({ ...s, dealingSpeed: e.target.value as 'slow' | 'medium' | 'fast' }))}
+              >
+                <option value="slow">Slow</option>
+                <option value="medium">Medium</option>
+                <option value="fast">Fast</option>
               </select>
             </label>
 
