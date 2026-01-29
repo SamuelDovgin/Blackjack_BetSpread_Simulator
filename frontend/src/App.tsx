@@ -2171,7 +2171,7 @@ function App() {
           numDecks={rules?.decks ?? 6}
           penetration={rules?.penetration ?? 0.75}
           hitSoft17={rules?.hit_soft_17 ?? true}
-          allowSurrender={rules?.surrender ?? true}
+          allowSurrender={rules?.surrender ?? false}
           blackjackPayout={rules?.blackjack_payout ?? 1.5}
           tcEstimationMethod={
             tcEstStep === 0 ? 'perfect' :

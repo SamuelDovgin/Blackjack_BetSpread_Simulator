@@ -69,7 +69,7 @@ export const DEFAULT_RULES: RuleSet = {
   hitSoft17: true,
   doubleAfterSplit: true,
   doubleAnyTwo: true,
-  surrenderAllowed: true,
+  surrenderAllowed: false,
   numDecks: 6,
   resplitAces: false,
   hitSplitAces: false,
