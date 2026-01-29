@@ -275,7 +275,11 @@ function savePresets(presets: Preset[]) {
 }
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<AppPage>("simulator");
+  const backendDisabled =
+    import.meta.env.VITE_DISABLE_BACKEND === "1" || import.meta.env.VITE_DISABLE_BACKEND === "true";
+  const [currentPage, setCurrentPage] = useState<AppPage>(() =>
+    import.meta.env.VITE_DEFAULT_PAGE === "training" ? "training" : "simulator"
+  );
   const [defaults, setDefaults] = useState<DefaultLibraries | null>(null);
   const [rules, setRules] = useState<Rules | null>(null);
   const [betRamp, setBetRamp] = useState<BetRamp | null>(null);
@@ -286,7 +290,7 @@ function App() {
   const [useMultiprocessing, setUseMultiprocessing] = useState<boolean>(true);
   const [unitSize, setUnitSize] = useState<number>(10);
   const [bankroll, setBankroll] = useState<number | null>(null);
-  const [handsPerHour, setHandsPerHour] = useState<number>(100);
+  const [handsPerHour, setHandsPerHour] = useState<number>(75);
   const [debugLog, setDebugLog] = useState<boolean>(false);
   const [debugLogHands, setDebugLogHands] = useState<number>(20);
   const [simId, setSimId] = useState<string | null>(null);
@@ -316,14 +320,14 @@ function App() {
   const [cutDecks, setCutDecks] = useState<number | null>(null);
   const [pathCount, setPathCount] = useState<number>(10);
   const [tripHours, setTripHours] = useState<number>(4);
-  const [tripHandsPerHour, setTripHandsPerHour] = useState<number>(100);
+  const [tripHandsPerHour, setTripHandsPerHour] = useState<number>(75);
   const [tripSteps, setTripSteps] = useState<number>(120);
   const [bandMode, setBandMode] = useState<"sigma" | "percentile">("sigma");
   const [sigmaK, setSigmaK] = useState<number>(1);
   const [startBankrollUnits, setStartBankrollUnits] = useState<number | null>(null);
   const [stopLossUnits, setStopLossUnits] = useState<number | null>(null);
   const [winGoalUnits, setWinGoalUnits] = useState<number | null>(null);
-  const [showConfidence, setShowConfidence] = useState<boolean>(false);
+  const [showConfidence, setShowConfidence] = useState<boolean>(true);
   const [precisionPreset, setPrecisionPreset] = useState<keyof typeof precisionPresets>("balanced");
   const [precisionAbsolute, setPrecisionAbsolute] = useState<number>(precisionPresets.balanced.abs);
   const [precisionMinHands, setPrecisionMinHands] = useState<number>(1_000_000);
@@ -356,6 +360,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (backendDisabled) return;
     fetchDefaults()
       .then((data) => {
         setDefaults(data);
@@ -370,7 +375,7 @@ function App() {
         setDeviations(data.deviations);
       })
       .catch((err) => setError(`Failed to load defaults: ${err.message}`));
-  }, []);
+  }, [backendDisabled]);
 
   useEffect(() => {
     setCustomHandsInput(hands.toString());
@@ -391,57 +396,94 @@ function App() {
   useEffect(() => {
     if (!simId) return;
     setStatus("running");
+
+    // IMPORTANT: avoid overlapping async polls (setInterval + await can overlap).
+    // Overlaps can cause a finished append-combine to be overwritten by a later poll,
+    // making it look like previously simulated hands "disappeared".
+    let cancelled = false;
     let errorCount = 0;
     const maxErrors = 5;
-    const timer = setInterval(async () => {
+    let resultFetchErrors = 0;
+    const maxResultFetchErrors = 8;
+    let timeoutId: number | null = null;
+
+    const poll = async () => {
+      if (cancelled) return;
       try {
         const stat = await getSimulationStatus(simId);
+        if (cancelled) return;
         errorCount = 0; // Reset on success
         setProgress(stat);
-        if (stat.status === "done" || stat.progress >= 1) {
-          const data = await getSimulation(simId);
-          // Use refs to get current append state (avoids stale closure)
-          if (isAppendingRef.current && appendBaseRef.current) {
-            setResult(combineResults(appendBaseRef.current, data));
-            setIsAppending(false);
-            setAppendBase(null);
-          } else {
-            setResult(data);
-          }
-          setStatus("done");
-          clearInterval(timer);
-        } else if (stat.status === "stopped") {
-          // Simulation was stopped - try to get partial results
+
+        const finish = async (finalStatus: "done" | "stopped") => {
           try {
             const data = await getSimulation(simId);
+            if (cancelled) return;
+            // Use refs to get current append state (avoids stale closure)
             if (isAppendingRef.current && appendBaseRef.current) {
               setResult(combineResults(appendBaseRef.current, data));
+              setIsAppending(false);
+              setAppendBase(null);
             } else {
               setResult(data);
             }
+            resultFetchErrors = 0;
           } catch {
-            // No complete result available - partial result preserved from handleStop
+            resultFetchErrors += 1;
+            // If we can't fetch the full result yet, treat as transient and retry.
+            // Do NOT mark the run "done" without a result, otherwise the UI shows n/a.
+            if (finalStatus === "done" && resultFetchErrors < maxResultFetchErrors) {
+              timeoutId = window.setTimeout(poll, 750);
+              return;
+            }
+            if (finalStatus === "done" && resultFetchErrors >= maxResultFetchErrors) {
+              setError("Simulation finished, but fetching final results failed. Try reloading the page or re-running.");
+              setStatus("error");
+              return;
+            }
+            // If stopped, a full result may not exist; keep any partial result.
           }
+          if (cancelled) return;
           setIsAppending(false);
           setAppendBase(null);
-          setStatus("stopped");
-          clearInterval(timer);
+          setStatus(finalStatus);
+        };
+
+        if (stat.status === "done" || stat.progress >= 1) {
+          await finish("done");
+          return;
+        }
+
+        if (stat.status === "stopped") {
+          await finish("stopped");
+          return;
         }
       } catch (err: unknown) {
+        if (cancelled) return;
         errorCount++;
-        // Check if it's a 404 (simulation not found) or too many errors
-        const is404 = err && typeof err === "object" && "response" in err &&
+        const is404 =
+          err &&
+          typeof err === "object" &&
+          "response" in err &&
           (err as { response?: { status?: number } }).response?.status === 404;
+
         if (is404 || errorCount >= maxErrors) {
-          // Stop polling - backend is down or simulation was deleted
-          clearInterval(timer);
           setStatus("stopped");
           setSimId(null);
+          return;
         }
-        // Otherwise keep polling on transient errors
+        // Otherwise keep polling on transient errors.
       }
-    }, 750);
-    return () => clearInterval(timer);
+
+      if (cancelled) return;
+      timeoutId = window.setTimeout(poll, 750);
+    };
+
+    poll();
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
   }, [simId]);
 
   const updateRule = <K extends keyof Rules>(key: K, value: Rules[K]) => {
@@ -950,7 +992,14 @@ function App() {
   };
 
   const statusLabel = () => {
-    if (status === "running" && progress) return `Running ${Math.round(progress.progress * 100)}%`;
+    if (status === "running" && progress) {
+      const total = progressHandsTotal;
+      const done = progressHandsDone;
+      const frac = total > 0 ? done / total : progress.progress;
+      const pct = Math.max(0, Math.min(100, Math.round(frac * 100)));
+      if ((progress.status === "done" || progress.progress >= 1 || pct >= 100) && !result) return "Finalizing results…";
+      return `Running ${pct}%`;
+    }
     if (status === "done") return "Complete";
     if (status === "error") return "Error";
     if (status === "stopped") return "Stopped";
@@ -1523,8 +1572,6 @@ function App() {
 
   const riskInputs = useMemo(() => {
     if (evPer100DisplayDollars === null || stdevPer100DisplayDollars === null) return null;
-    const bankrollValue = bankroll ?? null;
-    if (bankrollValue === null) return null;
     const meanPerHand = evPer100DisplayDollars / 100;
     const stdevPerHand = stdevPer100DisplayDollars / 10;
     if (stdevPerHand <= 0) return null;
@@ -1532,13 +1579,14 @@ function App() {
       meanPerHand,
       stdevPerHand,
       variancePerHand: stdevPerHand * stdevPerHand,
-      bankroll: bankrollValue,
+      bankroll: bankroll ?? null,
     };
   }, [evPer100DisplayDollars, stdevPer100DisplayDollars, bankroll]);
 
   const rorSimple = useMemo(() => {
     if (!riskInputs) return null;
     const { meanPerHand, variancePerHand, bankroll } = riskInputs;
+    if (bankroll === null) return null;
     if (meanPerHand <= 0) return 1;
     if (variancePerHand <= 0) return 0;
     return clamp01(Math.exp((-2 * meanPerHand * bankroll) / variancePerHand));
@@ -1548,6 +1596,7 @@ function App() {
     if (!riskInputs) return null;
     if (!tripHands || tripHands <= 0) return null;
     const { meanPerHand, stdevPerHand, bankroll } = riskInputs;
+    if (bankroll === null) return null;
     const sigma = stdevPerHand;
     if (sigma <= 0) return null;
     const sqrtT = Math.sqrt(tripHands);
@@ -1586,15 +1635,21 @@ function App() {
   const liveRorDetail = useMemo(() => {
     if (!riskInputs) return null;
     const { meanPerHand, stdevPerHand, variancePerHand, bankroll: br } = riskInputs;
-    if (meanPerHand <= 0 || variancePerHand <= 0) return null;
 
-    const adjustedRor = clamp01(Math.exp((-2 * meanPerHand * br) / variancePerHand));
+    // Lifetime/Trip RoR require an actual bankroll value. When bankroll is not set,
+    // we still show derived values like "Bankroll for 5% RoR" and N0.
+    let adjustedRor: number | null = null;
+    if (br !== null) {
+      if (variancePerHand > 0) {
+        adjustedRor = meanPerHand <= 0 ? 1 : clamp01(Math.exp((-2 * meanPerHand * br) / variancePerHand));
+      }
+    }
 
     // Trip RoR
     const tripHrs = tripHours ?? 4;
     const tripHandsCalc = tripHrs * handsPerHour;
     let tripRor: number | null = null;
-    if (tripHandsCalc > 0 && stdevPerHand > 0) {
+    if (br !== null && tripHandsCalc > 0 && stdevPerHand > 0) {
       const sqrtT = Math.sqrt(tripHandsCalc);
       const denom = stdevPerHand * sqrtT;
       const z1 = (-br - meanPerHand * tripHandsCalc) / denom;
@@ -1607,11 +1662,11 @@ function App() {
       if (targetRor <= 0 || targetRor >= 1) return 0;
       return (-Math.log(targetRor) * variancePerHand) / (2 * meanPerHand);
     };
-    const reqBankroll5pct = calcBankrollForRor(0.05);
-    const reqBankroll1pct = calcBankrollForRor(0.01);
+    const reqBankroll5pct = meanPerHand > 0 && variancePerHand > 0 ? calcBankrollForRor(0.05) : null;
+    const reqBankroll1pct = meanPerHand > 0 && variancePerHand > 0 ? calcBankrollForRor(0.01) : null;
 
     // N0
-    const n0 = variancePerHand / (meanPerHand * meanPerHand);
+    const n0 = meanPerHand !== 0 && variancePerHand > 0 ? variancePerHand / (meanPerHand * meanPerHand) : Infinity;
 
     return {
       adjusted_ror: adjustedRor,
@@ -2832,7 +2887,15 @@ function App() {
               </div>
               {progress && (
                 <div className="progress">
-                  <div className="progress-bar" style={{ width: `${Math.min(progress.progress * 100, 100)}%` }} />
+                  <div
+                    className="progress-bar"
+                    style={{
+                      width: `${Math.min(
+                        (progressHandsTotal > 0 ? (progressHandsDone / progressHandsTotal) * 100 : progress.progress * 100),
+                        100
+                      )}%`,
+                    }}
+                  />
                   <div className="progress-label">
                     {progressHandsDone.toLocaleString()} / {progressHandsTotal.toLocaleString()} rounds
                   </div>
@@ -3026,52 +3089,60 @@ function App() {
                   <div className="ror-metric">
                     <div className="label">Lifetime RoR</div>
                     <div className="ror-value">
-                      {(displayRorDetail.adjusted_ror * 100).toFixed(3)}%
+                      {displayRorDetail.adjusted_ror === null || displayRorDetail.adjusted_ror === undefined
+                        ? "n/a"
+                        : `${(displayRorDetail.adjusted_ror * 100).toFixed(3)}%`}
                     </div>
                     <div className="ror-hint">Probability of losing entire bankroll</div>
                   </div>
 
-                  {displayRorDetail.trip_ror !== null && displayRorDetail.trip_ror !== undefined && (
-                    <div className="ror-metric">
-                      <div className="label">Trip RoR ({displayRorDetail.trip_hours}h)</div>
-                      <div className="ror-value">
-                        {(displayRorDetail.trip_ror * 100).toFixed(3)}%
-                      </div>
-                      <div className="ror-hint">Risk of losing bankroll in one trip</div>
+                  <div className="ror-metric">
+                    <div className="label">Trip RoR ({displayRorDetail.trip_hours ?? 4}h)</div>
+                    <div className="ror-value">
+                      {displayRorDetail.trip_ror === null || displayRorDetail.trip_ror === undefined
+                        ? "n/a"
+                        : `${(displayRorDetail.trip_ror * 100).toFixed(3)}%`}
                     </div>
-                  )}
+                    <div className="ror-hint">Risk of losing bankroll in one trip</div>
+                  </div>
 
-                  {displayRorDetail.required_bankroll_5pct && (
-                    <div className="ror-metric">
-                      <div className="label">Bankroll for 5% RoR</div>
-                      <div className="ror-value">
-                        ${displayRorDetail.required_bankroll_5pct.toFixed(0)}
-                      </div>
-                      <div className="ror-hint">
-                        {(displayRorDetail.required_bankroll_5pct / unitSize).toFixed(0)} units
-                      </div>
+                  <div className="ror-metric">
+                    <div className="label">Bankroll for 5% RoR</div>
+                    <div className="ror-value">
+                      {displayRorDetail.required_bankroll_5pct === null || displayRorDetail.required_bankroll_5pct === undefined
+                        ? "n/a"
+                        : `$${displayRorDetail.required_bankroll_5pct.toFixed(0)}`}
                     </div>
-                  )}
+                    <div className="ror-hint">
+                      {displayRorDetail.required_bankroll_5pct === null || displayRorDetail.required_bankroll_5pct === undefined
+                        ? "Requires positive EV"
+                        : `${(displayRorDetail.required_bankroll_5pct / unitSize).toFixed(0)} units`}
+                    </div>
+                  </div>
 
-                  {displayRorDetail.required_bankroll_1pct && (
-                    <div className="ror-metric">
-                      <div className="label">Bankroll for 1% RoR</div>
-                      <div className="ror-value">
-                        ${displayRorDetail.required_bankroll_1pct.toFixed(0)}
-                      </div>
-                      <div className="ror-hint">
-                        {(displayRorDetail.required_bankroll_1pct / unitSize).toFixed(0)} units
-                      </div>
+                  <div className="ror-metric">
+                    <div className="label">Bankroll for 1% RoR</div>
+                    <div className="ror-value">
+                      {displayRorDetail.required_bankroll_1pct === null || displayRorDetail.required_bankroll_1pct === undefined
+                        ? "n/a"
+                        : `$${displayRorDetail.required_bankroll_1pct.toFixed(0)}`}
                     </div>
-                  )}
+                    <div className="ror-hint">
+                      {displayRorDetail.required_bankroll_1pct === null || displayRorDetail.required_bankroll_1pct === undefined
+                        ? "Requires positive EV"
+                        : `${(displayRorDetail.required_bankroll_1pct / unitSize).toFixed(0)} units`}
+                    </div>
+                  </div>
 
                   <div className="ror-metric">
                     <div className="label">N0 (hands to overcome 1 SD)</div>
                     <div className="ror-value">
-                      {displayRorDetail.n0_hands.toFixed(0).toLocaleString()}
+                      {Number.isFinite(displayRorDetail.n0_hands) ? displayRorDetail.n0_hands.toFixed(0).toLocaleString() : "n/a"}
                     </div>
                     <div className="ror-hint">
-                      {(displayRorDetail.n0_hands / handsPerHour).toFixed(0)} hours
+                      {handsPerHour > 0 && Number.isFinite(displayRorDetail.n0_hands)
+                        ? `${(displayRorDetail.n0_hands / handsPerHour).toFixed(0)} hours`
+                        : "n/a"}
                     </div>
                   </div>
                 </div>

@@ -380,6 +380,13 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.layout .card {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .card {

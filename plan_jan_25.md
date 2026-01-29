@@ -16,6 +16,12 @@
 - Auto-continue can append multiple batches until the CI target is met (after a minimum hands threshold).
 - Stop no longer wipes the current results/config; it just stops polling and keeps the last results.
 - Run Status uses a persistent rounds count (includes appended hands).
+- Fixed a rare-but-severe bug where async polling could overlap and overwrite combined (appended) results with the last batch result (made it look like millions of hands "didn't count"). Polling is now sequential (no overlap).
+- Run Status progress bar now reflects cumulative progress when appending (uses total rounds done/total target), so it no longer visually resets to 0% on append batches.
+- Restored normal click-drag text selection in the simulator UI by scoping Training Mode playing-card CSS so it no longer targets generic `.card` panels (cards now style `.card.card-small/.card-medium/.card-large` only).
+- Removed the temporary "Copy" buttons (Primary Metrics / Trip Outcomes) so the UI stays uncluttered while we focus on core correctness.
+- Default `Hands/hour` is now 75 (and the Trip Outcomes chart defaults to 75 as well).
+- Confidence intervals are now shown by default in Primary Metrics (toggle remains available).
 - Advanced metrics toggle removed; DI always displays in Primary Metrics.
 - Unit-first refactor: backend simulates in units; `Unit size ($)` is now display/conversion only (so changing it scales dollar metrics but not unit metrics).
 - Removed the append guard that blocked adding hands after a Unit size change (safe under unit-first semantics).
@@ -65,6 +71,9 @@
 - Preset save/load/export system
 - Multi-processing for faster simulations
 - Training Mode Phase 1-3 (core gameplay, animations, decision validation, session persistence)
+- Training Mode: dealer bust now shows a BUST badge under the dealer hand (to match player BUST indicators).
+- Added GitHub Pages deployment for the frontend (auto-build + publish on push) so Training Mode can be tested on mobile: `.github/workflows/deploy-frontend.yml` + `frontend/vite.config.ts` + `docs/GITHUB_PAGES.md`.
+- Risk of Ruin Analysis card no longer requires a bankroll to display. If bankroll is unset, Lifetime/Trip RoR show `n/a`, but Required Bankroll (5%/1%) and N0 still display from EV/SD.
 
 ---
 
