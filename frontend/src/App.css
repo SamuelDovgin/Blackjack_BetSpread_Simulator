@@ -44,6 +44,13 @@ body {
   padding: 24px;
 }
 
+.app-training {
+  padding: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
 .topbar {
   display: flex;
   flex-wrap: wrap;

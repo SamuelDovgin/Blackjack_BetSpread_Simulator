@@ -38,6 +38,7 @@
 - Blackjack flow: natural blackjack rounds now transition through `dealer-turn` so the hole-card flip + dealer stack animation always plays; dealer does not draw after a player blackjack.
 - Dealing animation reset: card components are keyed by `roundNumber` so the first card (and all cards) animate reliably every new hand instead of "popping" in.
 - Payout badges: blackjack hands show normal WIN/LOSE/PUSH outcome badges, plus a "Blackjack" tag (instead of replacing the result with a special "BLACKJACK" outcome badge).
+- Layout: Training Mode renders full-bleed (no simulator padding/background) to avoid beige margins and prevent page scrollbars.
 
 ---
 
