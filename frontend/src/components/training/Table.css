@@ -108,7 +108,7 @@
   transition: transform 0.35s ease;
 }
 
-/* Never wrap player hands; we slide the row horizontally instead (active hand stays centered). */
+/* Never wrap player hands; we translate the row horizontally to keep the active hand in view. */
 .player-hands.multiple {
   flex-wrap: nowrap;
 }
@@ -166,16 +166,19 @@
   opacity: 0.7;
 }
 
-/* Hand info badges */
-.hand-info {
+/* Hand info badges (absolute overlay so they never affect layout / card positioning). */
+.hand-info-overlay {
+  position: absolute;
+  left: 50%;
+  top: calc(-1 * var(--stack-rise-px, 0px) - 8px);
+  transform: translate(-50%, -100%);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  /* Reserve a compact area so badges never push the cards up. */
-  min-height: 42px;
-  transition: transform 0.25s ease;
-  will-change: transform;
+  pointer-events: none;
+  z-index: 5000;
+  white-space: nowrap;
 }
 
 .hand-meta-row {
@@ -235,6 +238,7 @@
   }
 }
 
+/* Legacy tag variants retained for historical styling (no longer used by training UI). */
 .doubled-badge,
 .surrendered-badge {
   font-size: 11px;
@@ -341,8 +345,8 @@
     padding: 2px 9px;
   }
 
-  .hand-info {
-    min-height: 32px;
+  .hand-info-overlay {
+    top: calc(-1 * var(--stack-rise-px, 0px) - 6px);
   }
 
   .hand-tag {

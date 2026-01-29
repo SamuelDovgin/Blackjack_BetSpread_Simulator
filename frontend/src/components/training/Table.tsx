@@ -235,10 +235,11 @@ export const Table: React.FC<TableProps> = ({
   const cardW = cardSize.w;
   const cardH = cardSize.h;
 
-  // Keep the active hand visually centered by translating the entire hand row.
-  // This is especially important on mobile where we never want multiple rows.
+  // Player hands are always a single row. When the row fits, keep it centered as a group.
+  // When it doesn't fit, shift the row *minimally* to keep the currently active hand visible.
   const playerViewportRef = useRef<HTMLDivElement | null>(null);
   const [playerViewportWidth, setPlayerViewportWidth] = useState(0);
+  const [playerRowTranslateX, setPlayerRowTranslateX] = useState(0);
   // Disable the translate transition until we've measured the viewport once.
   // This avoids the "first deal finds its spot" look when the width goes 0 -> measured.
   const [centerTransitionEnabled, setCenterTransitionEnabled] = useState(false);
@@ -319,26 +320,86 @@ export const Table: React.FC<TableProps> = ({
     return playerHands.map((h) => cardW + Math.max(0, h.cards.length - 1) * playerCardOffset.x);
   }, [playerHands, playerCardOffset.x, cardW]);
 
-  // Center the active hand as a whole (not just its first card) so the hand you are
-  // currently playing is visually "dead center" on both desktop and mobile.
-  const playerRowTranslateX = useMemo(() => {
-    if (!playerViewportWidth || playerHands.length === 0) return 0;
+  const playerRowWidth = useMemo(() => {
+    if (playerHands.length === 0) return 0;
+    // .player-hand-container has 8px horizontal padding on each side.
+    const handOuterPad = 16;
+    let w = 0;
+    for (let i = 0; i < playerHands.length; i++) {
+      w += (playerHandStackWidths[i] ?? cardW) + handOuterPad;
+      if (i < playerHands.length - 1) w += playerHandGapPx;
+    }
+    return w;
+  }, [playerHands.length, playerHandStackWidths, cardW, playerHandGapPx]);
+
+  useLayoutEffect(() => {
+    if (!playerViewportWidth || playerHands.length === 0) {
+      setPlayerRowTranslateX(0);
+      return;
+    }
+
+    // When the entire row fits, keep it centered as a group.
+    if (playerRowWidth <= playerViewportWidth) {
+      const centered = Math.round((playerViewportWidth - playerRowWidth) / 2);
+      setPlayerRowTranslateX(centered);
+      return;
+    }
+
+    // Row doesn't fit: shift minimally to keep the currently relevant hand visible.
+    // Use the split hand being dealt to during the split sequence so the dealing card is in view.
+    const splitLeftHandIdx = splitOriginHandIndex ?? activeHandIndex;
+    const splitRightHandIdx = Math.min(splitLeftHandIdx + 1, playerHands.length - 1);
+    const focusIdx =
+      phase === 'player-action' && (isSplitting || splitDealingPhase === 1)
+        ? splitRightHandIdx
+        : activeHandIndex;
 
     // .player-hand-container has 8px horizontal padding on each side.
     const handOuterPad = 16;
-    const handInnerOffset = 8; // centered child offset within the padded container
+    const handInnerPad = 8;
+    const edgeMargin = isMobile ? 14 : 22;
 
     let left = 0;
-    for (let i = 0; i < activeHandIndex; i++) {
-      const w = (playerHandStackWidths[i] ?? cardW) + handOuterPad;
-      left += w + playerHandGapPx;
+    for (let i = 0; i < focusIdx; i++) {
+      left += (playerHandStackWidths[i] ?? cardW) + handOuterPad;
+      left += playerHandGapPx;
     }
 
-    const activeWidth = playerHandStackWidths[activeHandIndex] ?? cardW;
-    // Center the visible card stack inside the padded container.
-    const activeCenter = left + handInnerOffset + (activeWidth / 2);
-    return (playerViewportWidth / 2) - activeCenter;
-  }, [playerViewportWidth, playerHands.length, activeHandIndex, playerHandStackWidths, playerHandGapPx, cardW]);
+    const focusWidth = playerHandStackWidths[focusIdx] ?? cardW;
+    const focusCardLeft = left + handInnerPad;
+    const focusCardRight = focusCardLeft + focusWidth;
+
+    setPlayerRowTranslateX((current) => {
+      let next = current;
+      const leftVis = next + focusCardLeft;
+      const rightVis = next + focusCardRight;
+
+      if (leftVis < edgeMargin) next += edgeMargin - leftVis;
+      if (rightVis > playerViewportWidth - edgeMargin) next -= rightVis - (playerViewportWidth - edgeMargin);
+
+      // Clamp so we don't slide beyond the row edges.
+      const minT = Math.round((playerViewportWidth - playerRowWidth) - edgeMargin);
+      const maxT = Math.round(edgeMargin);
+      if (next < minT) next = minT;
+      if (next > maxT) next = maxT;
+
+      next = Math.round(next);
+      return next === current ? current : next;
+    });
+  }, [
+    playerViewportWidth,
+    playerHands.length,
+    playerRowWidth,
+    playerHandStackWidths,
+    playerHandGapPx,
+    cardW,
+    isMobile,
+    activeHandIndex,
+    phase,
+    isSplitting,
+    splitDealingPhase,
+    splitOriginHandIndex,
+  ]);
 
   // Track global card index for sequential visibility
   let globalCardIndex = 0;
@@ -473,39 +534,6 @@ export const Table: React.FC<TableProps> = ({
                     } ${hand.isBusted ? 'busted' : ''}`}
                     style={{ zIndex: handZ }}
                   >
-                    {/* All labels/badges are above the cards so stacks never shift upward. */}
-                    <div className="hand-info" style={{ transform: `translateY(${-stackRisePx}px)` }}>
-                      {showHandTotals && (
-                        <div className={`hand-total ${hand.isBusted && showBadges ? 'busted' : ''}`}>
-                          {handTotal.total}
-                          {handTotal.isSoft && handTotal.total <= 21 && ' (soft)'}
-                          {hand.isBusted && showBadges && ' BUST'}
-                        </div>
-                      )}
-
-                      {!showHandTotals && hand.isBusted && showBadges && (
-                        <div className="hand-total busted">BUST</div>
-                      )}
-
-                      {/* Outcome badges during payout phase */}
-                      {phase === 'payout' && showBadges && hand.result && (
-                        <div
-                          className={`hand-result result-${hand.result === 'blackjack' ? 'win' : hand.result}`}
-                        >
-                          {(hand.result === 'win' || hand.result === 'blackjack') && 'WIN'}
-                          {hand.result === 'push' && 'PUSH'}
-                          {hand.result === 'lose' && 'LOSE'}
-                        </div>
-                      )}
-
-                      <div className="hand-meta-row">
-                        {playerHands.length > 1 && <span className="hand-tag tag-bet">{hand.bet}u</span>}
-                        {hand.isBlackjack && showBadges && <span className="hand-tag tag-blackjack">Blackjack</span>}
-                        {hand.isDoubled && showBadges && <span className="hand-tag tag-doubled">Double</span>}
-                        {hand.isSurrendered && showBadges && <span className="hand-tag tag-surrendered">SUR</span>}
-                      </div>
-                    </div>
-
                     <div className="hand" style={{ width: `${stackWidth}px` }}>
                       <div className="card-stack player-stack" style={{ width: `${stackWidth}px` }}>
                         {hand.cards.map((card, cardIdx) => {
@@ -564,6 +592,43 @@ export const Table: React.FC<TableProps> = ({
                             <path d={outline.d} />
                           </svg>
                         )}
+
+                        {/* Hand labels/badges are absolutely positioned so they never affect layout
+                            (prevents vertical "jumping" between hands with different stack heights). */}
+                        <div
+                          className="hand-info-overlay"
+                          style={{ ['--stack-rise-px' as any]: `${stackRisePx}px` } as React.CSSProperties}
+                        >
+                          {showHandTotals && (
+                            <div className={`hand-total ${hand.isBusted && showBadges ? 'busted' : ''}`}>
+                              {handTotal.total}
+                              {handTotal.isSoft && handTotal.total <= 21 && ' (soft)'}
+                              {hand.isBusted && showBadges && ' BUST'}
+                            </div>
+                          )}
+
+                          {!showHandTotals && hand.isBusted && showBadges && (
+                            <div className="hand-total busted">BUST</div>
+                          )}
+
+                          {/* Outcome badges during payout phase */}
+                          {phase === 'payout' && showBadges && hand.result && (
+                            <div
+                              className={`hand-result result-${hand.result === 'blackjack' ? 'win' : hand.result}`}
+                            >
+                              {(hand.result === 'win' || hand.result === 'blackjack') && 'WIN'}
+                              {hand.result === 'push' && 'PUSH'}
+                              {hand.result === 'lose' && 'LOSE'}
+                            </div>
+                          )}
+
+                          <div className="hand-meta-row">
+                            {playerHands.length > 1 && <span className="hand-tag tag-bet">{hand.bet}u</span>}
+                            {hand.isBlackjack && showBadges && <span className="hand-tag tag-blackjack">Blackjack</span>}
+                            {hand.isDoubled && showBadges && <span className="hand-tag tag-doubled">Double</span>}
+                            {hand.isSurrendered && showBadges && <span className="hand-tag tag-surrendered">SUR</span>}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
