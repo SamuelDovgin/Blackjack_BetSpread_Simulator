@@ -3,7 +3,7 @@
 // Cards deal from shoe (right side) with realistic timing
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Table } from './Table';
+import { Table, CARD_SCALE_VALUES } from './Table';
 import { ActionButtons } from './ActionButtons';
 import { FeedbackPanel, CorrectionModal } from './FeedbackPanel';
 import { StatsPanel } from './StatsPanel';
@@ -1154,7 +1154,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   }, [gameState.phase, settings.autoAdvanceDelay]);
 
   return (
-    <div className="training-page">
+    <div className="training-page" style={{ '--card-scale': CARD_SCALE_VALUES[settings.cardScale ?? 'medium'] } as React.CSSProperties}>
       {/* Header */}
       <header className="training-header">
         <button className="back-button" onClick={onBack}>
@@ -1227,6 +1227,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           isSplitting={isSplitting}
           splitDealingPhase={splitDealingPhase}
           splitOriginHandIndex={splitOriginHandIndex}
+          cardScale={settings.cardScale ?? 'medium'}
         />
       </main>
 
@@ -1380,6 +1381,18 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
                 <option value="floor">Floor (realistic)</option>
                 <option value="halfDeck">Half-Deck</option>
                 <option value="perfect">Perfect</option>
+              </select>
+            </label>
+
+            <label className="setting-row">
+              <span>Card Size</span>
+              <select
+                value={settings.cardScale ?? 'medium'}
+                onChange={e => setSettings(s => ({ ...s, cardScale: e.target.value as 'small' | 'medium' | 'large' }))}
+              >
+                <option value="small">Small</option>
+                <option value="medium">Medium</option>
+                <option value="large">Large</option>
               </select>
             </label>
 

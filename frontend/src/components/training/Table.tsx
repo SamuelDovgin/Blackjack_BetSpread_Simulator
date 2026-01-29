@@ -46,22 +46,28 @@ interface TableProps {
   splitDealingPhase?: number;
   /** Which hand index initiated the current split (used to keep animations stable while centering) */
   splitOriginHandIndex?: number | null;
+  /** Card scale name ('small' | 'medium' | 'large') — controls card/offset sizing */
+  cardScale?: string;
 }
 
-// Player card overlap offset - show top-left and bottom-right corners of each card
-// Cards go up and to the right (first card on bottom)
-const PLAYER_CARD_OFFSET_DESKTOP = { x: 42, y: -30 }; // Enough to see corners (scaled 1.5x)
-const PLAYER_CARD_OFFSET_MOBILE = { x: 22, y: -16 };
-const CARD_SIZE_LARGE_DESKTOP = { w: 135, h: 189 }; // Keep in sync with .card-large in Card.css
-const CARD_SIZE_LARGE_MOBILE = { w: 70, h: 98 };
+// Base card layout constants at scale=1.0 — multiplied by cardScale prop at runtime.
+// Desktop base values
+const BASE_PLAYER_OFFSET_DESKTOP = { x: 28, y: -20 };
+const BASE_CARD_SIZE_DESKTOP = { w: 90, h: 126 };
+const BASE_DEALER_INITIAL_DESKTOP = { x: 100, y: 0 };
+const BASE_DEALER_STACKED_DESKTOP = { x: 28, y: 0 };
+// Mobile base values (not scaled — mobile uses its own CSS base sizes)
+const BASE_PLAYER_OFFSET_MOBILE = { x: 22, y: -16 };
+const BASE_CARD_SIZE_MOBILE = { w: 70, h: 98 };
+const BASE_DEALER_INITIAL_MOBILE = { x: 80, y: 0 };
+const BASE_DEALER_STACKED_MOBILE = { x: 22, y: 0 };
 
-// Dealer cards - two modes:
-// Initial: side by side (hole card left, upcard right)
-const DEALER_INITIAL_OFFSET_DESKTOP = { x: 150, y: 0 }; // scaled 1.5x
-const DEALER_INITIAL_OFFSET_MOBILE = { x: 80, y: 0 };
-// Stacked: vertical alignment, only left edge visible (like real casino)
-const DEALER_STACKED_OFFSET_DESKTOP = { x: 42, y: 0 }; // Only show left edge (scaled 1.5x)
-const DEALER_STACKED_OFFSET_MOBILE = { x: 22, y: 0 };
+/** Scale name → numeric multiplier */
+export const CARD_SCALE_VALUES: Record<string, number> = {
+  small: 1.0,
+  medium: 1.2,
+  large: 1.5,
+};
 
 /**
  * Get the global deal sequence index for a card.
@@ -196,11 +202,22 @@ export const Table: React.FC<TableProps> = ({
   isSplitting = false,
   splitDealingPhase = 0,
   splitOriginHandIndex = null,
+  cardScale: cardScaleName = 'medium',
 }) => {
   const isMobile =
     typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
 
-  const cardSize = isMobile ? CARD_SIZE_LARGE_MOBILE : CARD_SIZE_LARGE_DESKTOP;
+  const scaleFactor = CARD_SCALE_VALUES[cardScaleName] ?? 1.2;
+  const scaleBase = (base: { w: number; h: number }) => ({
+    w: Math.round(base.w * (isMobile ? scaleFactor : scaleFactor)),
+    h: Math.round(base.h * (isMobile ? scaleFactor : scaleFactor)),
+  });
+  const scaleOffset = (base: { x: number; y: number }) => ({
+    x: Math.round(base.x * scaleFactor),
+    y: Math.round(base.y * scaleFactor),
+  });
+
+  const cardSize = scaleBase(isMobile ? BASE_CARD_SIZE_MOBILE : BASE_CARD_SIZE_DESKTOP);
   const cardW = cardSize.w;
   const cardH = cardSize.h;
 
@@ -262,9 +279,9 @@ export const Table: React.FC<TableProps> = ({
   // Determine if we're in the initial dealing phase (first 4 cards)
   const isInitialDeal = phase === 'dealing';
 
-  const playerCardOffset = isMobile ? PLAYER_CARD_OFFSET_MOBILE : PLAYER_CARD_OFFSET_DESKTOP;
-  const dealerInitialOffset = isMobile ? DEALER_INITIAL_OFFSET_MOBILE : DEALER_INITIAL_OFFSET_DESKTOP;
-  const dealerStackedOffset = isMobile ? DEALER_STACKED_OFFSET_MOBILE : DEALER_STACKED_OFFSET_DESKTOP;
+  const playerCardOffset = scaleOffset(isMobile ? BASE_PLAYER_OFFSET_MOBILE : BASE_PLAYER_OFFSET_DESKTOP);
+  const dealerInitialOffset = scaleOffset(isMobile ? BASE_DEALER_INITIAL_MOBILE : BASE_DEALER_INITIAL_DESKTOP);
+  const dealerStackedOffset = scaleOffset(isMobile ? BASE_DEALER_STACKED_MOBILE : BASE_DEALER_STACKED_DESKTOP);
 
   // Dealer offset changes based on whether cards are stacked
   const dealerOffset = isDealerStacked ? dealerStackedOffset : dealerInitialOffset;

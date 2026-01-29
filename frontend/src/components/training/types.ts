@@ -87,6 +87,9 @@ export interface TrainingSettings {
   // TC estimation: 'floor' rounds down (realistic), 'halfDeck' rounds to nearest 0.5, 'perfect' uses exact TC
   tcEstimationMethod: 'perfect' | 'floor' | 'halfDeck';
 
+  // Card size: 'small' (original), 'medium' (1.2x, default), 'large' (1.5x)
+  cardScale: 'small' | 'medium' | 'large';
+
   // Sound
   soundEnabled: boolean;
 
@@ -206,6 +209,7 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
   autoAdvanceDelay: 2000,
   onlyShowMistakes: true,  // Only show feedback on mistakes by default
   tcEstimationMethod: 'floor',  // Floor TC by default (realistic casino practice)
+  cardScale: 'medium',         // 1.2x cards by default
   soundEnabled: false,     // Off by default
   practiceMode: 'free-play',
   highCountTcMin: 2,
