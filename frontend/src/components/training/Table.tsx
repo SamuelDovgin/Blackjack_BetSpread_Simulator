@@ -54,12 +54,14 @@ interface TableProps {
 // Desktop base values
 const BASE_PLAYER_OFFSET_DESKTOP = { x: 28, y: -20 };
 const BASE_CARD_SIZE_DESKTOP = { w: 90, h: 126 };
-const BASE_DEALER_INITIAL_DESKTOP = { x: 100, y: 0 };
+// Dealer initial (two-card) layout: keep the two cards slightly closer than "card width + 10px"
+// so scaling up doesn't feel like the upcard drifts too far right.
+const BASE_DEALER_INITIAL_DESKTOP = { x: 98, y: 0 };
 const BASE_DEALER_STACKED_DESKTOP = { x: 28, y: 0 };
 // Mobile base values (not scaled — mobile uses its own CSS base sizes)
 const BASE_PLAYER_OFFSET_MOBILE = { x: 22, y: -16 };
 const BASE_CARD_SIZE_MOBILE = { w: 70, h: 98 };
-const BASE_DEALER_INITIAL_MOBILE = { x: 80, y: 0 };
+const BASE_DEALER_INITIAL_MOBILE = { x: 76, y: 0 };
 const BASE_DEALER_STACKED_MOBILE = { x: 22, y: 0 };
 
 /** Scale name → numeric multiplier */
@@ -286,6 +288,17 @@ export const Table: React.FC<TableProps> = ({
   // Dealer offset changes based on whether cards are stacked
   const dealerOffset = isDealerStacked ? dealerStackedOffset : dealerInitialOffset;
 
+  // Keep the dealer stack container width stable across the "stacking" transition so
+  // the hole card doesn't snap due to flex centering when the width shrinks.
+  // We anchor the container to the initial 2-card spread width; any additional dealer
+  // draw cards can overflow to the right (more like a real table).
+  const dealerStackWidth = cardW + (dealerHand.length > 1 ? dealerInitialOffset.x : 0);
+
+  // Dealer card shift: nudge the card stack slightly right so the visual center
+  // after stacking (cards collapse left) feels centered on the table.
+  // Only applies to the card-stack element, not labels/badges.
+  const dealerCardShiftPx = isMobile ? Math.round(cardW * 0.2) : Math.round(cardW * 0.25);
+
   // Dynamic spacing: each hand's allocated width grows with its card count.
   // This prevents long hit stacks from overlapping neighboring split hands.
   const playerHandGapPx = Math.round(playerCardOffset.x * 1.2);
@@ -336,66 +349,67 @@ export const Table: React.FC<TableProps> = ({
         {/* Dealer area */}
         <div className="dealer-area">
           <div className="dealer-label">DEALER</div>
-          <div className="hand dealer-hand">
-            {dealerHand.length > 0 ? (
-              <div className="card-stack dealer-stack">
-                {dealerHand.map((card, i) => {
-                  const dealIndex = getDealSequenceIndex(true, i, totalPlayerCards, totalDealerCards);
-                  const isThisCardDealing = isInitialDeal || (phase === 'dealer-turn' && i >= 2);
-                  const isFlipping = isRevealingHoleCard && i === 0;
-                  const isHoleCard = i === 0;
-                  // Card is visible if its deal sequence index is less than visibleCardCount
-                  const isCardVisible = dealIndex < visibleCardCount;
-                  const cardZ = isThisCardDealing ? 10000 + i : i;
+            <div className="hand dealer-hand">
+              {dealerHand.length > 0 ? (
+                <div className="card-stack dealer-stack" style={{ width: `${dealerStackWidth}px`, transform: `translateX(${dealerCardShiftPx}px)` }}>
+                  {dealerHand.map((card, i) => {
+                    const dealIndex = getDealSequenceIndex(true, i, totalPlayerCards, totalDealerCards);
+                    const isThisCardDealing = isInitialDeal || (phase === 'dealer-turn' && i >= 2);
+                    const isFlipping = isRevealingHoleCard && i === 0;
+                    const isHoleCard = i === 0;
+                    // Card is visible if its deal sequence index is less than visibleCardCount
+                    const isCardVisible = dealIndex < visibleCardCount;
+                    const cardZ = isThisCardDealing ? 10000 + i : i;
 
-                  return (
-                    <Card
-                      key={`dealer-${roundNumber}-${i}`}
-                      card={card}
-                      size="large"
-                      isVisible={isCardVisible}
-                      isDealing={isThisCardDealing}
-                      isDealerCard={true}
-                      isHoleCard={isHoleCard}
-                      isFlipping={isFlipping}
-                      isRemoving={isRemovingCards}
-                      stackOffset={i > 0 ? { x: dealerOffset.x * i, y: dealerOffset.y * i } : undefined}
-                      zIndex={cardZ}
-                    />
-                  );
-                })}
+                    return (
+                      <Card
+                        key={`dealer-${roundNumber}-${i}`}
+                        card={card}
+                        size="large"
+                        isVisible={isCardVisible}
+                        isDealing={isThisCardDealing}
+                        isDealerCard={true}
+                        isHoleCard={isHoleCard}
+                        isFlipping={isFlipping}
+                        isRemoving={isRemovingCards}
+                        stackOffset={i > 0 ? { x: dealerOffset.x * i, y: dealerOffset.y * i } : undefined}
+                        zIndex={cardZ}
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="empty-hand">Waiting...</div>
+              )}
+            </div>
+
+            {showHandTotals && dealerHand.length > 0 && (
+              <div className={`hand-total dealer-total ${dealerIsBusted && showFullDealer && showBadges ? 'busted' : ''}`}>
+                {dealerIsBusted && showFullDealer && showBadges
+                  ? `${dealerFull.total} BUST`
+                  : showFullDealer
+                    ? dealerFull.total
+                    : dealerVisible.total}
+                {!showFullDealer && dealerHand.some(c => !c.faceUp) && '+'}
               </div>
-            ) : (
-              <div className="empty-hand">Waiting...</div>
             )}
-          </div>
-          {showHandTotals && dealerHand.length > 0 && (
-            <div className={`hand-total dealer-total ${dealerIsBusted && showFullDealer && showBadges ? 'busted' : ''}`}>
-              {dealerIsBusted && showFullDealer && showBadges
-                ? `${dealerFull.total} BUST`
-                : showFullDealer
-                  ? dealerFull.total
-                  : dealerVisible.total}
-              {!showFullDealer && dealerHand.some(c => !c.faceUp) && '+'}
-            </div>
-          )}
-          {!showHandTotals && dealerHand.length > 0 && dealerIsBusted && showFullDealer && showBadges && (
-            <div className="hand-total busted dealer-total">BUST</div>
-          )}
+            {!showHandTotals && dealerHand.length > 0 && dealerIsBusted && showFullDealer && showBadges && (
+              <div className="hand-total busted dealer-total">BUST</div>
+            )}
 
-          {/* Dealer outcome badges during payout (single-hand only). */}
-          {phase === 'payout' && showBadges && dealerOutcome && (
-            <div className={`hand-result dealer-result result-${dealerOutcome}`}>
-              {dealerOutcome === 'win' && 'WIN'}
-              {dealerOutcome === 'push' && 'PUSH'}
-              {dealerOutcome === 'lose' && 'LOSE'}
-            </div>
-          )}
-          {phase === 'payout' && showBadges && dealerIsBlackjack && (
-            <div className="hand-meta-row dealer-meta-row">
-              <span className="hand-tag tag-blackjack">Blackjack</span>
-            </div>
-          )}
+            {/* Dealer outcome badges during payout (single-hand only). */}
+            {phase === 'payout' && showBadges && dealerOutcome && (
+              <div className={`hand-result dealer-result result-${dealerOutcome}`}>
+                {dealerOutcome === 'win' && 'WIN'}
+                {dealerOutcome === 'push' && 'PUSH'}
+                {dealerOutcome === 'lose' && 'LOSE'}
+              </div>
+            )}
+            {phase === 'payout' && showBadges && dealerIsBlackjack && (
+              <div className="hand-meta-row dealer-meta-row">
+                <span className="hand-tag tag-blackjack">Blackjack</span>
+              </div>
+            )}
         </div>
 
         {/* Player area */}

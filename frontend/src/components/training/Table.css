@@ -266,6 +266,8 @@
   border-radius: 8px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  width: fit-content;
+  text-align: center;
   animation: fadeInResult 0.3s ease-out;
 }
 
