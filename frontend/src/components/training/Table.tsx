@@ -50,17 +50,17 @@ interface TableProps {
 
 // Player card overlap offset - show top-left and bottom-right corners of each card
 // Cards go up and to the right (first card on bottom)
-const PLAYER_CARD_OFFSET_DESKTOP = { x: 28, y: -20 }; // Enough to see corners
+const PLAYER_CARD_OFFSET_DESKTOP = { x: 42, y: -30 }; // Enough to see corners (scaled 1.5x)
 const PLAYER_CARD_OFFSET_MOBILE = { x: 22, y: -16 };
-const CARD_SIZE_LARGE_DESKTOP = { w: 90, h: 126 }; // Keep in sync with .card-large in Card.css
+const CARD_SIZE_LARGE_DESKTOP = { w: 135, h: 189 }; // Keep in sync with .card-large in Card.css
 const CARD_SIZE_LARGE_MOBILE = { w: 70, h: 98 };
 
 // Dealer cards - two modes:
 // Initial: side by side (hole card left, upcard right)
-const DEALER_INITIAL_OFFSET_DESKTOP = { x: 100, y: 0 };
+const DEALER_INITIAL_OFFSET_DESKTOP = { x: 150, y: 0 }; // scaled 1.5x
 const DEALER_INITIAL_OFFSET_MOBILE = { x: 80, y: 0 };
 // Stacked: vertical alignment, only left edge visible (like real casino)
-const DEALER_STACKED_OFFSET_DESKTOP = { x: 28, y: 0 }; // Only show left edge
+const DEALER_STACKED_OFFSET_DESKTOP = { x: 42, y: 0 }; // Only show left edge (scaled 1.5x)
 const DEALER_STACKED_OFFSET_MOBILE = { x: 22, y: 0 };
 
 /**

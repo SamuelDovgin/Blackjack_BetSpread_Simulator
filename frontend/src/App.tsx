@@ -9,6 +9,7 @@ import {
   Rules,
   SimulationResult,
   SimulationStatus,
+  CLIENT_DEFAULTS,
   fetchDefaults,
   getSimulation,
   getSimulationStatus,
@@ -360,20 +361,25 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (backendDisabled) return;
+    const applyDefaults = (data: DefaultLibraries) => {
+      setDefaults(data);
+      setRules(data.rules);
+      // Apply BJInfo 1-8 as default ramp instead of backend default
+      const defaultRamp = builtInRampPresets.find((p) => p.id === "builtin:bjinfo-1-8");
+      if (defaultRamp?.payload?.bet_ramp) {
+        setBetRamp({ wong_out_policy: "anytime", ...defaultRamp.payload.bet_ramp });
+      } else {
+        setBetRamp(data.bet_ramp);
+      }
+      setDeviations(data.deviations);
+    };
+
+    if (backendDisabled) {
+      applyDefaults(CLIENT_DEFAULTS);
+      return;
+    }
     fetchDefaults()
-      .then((data) => {
-        setDefaults(data);
-        setRules(data.rules);
-        // Apply BJInfo 1-8 as default ramp instead of backend default
-        const defaultRamp = builtInRampPresets.find((p) => p.id === "builtin:bjinfo-1-8");
-        if (defaultRamp?.payload?.bet_ramp) {
-          setBetRamp({ wong_out_policy: "anytime", ...defaultRamp.payload.bet_ramp });
-        } else {
-          setBetRamp(data.bet_ramp);
-        }
-        setDeviations(data.deviations);
-      })
+      .then(applyDefaults)
       .catch((err) => setError(`Failed to load defaults: ${err.message}`));
   }, [backendDisabled]);
 
