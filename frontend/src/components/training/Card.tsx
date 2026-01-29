@@ -106,6 +106,9 @@ export const Card: React.FC<CardProps> = ({
 
   // Keep dealing class on if card has ever dealt - prevents flash when class would be removed
   // The animation only plays once, so keeping the class has no visual effect after completion
+  // Keep the dealing class "sticky" once a card has started dealing to avoid any flashes
+  // if parent props toggle quickly (e.g., during reveal/removal/split sequences).
+  // Other animation classes (removing/splitting) override the animation property later in CSS.
   const hasDealt = hasDealtRef.current || isDealing;
   const dealingClass = hasDealt ? (isDealerCard ? 'dealing-dealer' : 'dealing') : '';
   const removingClass = isRemoving ? 'removing' : '';

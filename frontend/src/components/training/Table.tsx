@@ -221,6 +221,22 @@ export const Table: React.FC<TableProps> = ({
   const isMobile =
     typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
 
+  const newestVisibleDealIndex =
+    Number.isFinite(visibleCardCount) && visibleCardCount > 0 ? visibleCardCount - 1 : -1;
+  const isNewestByVisible = (dealIndex: number) => dealIndex === newestVisibleDealIndex;
+
+  // Track previous card counts so we can mark only the *newly added* card as "dealing".
+  // This prevents "the last card is always dealing" during player-action / dealer-turn.
+  const prevDealerCountRef = useRef<number>(dealerHand.length);
+  const prevPlayerCountsRef = useRef<number[]>(playerHands.map((h) => h.cards.length));
+  const prevDealerCount = prevDealerCountRef.current;
+  const prevPlayerCounts = prevPlayerCountsRef.current;
+
+  useEffect(() => {
+    prevDealerCountRef.current = dealerHand.length;
+    prevPlayerCountsRef.current = playerHands.map((h) => h.cards.length);
+  }, [dealerHand.length, playerHands]);
+
   const scaleFactor = CARD_SCALE_VALUES[cardScaleName] ?? 1.2;
   const scaleBase = (base: { w: number; h: number }) => ({
     w: Math.round(base.w * (isMobile ? scaleFactor : scaleFactor)),
@@ -426,7 +442,10 @@ export const Table: React.FC<TableProps> = ({
                 <div className="card-stack dealer-stack" style={{ width: `${dealerStackWidth}px`, transform: `translateX(${dealerCardShiftPx}px)` }}>
                   {dealerHand.map((card, i) => {
                     const dealIndex = getDealSequenceIndex(true, i, totalPlayerCards, totalDealerCards, playerHands.length);
-                    const isThisCardDealing = isInitialDeal || (phase === 'dealer-turn' && i >= 2);
+                    const isDealerInitialDealing = isInitialDeal && isNewestByVisible(dealIndex);
+                    const isNewDealerCard = dealerHand.length > prevDealerCount && i === dealerHand.length - 1;
+                    const isDealerHitDealing = phase === 'dealer-turn' && i >= 2 && isNewDealerCard;
+                    const isThisCardDealing = (isDealerInitialDealing || isDealerHitDealing) && !isRevealingHoleCard && !isRemovingCards;
                     const isFlipping = isRevealingHoleCard && i === 0;
                     const isHoleCard = i === 0;
                     // Card is visible if its deal sequence index is less than visibleCardCount
@@ -540,9 +559,7 @@ export const Table: React.FC<TableProps> = ({
                           // For hits: continue from there
                           const globalCardIdx = cardOffsetBase + cardIdx;
                           const dealIndex = getDealSequenceIndex(false, globalCardIdx, totalPlayerCards, totalDealerCards, playerHands.length);
-                          const isThisCardDealing = isInitialDeal && cardIdx < 2;
-                          const isHitDealing = phase === 'player-action' && cardIdx >= 2;
-                          const isCardVisible = !isInitialDeal || dealIndex < visibleCardCount;
+                          const isCardVisible = dealIndex < visibleCardCount;
 
                           // Split animation: the moved card is the first card of the newly-created right hand.
                           const isThisCardSplitting = isSplitting && handIdx === splitRightHandIdx && cardIdx === 0;
@@ -553,7 +570,23 @@ export const Table: React.FC<TableProps> = ({
                             (splitDealingPhase === 1 && handIdx === splitRightHandIdx && cardIdx === hand.cards.length - 1) ||
                             (splitDealingPhase === 2 && handIdx === activeHandIndex && cardIdx === hand.cards.length - 1);
 
-                          const isDealingNow = isThisCardDealing || isHitDealing || isSplitDealCard;
+                          const isPlayerInitialDealing = isInitialDeal && isNewestByVisible(dealIndex);
+                          const isActiveHandForHits = handIdx === focusHandIdx;
+                          const prevLen = prevPlayerCounts[handIdx] ?? 0;
+                          const isNewPlayerCard = hand.cards.length > prevLen && cardIdx === hand.cards.length - 1;
+                          const isPlayerHitDealing =
+                            phase === 'player-action' &&
+                            splitDealingPhase === 0 &&
+                            !isSplitting &&
+                            isActiveHandForHits &&
+                            cardIdx >= 2 &&
+                            isNewPlayerCard;
+
+                          // During split dealing phase, we intentionally keep the dealing flag true
+                          // while the timer is running so the animation can't be interrupted by rerenders.
+                          const isDealingNow =
+                            (isPlayerInitialDealing || isPlayerHitDealing || isSplitDealCard) &&
+                            !isRemovingCards;
                           const cardZ = (isDealingNow || isThisCardSplitting || isThisCardSplitSettling) ? 10000 + cardIdx : cardIdx;
 
                           return (

@@ -172,7 +172,10 @@
    ============================================ */
 
 .card.dealing {
-  animation: dealFromShoe 0.35s linear forwards;
+  animation-name: dealFromShoe;
+  animation-duration: calc(var(--deal-anim-ms, 350) * 1ms);
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
 }
 
 @keyframes dealFromShoe {
@@ -193,7 +196,10 @@
    ============================================ */
 
 .card.dealing-dealer {
-  animation: dealFromShoeHorizontal 0.35s linear forwards;
+  animation-name: dealFromShoeHorizontal;
+  animation-duration: calc(var(--deal-anim-ms, 350) * 1ms);
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
 }
 
 @keyframes dealFromShoeHorizontal {
