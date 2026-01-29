@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Background: casino felt green -->
+  <rect width="512" height="512" rx="0" ry="0" fill="#0a5f38"/>
+  <!-- Subtle radial gradient overlay -->
+  <radialGradient id="g" cx="50%" cy="40%" r="60%">
+    <stop offset="0%" stop-color="#fff" stop-opacity="0.06"/>
+    <stop offset="100%" stop-color="#000" stop-opacity="0.15"/>
+  </radialGradient>
+  <rect width="512" height="512" fill="url(#g)"/>
+  <!-- White spade: single continuous path -->
+  <path d="
+    M256 80
+    C208 136 112 200 112 280
+    C112 332 144 356 184 348
+    C202 344 218 332 230 316
+    C222 352 206 392 184 420
+    L328 420
+    C306 392 290 352 282 316
+    C294 332 310 344 328 348
+    C368 356 400 332 400 280
+    C400 200 304 136 256 80
+    Z
+  " fill="rgba(255,255,255,0.95)"/>
+</svg>

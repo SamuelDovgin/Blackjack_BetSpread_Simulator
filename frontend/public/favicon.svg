@@ -1,8 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Card body -->
   <rect x="10" y="6" width="44" height="52" rx="6" ry="6" fill="#fdfaf4" stroke="#1d1b16" stroke-width="3"/>
-  <path
-    d="M32 16 C24 24 18 29 18 37 C18 43 23 46 28 44 C30 43 31 42 32 41 C33 42 34 43 36 44 C41 46 46 43 46 37 C46 29 40 24 32 16 Z"
-    fill="#1f8a70"
-  />
-  <rect x="29" y="42" width="6" height="10" fill="#1f8a70"/>
+  <!-- Spade: single continuous outline (lobes + stem, no seam) -->
+  <path d="
+    M32 16
+    C26 22 18 28 18 35
+    C18 41 22 44 27 43
+    C29 42.3 30.5 41 31 39.5
+    C30 43 28.5 47 26 50
+    L38 50
+    C35.5 47 34 43 33 39.5
+    C33.5 41 35 42.3 37 43
+    C42 44 46 41 46 35
+    C46 28 38 22 32 16
+    Z
+  " fill="#1f8a70"/>
 </svg>
