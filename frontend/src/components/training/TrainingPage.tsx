@@ -244,14 +244,16 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   const rawTrueCount = calculateTrueCount(gameState.runningCount, decksRemaining);
 
   // Helper to apply TC estimation method (floor for realistic casino play)
+  // Prefer the persisted training setting; fall back to prop for backwards compat
+  const effectiveTcMethod = settings.tcEstimationMethod ?? tcEstimationMethod;
   const applyTcEstimation = useCallback((rawTc: number): number => {
-    if (tcEstimationMethod === 'floor') {
+    if (effectiveTcMethod === 'floor') {
       return Math.floor(rawTc);
-    } else if (tcEstimationMethod === 'halfDeck') {
+    } else if (effectiveTcMethod === 'halfDeck') {
       return Math.round(rawTc * 2) / 2; // Round to nearest 0.5
     }
     return rawTc;
-  }, [tcEstimationMethod]);
+  }, [effectiveTcMethod]);
 
   const trueCount = applyTcEstimation(rawTrueCount);
 
@@ -1367,6 +1369,18 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
                 checked={settings.onlyShowMistakes}
                 onChange={e => setSettings(s => ({ ...s, onlyShowMistakes: e.target.checked }))}
               />
+            </label>
+
+            <label className="setting-row">
+              <span>TC Estimation</span>
+              <select
+                value={settings.tcEstimationMethod ?? 'floor'}
+                onChange={e => setSettings(s => ({ ...s, tcEstimationMethod: e.target.value as 'perfect' | 'floor' | 'halfDeck' }))}
+              >
+                <option value="floor">Floor (realistic)</option>
+                <option value="halfDeck">Half-Deck</option>
+                <option value="perfect">Perfect</option>
+              </select>
             </label>
 
             <button className="close-settings" onClick={() => setShowSettings(false)}>

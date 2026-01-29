@@ -84,6 +84,9 @@ export interface TrainingSettings {
   autoAdvanceDelay: number; // ms
   onlyShowMistakes: boolean; // Only show feedback when player makes a mistake
 
+  // TC estimation: 'floor' rounds down (realistic), 'halfDeck' rounds to nearest 0.5, 'perfect' uses exact TC
+  tcEstimationMethod: 'perfect' | 'floor' | 'halfDeck';
+
   // Sound
   soundEnabled: boolean;
 
@@ -202,6 +205,7 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
   correctionMode: 'inline',
   autoAdvanceDelay: 2000,
   onlyShowMistakes: true,  // Only show feedback on mistakes by default
+  tcEstimationMethod: 'floor',  // Floor TC by default (realistic casino practice)
   soundEnabled: false,     // Off by default
   practiceMode: 'free-play',
   highCountTcMin: 2,
