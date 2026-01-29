@@ -63,8 +63,9 @@ components/training/ → Self-contained training mode (no backend dependency)
 - **Unit-first metrics:** All simulation internals use betting units, not dollars. `unit_size` is display/conversion only; `bankroll` only affects RoR calculations.
 - **Deterministic seeding:** Optional seed for reproducible runs; default randomizes each run.
 - **Multiprocessing fallback:** Uses ProcessPoolExecutor when available, falls back to single-thread in sandboxed environments.
-- **Training mode is standalone:** Runs entirely in-browser with no backend calls, enabling GitHub Pages deployment with `VITE_DISABLE_BACKEND=1`. All rules, deviations (I18 + Fab 4), and defaults are defined client-side so training works identically with or without the backend.
-- **Training defaults match backend:** Surrender is OFF by default (matching `backend/app/data/presets.py`). TC estimation defaults to floor (realistic casino practice). These defaults live in `frontend/src/components/training/engine/basicStrategy.ts` (`DEFAULT_RULES`) and `frontend/src/components/training/types.ts` (`DEFAULT_TRAINING_SETTINGS`).
+- **Training mode is standalone:** Runs entirely in-browser with no backend calls, enabling GitHub Pages deployment with `VITE_DISABLE_BACKEND=1`.
+- **Client-side defaults (`frontend/src/api/client.ts`):** `CLIENT_DEFAULTS` mirrors `backend/app/data/presets.py` — Midwest 6D H17 DAS rules (surrender OFF, resplit aces ON, 0.75 pen), Hi-Lo count, I18 + Fab 4 deviations, 1-12 bet ramp. When the backend is unavailable, `App.tsx` uses these to populate the rules widget, deviations list, and bet ramp so the full UI works without a backend. Training mode's own `DEFAULT_RULES` in `basicStrategy.ts` and `DEFAULT_TRAINING_SETTINGS` in `types.ts` also default surrender OFF and TC estimation to floor.
+- **Card sizing:** Desktop cards are 1.5x standard (135x189 large, 105x147 medium). Mobile sizes are unchanged. Card layout constants in `Table.tsx` (offsets, stack spacing) must stay in sync with `Card.css` sizes.
 
 ### Environment Variables
 - `VITE_API_BASE` — Backend API URL (default: `http://127.0.0.1:8001/api`)

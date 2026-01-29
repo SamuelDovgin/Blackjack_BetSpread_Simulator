@@ -20,23 +20,23 @@
   transition: none;
 }
 
-/* Card sizes */
+/* Card sizes (desktop) */
 .card-small {
-  width: 50px;
-  height: 70px;
-  font-size: 10px;
+  width: 75px;
+  height: 105px;
+  font-size: 15px;
 }
 
 .card-medium {
-  width: 70px;
-  height: 98px;
-  font-size: 14px;
+  width: 105px;
+  height: 147px;
+  font-size: 21px;
 }
 
 .card-large {
-  width: 90px;
-  height: 126px;
-  font-size: 18px;
+  width: 135px;
+  height: 189px;
+  font-size: 27px;
 }
 
 /* Card front (face up) */
@@ -179,7 +179,7 @@
   0% {
     opacity: 1;
     /* Desktop: start near the on-table shoe position (not off-screen) */
-    transform: translateX(220px) translateY(-20px);
+    transform: translateX(280px) translateY(-20px);
   }
   100% {
     opacity: 1;
@@ -200,7 +200,7 @@
   0% {
     opacity: 1;
     /* Desktop: horizontal-only motion from the on-table shoe */
-    transform: translateX(220px) translateY(0);
+    transform: translateX(280px) translateY(0);
   }
   100% {
     opacity: 1;
@@ -223,7 +223,7 @@
   }
   100% {
     opacity: 0;
-    transform: translateX(-400px) translateY(0);
+    transform: translateX(-450px) translateY(0);
   }
 }
 
@@ -368,15 +368,15 @@
 
 .shoe-stack {
   position: relative;
-  width: 90px;
-  height: 126px;
+  width: 135px;
+  height: 189px;
 }
 
 /* Stacked cards effect for the shoe */
 .shoe-card {
   position: absolute;
-  width: 90px;
-  height: 126px;
+  width: 135px;
+  height: 189px;
   border-radius: 8px;
   background: linear-gradient(145deg, #1a1a2e 0%, #0f0f1a 100%);
   border: 1px solid #333;
@@ -413,14 +413,14 @@
 
 .discard-stack {
   position: relative;
-  width: 90px;
-  height: 126px;
+  width: 135px;
+  height: 189px;
 }
 
 .discard-card {
   position: absolute;
-  width: 90px;
-  height: 126px;
+  width: 135px;
+  height: 189px;
   border-radius: 8px;
   background: linear-gradient(145deg, #1a1a2e 0%, #0f0f1a 100%);
   border: 1px solid #333;
@@ -519,7 +519,7 @@
 @keyframes splitSlide {
   0% {
     /* Start at original position (stacked on first hand) */
-    transform: translateX(var(--split-slide-x, -120px)) translateY(0);
+    transform: translateX(var(--split-slide-x, -180px)) translateY(0);
   }
   100% {
     /* End at new hand position */
@@ -535,7 +535,7 @@
 @keyframes splitSettle {
   0% {
     /* Start at the prior stacked offset (player overlap offset). */
-    transform: translateX(28px) translateY(-20px);
+    transform: translateX(42px) translateY(-30px);
   }
   100% {
     transform: translateX(0) translateY(0);

@@ -109,6 +109,71 @@ export type DefaultLibraries = {
   bet_ramp: BetRamp;
 };
 
+/** Client-side defaults matching backend/app/data/presets.py (Midwest 6D H17 DAS). */
+export const CLIENT_DEFAULT_RULES: Rules = {
+  decks: 6,
+  hit_soft_17: true,
+  double_after_split: true,
+  double_any_two: true,
+  surrender: false,
+  resplit_aces: true,
+  max_splits: 3,
+  hit_split_aces: false,
+  blackjack_payout: 1.5,
+  dealer_peeks: true,
+  penetration: 0.75,
+};
+
+export const CLIENT_DEFAULT_COUNT: CountingSystem = {
+  name: "Hi-Lo",
+  tags: { "2": 1, "3": 1, "4": 1, "5": 1, "6": 1, "7": 0, "8": 0, "9": 0, "T": -1, "J": -1, "Q": -1, "K": -1, "A": -1 },
+  true_count_divisor: "remaining_decks",
+};
+
+export const CLIENT_DEFAULT_DEVIATIONS: Deviation[] = [
+  { hand_key: "16v10", tc_floor: 0, action: "S" },
+  { hand_key: "15v10", tc_floor: 4, action: "S" },
+  { hand_key: "10v10", tc_floor: 4, action: "D" },
+  { hand_key: "12v3", tc_floor: 2, action: "S" },
+  { hand_key: "12v2", tc_floor: 3, action: "S" },
+  { hand_key: "12v4", tc_floor: 0, action: "S" },
+  { hand_key: "12v5", tc_floor: -2, action: "S" },
+  { hand_key: "12v6", tc_floor: -1, action: "S" },
+  { hand_key: "9v2", tc_floor: 1, action: "D" },
+  { hand_key: "9v7", tc_floor: 3, action: "D" },
+  { hand_key: "10vA", tc_floor: 4, action: "D" },
+  { hand_key: "11vA", tc_floor: 1, action: "D" },
+  { hand_key: "16v9", tc_floor: 5, action: "S" },
+  { hand_key: "13v2", tc_floor: -1, action: "S" },
+  { hand_key: "13v3", tc_floor: -2, action: "S" },
+  { hand_key: "15v9", tc_floor: 5, action: "S" },
+  { hand_key: "insurance", tc_floor: 3, action: "I" },
+  // Fab 4 surrender
+  { hand_key: "15v10_surrender", tc_floor: 0, action: "R" },
+  { hand_key: "15v9_surrender", tc_floor: 2, action: "R" },
+  { hand_key: "15vA_surrender", tc_floor: 1, action: "R" },
+  { hand_key: "14v10_surrender", tc_floor: 3, action: "R" },
+];
+
+export const CLIENT_DEFAULTS: DefaultLibraries = {
+  rules: CLIENT_DEFAULT_RULES,
+  count: CLIENT_DEFAULT_COUNT,
+  deviations: CLIENT_DEFAULT_DEVIATIONS,
+  bet_ramp: {
+    steps: [
+      { tc_floor: -1, units: 1 },
+      { tc_floor: 0, units: 2 },
+      { tc_floor: 1, units: 4 },
+      { tc_floor: 2, units: 6 },
+      { tc_floor: 3, units: 8 },
+      { tc_floor: 4, units: 10 },
+      { tc_floor: 5, units: 12 },
+    ],
+    wong_out_below: -1,
+    wong_out_policy: "anytime",
+  },
+};
+
 export async function fetchDefaults(): Promise<DefaultLibraries> {
   const { data } = await api.get("/libraries/defaults");
   return data;
