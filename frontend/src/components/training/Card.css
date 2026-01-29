@@ -474,7 +474,8 @@
   @keyframes dealFromShoe {
     0% {
       opacity: 1;
-      transform: translateX(300px) translateY(-15px);
+      /* Keep distance consistent with desktop so cards move at the same speed across viewports. */
+      transform: translateX(250px) translateY(-15px);
     }
     100% {
       opacity: 1;
@@ -485,7 +486,7 @@
   @keyframes dealFromShoeHorizontal {
     0% {
       opacity: 1;
-      transform: translateX(300px) translateY(0);
+      transform: translateX(250px) translateY(0);
     }
     100% {
       opacity: 1;
@@ -501,7 +502,7 @@
     }
     100% {
       opacity: 0;
-      transform: translateX(-300px) translateY(0);
+      transform: translateX(-250px) translateY(0);
     }
   }
 }

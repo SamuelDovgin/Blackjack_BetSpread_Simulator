@@ -68,7 +68,8 @@
   width: 100%;
   /* Clip horizontally (so we can keep 1 row), but allow vertical overflow for stacked cards + labels. */
   overflow: visible;
-  clip-path: inset(-240px 0 -240px 0);
+  /* Give extra right-side "slack" so the deal-from-right animation doesn't get clipped (prevents snapping at edges). */
+  clip-path: inset(-240px -320px -240px -80px);
 }
 
 .player-hands {
