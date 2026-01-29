@@ -4,8 +4,11 @@
 .table {
   width: 100%;
   max-width: 700px;
+  height: 100%;
   margin: 0 auto;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
 }
 
 .table-felt {
@@ -16,8 +19,8 @@
     inset 0 0 50px rgba(0, 0, 0, 0.3),
     0 4px 20px rgba(0, 0, 0, 0.4);
   padding: 24px;
-  /* Give dealer/player more separation on desktop */
-  min-height: 520px;
+  /* Flex to fill available space without exceeding it */
+  flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -53,7 +56,7 @@
 
 .dealer-hand,
 .hand {
-  min-height: 130px;
+  min-height: 110px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -255,52 +258,50 @@
   color: rgba(255, 255, 255, 0.7);
 }
 
-/* Outcome display */
-.outcome-display {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 36px;
-  font-weight: bold;
-  padding: 16px 32px;
-  border-radius: 16px;
-  animation: popIn 0.3s ease-out;
-  /* Must sit above any dealt cards (which use high z-index during animation). */
-  z-index: 30000;
+/* Outcome result badges */
+.hand-result {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  animation: fadeInResult 0.3s ease-out;
 }
 
-@keyframes popIn {
-  0% {
+@keyframes fadeInResult {
+  from {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.5);
+    transform: scale(0.8);
   }
-  70% {
-    transform: translate(-50%, -50%) scale(1.1);
-  }
-  100% {
+  to {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
   }
 }
 
-.outcome-win,
-.outcome-blackjack {
+.result-win {
   background: linear-gradient(145deg, #27ae60 0%, #1e8449 100%);
   color: #fff;
-  box-shadow: 0 0 30px rgba(39, 174, 96, 0.5);
+  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.4);
 }
 
-.outcome-lose {
-  background: linear-gradient(145deg, #c0392b 0%, #922b21 100%);
+.result-push {
+  background: linear-gradient(145deg, #7f8c8d 0%, #636e72 100%);
   color: #fff;
-  box-shadow: 0 0 30px rgba(192, 57, 43, 0.5);
+  box-shadow: 0 2px 8px rgba(127, 140, 141, 0.4);
 }
 
-.outcome-push {
-  background: linear-gradient(145deg, #7f8c8d 0%, #5d6d6e 100%);
+.result-blackjack {
+  background: linear-gradient(145deg, #f1c40f 0%, #f39c12 100%);
+  color: #1a1a1a;
+  box-shadow: 0 2px 8px rgba(241, 196, 15, 0.5);
+}
+
+.result-lose {
+  background: linear-gradient(145deg, #e74c3c 0%, #c0392b 100%);
   color: #fff;
-  box-shadow: 0 0 30px rgba(127, 140, 141, 0.5);
+  box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4);
 }
 
 /* Empty hand placeholder */
@@ -320,12 +321,12 @@
     border-radius: 80px 80px 16px 16px;
     border-width: 4px;
     padding: 16px;
-    min-height: 350px;
+    /* Allow flexible sizing */
   }
 
   .dealer-hand,
   .hand {
-    min-height: 100px;
+    min-height: 90px;
   }
 
   .player-hands {
@@ -338,7 +339,7 @@
   }
 
   .hand-info {
-    min-height: 36px;
+    min-height: 32px;
   }
 
   .hand-tag {
@@ -346,16 +347,11 @@
     padding: 2px 6px;
   }
 
-  .outcome-display {
-    font-size: 28px;
-    padding: 12px 24px;
-  }
 }
 
 /* Landscape mobile */
 @media (max-width: 896px) and (orientation: landscape) {
   .table-felt {
-    min-height: 280px;
     border-radius: 60px 60px 16px 16px;
     flex-direction: row;
     padding: 16px 32px;

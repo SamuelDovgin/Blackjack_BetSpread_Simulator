@@ -2,8 +2,8 @@
 
 ## Task #36 & #37: Play-by-Play Training + Counting Practice
 
-**Document Version:** 1.2
-**Status:** Phase 1-2 Implementation Complete - Core UI Working
+**Document Version:** 1.3
+**Status:** Phase 3 Complete - Decision Validation Done
 **Last Updated:** January 2026
 
 ### Implementation Progress
@@ -11,11 +11,27 @@
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Phase 1: Core Infrastructure | ✅ Complete | Types, game engine, card component |
-| Phase 2: Basic Gameplay | ✅ Mostly Complete | All actions work, basic UI done |
-| Phase 3: Decision Validation | 🔲 Not Started | Need basic strategy checking |
+| Phase 2: Basic Gameplay | ✅ Complete | All actions, animations, split hands |
+| Phase 3: Decision Validation | ✅ Complete | Basic strategy, deviations (I18/Fab4), insurance |
 | Phase 4: Mobile Optimization | 🔲 Not Started | CSS is responsive but needs testing |
 | Phase 5: Counting Practice | 🔲 Not Started | Count display exists, drills needed |
-| Phase 6: Statistics & Polish | 🔲 Not Started | Need session stats, history |
+| Phase 6: Statistics & Polish | 🔄 In Progress | StatsPanel implemented, needs history |
+
+### Phase 3 Completion Summary
+
+- ✅ Basic strategy oracle (`basicStrategy.ts`) - validates all player decisions
+- ✅ Illustrious 18 deviations (`deviations.ts`) - count-based playing changes
+- ✅ Fab Four surrender deviations - high-count surrender plays
+- ✅ Insurance prompt - appears when dealer shows Ace
+- ✅ Insurance validation - correct at TC +3 or higher
+- ✅ Correction modes - inline feedback, modal blocking, or off
+- ✅ FeedbackPanel - shows correct/incorrect after each decision
+- ✅ CorrectionModal - blocks play until acknowledged
+- ✅ StatsPanel - comprehensive stats with accuracy breakdowns
+- ✅ Stats tracking - by action type, hand type, per-hand weak spots
+- ✅ Settings toggle for deviations - enable/disable I18/Fab4 checking
+- ✅ **Decision Result Taxonomy** - categorizes outcomes (correct_basic, correct_deviation, missed_deviation, wrong_deviation, incorrect_basic)
+- ✅ **Session Persistence** - settings and stats saved to localStorage, restored on page reload
 
 ---
 
@@ -2154,11 +2170,15 @@ const MILESTONES = [
 - [ ] Basic feedback display (in progress)
 
 ### Phase 3: Decision Validation (Week 3)
-- [ ] Implement basic strategy lookup
+- [x] Implement basic strategy lookup (`engine/basicStrategy.ts`)
 - [ ] Implement deviation checking
-- [ ] Add detailed explanations
-- [ ] Implement correction mode
+- [x] Add detailed explanations (strategy reasons)
+- [x] Implement correction mode (inline/modal/off)
 - [ ] Add keyboard shortcuts
+- [x] FeedbackPanel with compact/expanded modes
+- [x] CorrectionModal for blocking mode
+- [x] Per-hand stats tracking (weak spot identification)
+- [x] Decision accuracy by hand type and action type
 
 ### Phase 4: Mobile Optimization (Week 4)
 - [ ] Responsive layout
@@ -2193,7 +2213,7 @@ frontend/src/
 ├── components/
 │   ├── training/
 │   │   ├── index.ts                   # Module exports
-│   │   ├── types.ts                   # Type definitions
+│   │   ├── types.ts                   # Type definitions (✅)
 │   │   ├── TrainingPage.tsx           # Main page component (✅)
 │   │   ├── TrainingPage.css           # Page styles (✅)
 │   │   ├── Table.tsx                  # Casino table (✅)
@@ -2202,8 +2222,11 @@ frontend/src/
 │   │   ├── Card.css                   # Card styles with animations (✅)
 │   │   ├── ActionButtons.tsx          # Hit/Stand/Double/Split/Surrender (✅)
 │   │   ├── ActionButtons.css          # Action button styles (✅)
+│   │   ├── FeedbackPanel.tsx          # Decision feedback + correction modal (✅)
+│   │   ├── FeedbackPanel.css          # Feedback panel styles (✅)
 │   │   └── engine/
-│   │       └── gameEngine.ts          # Core game logic (✅)
+│   │       ├── gameEngine.ts          # Core game logic (✅)
+│   │       └── basicStrategy.ts       # Basic strategy lookup oracle (✅)
 ```
 
 ### Planned Structure (Future)
@@ -3289,29 +3312,60 @@ The implementation is broken into 6 phases over approximately 6 weeks, with clea
 
 ### 🔄 Phase 3: Decision Validation - IN PROGRESS
 
-**Next Priority Items:**
-1. **Basic Strategy Checker** - Implement strategy checking against configured strategy
-   - Need to import/integrate basic strategy from main simulator
-   - Calculate correct action for current hand situation
-   - Compare player action to correct action
-   - Display inline warning or modal based on settings
+**Completed Items:**
+- [x] **Basic Strategy Checker** (`engine/basicStrategy.ts`)
+  - [x] Pure strategy oracle module with no React dependencies
+  - [x] Complete basic strategy tables (hard, soft, pairs)
+  - [x] Strategy codes (H, S, D, Dh, Ds, P, Ph, Pd, R, Rh, Rs) with fallback logic
+  - [x] getBasicStrategyAction() returns action, reason, handKey, etc.
+  - [x] Configurable rules (H17/S17, DAS, surrender, etc.)
+  - [x] testHand() and runCanonicalTests() helpers for validation
 
-2. **Deviation Checker** - Validate playing deviations
-   - Import deviation rules from main simulator
-   - Check if deviation is correct given true count
-   - Provide feedback on deviation usage
+- [x] **FeedbackPanel Component** (`FeedbackPanel.tsx`)
+  - [x] Compact inline mode (show correct/incorrect with reason)
+  - [x] Expanded mode with full details
+  - [x] CorrectionModal for blocking mode ("Take it back" / "Continue anyway")
+  - [x] Smooth animations for feedback appearance
 
-3. **Statistics Tracking** - Track accuracy by situation
-   - Update stats after each decision
-   - Track by action type (hit, stand, double, split, surrender)
-   - Track by hand total ranges
-   - Track by dealer upcard
-   - Track by true count ranges
+- [x] **TrainingPage Integration**
+  - [x] validateAndTrackDecision() validates actions before execution
+  - [x] lastDecision state tracking
+  - [x] preActionStateRef for potential take-back
+  - [x] Settings: correctionMode ('inline' | 'modal' | 'off')
+  - [x] Modal blocks incorrect actions until acknowledged
 
-4. **Session History** - Store hand-by-hand history
-   - Save to localStorage
-   - Display recent hands with outcomes
-   - Allow review of previous decisions
+- [x] **Statistics Tracking**
+  - [x] Track accuracy by correct action type (hit, stand, double, split, surrender)
+  - [x] Track accuracy by hand type (hard, soft, pair)
+  - [x] Per-hand stats (handStats) for weak spot identification
+  - [x] Mistake tracking by hand key
+
+**Completed Items (Jan 2026):**
+
+1. **Deviation Checker** - ✅ COMPLETE
+   - [x] Import deviation rules (Illustrious 18, Fab Four)
+   - [x] Check if deviation is correct given true count
+   - [x] Provide feedback on deviation usage
+   - [x] **Decision Result Taxonomy** - Distinguishes between:
+     - `correct_basic` - User followed basic strategy (no deviation applicable)
+     - `correct_deviation` - User correctly applied deviation at right TC
+     - `missed_deviation` - User played basic when deviation was applicable
+     - `wrong_deviation` - User tried to deviate when TC didn't support it
+     - `incorrect_basic` - User made basic strategy error
+   - [x] FeedbackPanel shows deviation tags (DEV/MISS/NO DEV)
+   - [x] CorrectionModal shows deviation name and TC threshold
+
+2. **Session Persistence** - ✅ COMPLETE
+   - [x] Save settings to localStorage (auto-persisted on change)
+   - [x] Save stats to localStorage (debounced 500ms)
+   - [x] Resume session on page reload (settings + stats restored)
+   - [ ] Hand history with outcomes (future enhancement)
+
+**Remaining Items:**
+
+1. **Keyboard Shortcuts** (Low Priority - user indicated not important)
+   - [ ] H=Hit, S=Stand, D=Double, P=Split, R=Surrender
+   - [ ] Space to deal next hand
 
 ### 🔲 Phase 4: Mobile Optimization - NOT STARTED
 

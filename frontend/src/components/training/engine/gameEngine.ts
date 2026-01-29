@@ -1,7 +1,7 @@
 // Training Mode Game Engine
 // Handles core blackjack logic for the training mode
 
-import type { Card, Rank, Suit, GameState, HandState, PlayerAction } from '../types';
+import type { Card, Rank, Suit, GameState, HandState, HandResult, PlayerAction } from '../types';
 
 // Card values for blackjack
 const CARD_VALUES: Record<Rank, number> = {
@@ -639,6 +639,43 @@ export function calculatePayout(
   return 0; // Player loses
 }
 
+// Determine hand result for display
+export function determineHandResult(
+  playerHand: HandState,
+  dealerTotal: number
+): HandResult {
+  if (playerHand.isSurrendered) {
+    return 'lose';
+  }
+
+  if (playerHand.isBusted) {
+    return 'lose';
+  }
+
+  const { total: playerTotal } = calculateFullHandTotal(playerHand.cards);
+
+  if (playerHand.isBlackjack) {
+    if (dealerTotal === 21) {
+      return 'push';
+    }
+    return 'blackjack';
+  }
+
+  if (dealerTotal > 21) {
+    return 'win';
+  }
+
+  if (playerTotal > dealerTotal) {
+    return 'win';
+  }
+
+  if (playerTotal === dealerTotal) {
+    return 'push';
+  }
+
+  return 'lose';
+}
+
 // Move to next hand or dealer turn
 export function advanceGame(state: GameState): GameState {
   // Check if current hand is complete
@@ -670,12 +707,18 @@ export function resolveRound(state: GameState, blackjackPayout: number = 1.5): G
   const dealerTotal = state.dealerTotal ?? 0;
   let totalPayout = 0;
 
-  for (const hand of state.playerHands) {
+  // Calculate payouts and set result on each hand
+  const resolvedHands = state.playerHands.map(hand => {
     totalPayout += calculatePayout(hand, dealerTotal, blackjackPayout);
-  }
+    return {
+      ...hand,
+      result: determineHandResult(hand, dealerTotal),
+    };
+  });
 
   return {
     ...state,
+    playerHands: resolvedHands,
     bankroll: state.bankroll + totalPayout,
     phase: 'payout',
   };
