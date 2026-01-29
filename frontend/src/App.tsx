@@ -2060,7 +2060,7 @@ function App() {
   }, [sessionChart, stopLossUnits, winGoalUnits, showUnits, displayUnitSize]);
 
   return (
-    <div className="app">
+    <div className={`app ${currentPage === "training" ? "app-training" : ""}`}>
       {currentPage === "simulator" && (
       <header className="topbar">
         <div className="scenario">
