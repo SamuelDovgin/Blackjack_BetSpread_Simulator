@@ -451,7 +451,7 @@ export const Table: React.FC<TableProps> = ({
                         >
                           {(hand.result === 'win' || hand.result === 'blackjack') && 'WIN'}
                           {hand.result === 'push' && 'PUSH'}
-                          {hand.result === 'lose' && !hand.isBusted && 'LOSE'}
+                          {hand.result === 'lose' && 'LOSE'}
                         </div>
                       )}
 
