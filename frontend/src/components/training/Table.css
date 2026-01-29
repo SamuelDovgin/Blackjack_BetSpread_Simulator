@@ -1,41 +1,14 @@
 /* Table Component Styles */
-/* Green felt casino table */
-
-.table {
-  width: 100%;
-  /* Wider on desktop so multi-hand rounds can be seen at once. */
-  max-width: 1100px;
-  height: 100%;
-  margin: 0 auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-}
+/* Edge-to-edge card area — no table felt */
 
 .table-felt {
-  background: linear-gradient(145deg, #1e5128 0%, #2d6a4f 50%, #1e5128 100%);
-  border-radius: 150px 150px 20px 20px;
-  border: 8px solid #143d1e;
-  box-shadow:
-    inset 0 0 50px rgba(0, 0, 0, 0.3),
-    0 4px 20px rgba(0, 0, 0, 0.4);
-  padding: 24px;
-  /* Flex to fill available space without exceeding it */
-  flex: 1;
+  width: 100%;
+  height: 100%;
+  padding: 16px 12px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   position: relative;
-}
-
-/* Felt texture overlay */
-.table-felt::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.08'/%3E%3C/svg%3E");
-  pointer-events: none;
 }
 
 /* Dealer area */
@@ -147,20 +120,21 @@
   pointer-events: none;
   z-index: -1;
   overflow: visible;
+  border-radius: 16px;
 }
 
 .stack-outline path {
-  /* White gradient highlight: brightest at center, fading at edges */
-  fill: rgba(255, 255, 255, 0.1);
-  stroke: rgba(255, 255, 255, 0.15);
-  stroke-width: 2px;
+  /* Strong white gradient highlight with fully rounded corners */
+  fill: rgba(255, 255, 255, 0.18);
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 3px;
   stroke-linejoin: round;
   stroke-linecap: round;
   filter:
-    blur(0.5px)
-    drop-shadow(0 0 8px rgba(255, 255, 255, 0.3))
-    drop-shadow(0 0 20px rgba(255, 255, 255, 0.2))
-    drop-shadow(0 0 40px rgba(255, 255, 255, 0.1));
+    blur(1.5px)
+    drop-shadow(0 0 16px rgba(255, 255, 255, 0.6))
+    drop-shadow(0 0 28px rgba(255, 255, 255, 0.4))
+    drop-shadow(0 0 56px rgba(255, 255, 255, 0.2));
 }
 
 .player-hand-container.busted {
@@ -321,15 +295,8 @@
 
 /* Mobile responsive */
 @media (max-width: 640px) {
-  .table {
-    padding: 8px;
-  }
-
   .table-felt {
-    border-radius: 80px 80px 16px 16px;
-    border-width: 4px;
-    padding: 16px;
-    /* Allow flexible sizing */
+    padding: 8px 4px;
   }
 
   .dealer-hand,
@@ -338,7 +305,7 @@
   }
 
   .player-hands {
-    gap: 12px;
+    gap: 8px;
   }
 
   .hand-total {
@@ -354,15 +321,13 @@
     font-size: 10px;
     padding: 2px 6px;
   }
-
 }
 
 /* Landscape mobile */
 @media (max-width: 896px) and (orientation: landscape) {
   .table-felt {
-    border-radius: 60px 60px 16px 16px;
     flex-direction: row;
-    padding: 16px 32px;
+    padding: 8px 16px;
   }
 
   .dealer-area,
