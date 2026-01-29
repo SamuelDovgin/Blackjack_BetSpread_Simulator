@@ -956,7 +956,7 @@ TrainingModePage
 │   │   └── DealerTotal
 │   │
 │   ├── PlayerArea
-│   │   ├── PlayerHand (×1 or ×2)
+│   │   ├── PlayerHand (×1 to ×3)
 │   │   │   ├── HandCards
 │   │   │   │   └── AnimatedCard[]
 │   │   │   ├── HandTotal
@@ -979,7 +979,8 @@ TrainingModePage
 │   ├── StandButton
 │   ├── DoubleButton
 │   ├── SplitButton
-│   └── SurrenderButton
+│   ├── SurrenderButton
+│   │   └── HandsPerRoundToggle (1H/2H/3H, applies next round)
 │
 ├── FeedbackPanel
 │   ├── ResultIcon (✓ or ✗)

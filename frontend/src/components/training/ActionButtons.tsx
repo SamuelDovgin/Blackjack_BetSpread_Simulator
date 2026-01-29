@@ -12,6 +12,10 @@ interface ActionButtonsProps {
   canDouble: boolean;
   canSplit: boolean;
   canSurrender: boolean;
+  /** Optional: number of starting hands to deal next round (1-3). */
+  handsToPlay?: 1 | 2 | 3;
+  /** Optional: cycle hands-to-play control (applies next round). */
+  onCycleHandsToPlay?: () => void;
   disabled?: boolean;
   /** Optional per-action locks (e.g., lock Hit/Double/Split while a card is animating) */
   disabledActions?: PlayerAction[];
@@ -26,6 +30,8 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
   canDouble,
   canSplit,
   canSurrender,
+  handsToPlay = 1,
+  onCycleHandsToPlay,
   disabled = false,
   disabledActions = [],
   highlightAction = null,
@@ -106,6 +112,18 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
         <span className="action-label">Surrender</span>
         {showKeyboardHints && <span className="action-key">R</span>}
       </button>
+
+      {onCycleHandsToPlay && (
+        <button
+          type="button"
+          className="hands-toggle-btn"
+          onClick={onCycleHandsToPlay}
+          title={`Deal ${handsToPlay} hand${handsToPlay === 1 ? '' : 's'} per round (applies next round)`}
+          aria-label={`Hands per round: ${handsToPlay}. Applies next round.`}
+        >
+          {handsToPlay}H
+        </button>
+      )}
     </div>
   );
 };

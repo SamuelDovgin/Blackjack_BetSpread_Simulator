@@ -59,12 +59,32 @@ import './TrainingPage.css';
 const CARD_DEAL_ANIM_MS = 350;
 const DEAL_CARD_INTERVAL = 380; // Keep > CARD_DEAL_ANIM_MS so the previous card stops before the next appears
 const DEALER_DRAW_INTERVAL = 520; // Dealer hits should feel slightly slower than player cards
-const INITIAL_DEAL_TOTAL_TIME = (DEAL_CARD_INTERVAL * 3) + CARD_DEAL_ANIM_MS + 20; // 4 cards (P,D,P,D)
 const HOLE_CARD_REVEAL_TIME = 500; // Time to flip hole card
 const DEALER_STACK_TRANSITION_MS = 400; // Matches Card.css stack transition
 const CARD_REMOVE_ANIM_MS = 400; // Matches Card.css removal animation
 const SPLIT_SEPARATE_MS = 400; // Matches Card.css splitSlide / splitSettle
 const PLAYER_CENTER_SLIDE_MS = 350; // Matches Table.css .player-hands transition
+// Small buffer so we never start dealing a card while the player-hand row is still sliding.
+// (The transform transition starts on the next frame; a tiny buffer avoids 1-frame overlap.)
+const PLAYER_CENTER_BUFFER_MS = 40;
+const CARD_SETTLE_BUFFER_MS = 40;
+
+function getInitialDealTotalTimeMs(totalCards: number): number {
+  // The last card starts at (totalCards - 1) * interval, then runs for CARD_DEAL_ANIM_MS.
+  return (DEAL_CARD_INTERVAL * Math.max(0, totalCards - 1)) + CARD_DEAL_ANIM_MS + 20;
+}
+
+function seatForInitialDealIndex(dealIndex: number, handsToPlay: number): number | null {
+  const nHands = Math.max(1, Math.min(3, Math.floor(handsToPlay)));
+  // dealIndex 0..nHands-1: first card to each seat (L->R)
+  if (dealIndex >= 0 && dealIndex <= nHands - 1) return dealIndex;
+  // dealIndex nHands: dealer hole card
+  if (dealIndex === nHands) return null;
+  // dealIndex nHands+1..2*nHands: second card to each seat (L->R)
+  if (dealIndex >= (nHands + 1) && dealIndex <= (2 * nHands)) return dealIndex - (nHands + 1);
+  // dealIndex 2*nHands+1: dealer upcard
+  return null;
+}
 
 // localStorage keys for persistence
 const STORAGE_KEY_SETTINGS = 'blackjack-training-settings';
@@ -133,6 +153,11 @@ interface TrainingPageProps {
   penetration?: number;
   hitSoft17?: boolean;
   allowSurrender?: boolean;
+  doubleAfterSplit?: boolean;
+  doubleAnyTwo?: boolean;
+  resplitAces?: boolean;
+  hitSplitAces?: boolean;
+  maxSplits?: number;
   blackjackPayout?: number;
   // TC estimation method from simulator settings (perfect, floor, or halfDeck)
   tcEstimationMethod?: 'perfect' | 'floor' | 'halfDeck';
@@ -144,6 +169,11 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   penetration = 0.75,
   hitSoft17 = true,
   allowSurrender = true,
+  doubleAfterSplit = true,
+  doubleAnyTwo = true,
+  resplitAces = false,
+  hitSplitAces = false,
+  maxSplits = 3,
   blackjackPayout = 1.5,
   tcEstimationMethod = 'floor',
 }) => {
@@ -186,8 +216,12 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   const ruleSet: RuleSet = {
     ...DEFAULT_RULES,
     hitSoft17,
+    doubleAfterSplit,
+    doubleAnyTwo,
     surrenderAllowed: allowSurrender,
     numDecks,
+    resplitAces,
+    hitSplitAces,
   };
 
   const timersRef = useRef<number[]>([]);
@@ -219,6 +253,14 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
+
+  const cycleHandsToPlay = useCallback(() => {
+    setSettings((s) => {
+      const current = s.handsToPlay ?? 1;
+      const next = current === 1 ? 2 : current === 2 ? 3 : 1;
+      return { ...s, handsToPlay: next };
+    });
+  }, []);
 
   // Persist stats to localStorage when they change (debounced to avoid excessive writes)
   const statsTimeoutRef = useRef<number | null>(null);
@@ -287,12 +329,45 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     setLastDecision(null);
     setShowCorrectionModal(false);
 
-    // Gate visibility so cards appear sequentially (P, D, P, D) with no overlap.
-    // Show the first card immediately so there is no "empty table" frame.
+    const handsToPlay = settings.handsToPlay ?? 1;
+    const initialCardsToShow = (2 * handsToPlay) + 2; // 2 per player hand + dealer hole + dealer upcard
+
+    // Gate visibility so cards appear sequentially with no overlap.
+    // For multi-hand deals, "pan" the centered hand so every dealt player card lands on the centered hand.
+    // (We never deal a card while the row is still sliding.)
     setVisibleCardCount(1);
-    for (let i = 2; i <= 4; i++) {
-      const id = window.setTimeout(() => setVisibleCardCount(i), (i - 1) * DEAL_CARD_INTERVAL);
+
+    let t = CARD_DEAL_ANIM_MS + CARD_SETTLE_BUFFER_MS; // after the first card finishes
+    let currentSeat = 0;
+
+    const scheduleSetSeat = (seat: number, atMs: number) => {
+      const id = window.setTimeout(() => {
+        setGameState((prev) => {
+          if (prev.phase !== 'dealing') return prev;
+          return { ...prev, activeHandIndex: seat };
+        });
+      }, atMs);
       timersRef.current.push(id);
+    };
+
+    const scheduleShowCount = (count: number, atMs: number) => {
+      const id = window.setTimeout(() => setVisibleCardCount(count), atMs);
+      timersRef.current.push(id);
+    };
+
+    for (let count = 2; count <= initialCardsToShow; count++) {
+      const dealIndex = count - 1;
+      const seat = seatForInitialDealIndex(dealIndex, handsToPlay);
+
+      if (seat !== null && seat !== currentSeat) {
+        // Move the "camera" to the next seat, then wait until the slide finishes.
+        scheduleSetSeat(seat, t);
+        t += PLAYER_CENTER_SLIDE_MS + PLAYER_CENTER_BUFFER_MS;
+        currentSeat = seat;
+      }
+
+      scheduleShowCount(count, t);
+      t += CARD_DEAL_ANIM_MS + CARD_SETTLE_BUFFER_MS;
     }
 
     // Deal cards - this sets phase to 'dealing'
@@ -300,7 +375,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       const reshuffleAt = numDecks * 52 * (1 - penetration);
       const needShuffle = prev.shoe.length < reshuffleAt;
       const base = needShuffle ? createInitialGameState(numDecks, prev.bankroll) : prev;
-      return dealInitialCards(base, settings.defaultBet);
+      return dealInitialCards(base, settings.defaultBet, handsToPlay);
     });
 
     // After the last card finishes moving, transition to player-action or dealer-turn.
@@ -308,37 +383,49 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       setVisibleCardCount(999);
       setInsuranceDecisionMade(false);
       setGameState((prev) => {
-        const playerHand = prev.playerHands[0];
         const dealerHand = prev.dealerHand;
         // Upcard is index 1 (second card dealt), hole card is index 0
         const dealerUpcard = dealerHand[1];
-        const playerHasBJ = playerHand?.isBlackjack;
-        const dealerHasBJ = calculateFullHandTotal(dealerHand).total === 21 && dealerHand.length === 2;
-        const playerTotal = playerHand ? calculateFullHandTotal(playerHand.cards).total : 0;
+        const dealerHasBJ = dealerHand.length === 2 && calculateFullHandTotal(dealerHand).total === 21;
 
-        if (playerHasBJ || dealerHasBJ) {
-          // Still go through dealer-turn so the hole card flip + dealer stack animation runs.
-          // The dealer-turn effect will detect blackjack and skip dealer draws.
-          return { ...prev, phase: 'dealer-turn' as GamePhase };
+        const updatedHands = prev.playerHands.map((h) => {
+          if (!h) return h;
+          const total = calculateFullHandTotal(h.cards).total;
+          if (h.isBlackjack || total === 21) {
+            return { ...h, isComplete: true };
+          }
+          return h;
+        });
+
+        let nextActive = 0;
+        for (let i = updatedHands.length - 1; i >= 0; i--) {
+          if (!updatedHands[i]?.isComplete) {
+            nextActive = i;
+            break;
+          }
         }
 
-        // Auto-stand on 21 (non-blackjack, e.g., 3+ cards totaling 21)
-        if (playerTotal === 21 && playerHand) {
-          const updatedHand = { ...playerHand, isComplete: true };
-          return { ...prev, playerHands: [updatedHand], phase: 'dealer-turn' as GamePhase };
+        // If dealer has a natural, the round ends immediately (reveal hole card then pay).
+        if (dealerHasBJ) {
+          return { ...prev, playerHands: updatedHands, activeHandIndex: nextActive, phase: 'dealer-turn' as GamePhase };
         }
 
         // Check if dealer shows Ace - offer insurance
         if (dealerUpcard?.rank === 'A') {
           setShowInsurancePrompt(true);
-          return { ...prev, phase: 'insurance' as GamePhase };
+          return { ...prev, playerHands: updatedHands, activeHandIndex: nextActive, phase: 'insurance' as GamePhase };
         }
 
-        return { ...prev, phase: 'player-action' as GamePhase };
+        // If every player hand is already complete (e.g., all naturals), skip directly to dealer reveal/payout.
+        if (updatedHands.length > 0 && updatedHands.every((h) => h.isComplete)) {
+          return { ...prev, playerHands: updatedHands, activeHandIndex: nextActive, phase: 'dealer-turn' as GamePhase };
+        }
+
+        return { ...prev, playerHands: updatedHands, activeHandIndex: nextActive, phase: 'player-action' as GamePhase };
       });
-    }, INITIAL_DEAL_TOTAL_TIME);
+    }, Math.max(getInitialDealTotalTimeMs(initialCardsToShow), t));
     timersRef.current.push(doneId);
-  }, [numDecks, penetration, settings.defaultBet, blackjackPayout]);
+  }, [numDecks, penetration, settings.defaultBet, settings.handsToPlay, blackjackPayout]);
 
   // Validate action against basic strategy and track decision
   const validateAndTrackDecision = useCallback((
@@ -682,7 +769,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
               });
             }, CARD_DEAL_ANIM_MS + 40);
             timersRef.current.push(phase2Id);
-          }, PLAYER_CENTER_SLIDE_MS + 20);
+          }, PLAYER_CENTER_SLIDE_MS + PLAYER_CENTER_BUFFER_MS);
           timersRef.current.push(phaseCenterId);
         }, SPLIT_SEPARATE_MS);
         timersRef.current.push(phase1Id);
@@ -843,7 +930,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
             });
           }, CARD_DEAL_ANIM_MS + 40);
           timersRef.current.push(phase2Id);
-        }, PLAYER_CENTER_SLIDE_MS + 20);
+        }, PLAYER_CENTER_SLIDE_MS + PLAYER_CENTER_BUFFER_MS);
         timersRef.current.push(phaseCenterId);
       }, SPLIT_SEPARATE_MS); // Card separation animation time
       timersRef.current.push(phase1Id);
@@ -1009,7 +1096,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       }, CARD_DEAL_ANIM_MS + 40);
 
       timersRef.current.push(id);
-    }, PLAYER_CENTER_SLIDE_MS);
+    }, PLAYER_CENTER_SLIDE_MS + PLAYER_CENTER_BUFFER_MS);
 
     timersRef.current.push(centerDelay);
   }, [gameState.phase, gameState.activeHandIndex, isSplitting, splitDealingPhase]);
@@ -1046,19 +1133,20 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           setGameState(current);
 
           // Blackjack resolution: if either side has a natural, we only reveal the hole card and pay.
-          // Dealer does NOT draw additional cards after a player blackjack.
-          const playerHasBJ = current.playerHands.length === 1 && !!current.playerHands[0]?.isBlackjack;
           const dealerHasBJ =
             current.dealerHand.length === 2 && calculateFullHandTotal(current.dealerHand).total === 21;
-          if (playerHasBJ || dealerHasBJ) {
+          if (dealerHasBJ) {
             const resolved = resolveRound(current, blackjackPayout);
             setGameState({ ...resolved, phase: 'payout' });
             return;
           }
 
-          // If every player hand is already busted, the dealer should not draw any
-          // additional cards. Reveal the hole card, then go straight to cleanup.
-          if (current.playerHands.length > 0 && current.playerHands.every((h) => h.isBusted)) {
+          // If no player hand needs a dealer comparison (all are busted/surrendered/blackjack),
+          // the dealer should not draw any additional cards. Reveal hole card, then resolve.
+          const needsDealerPlay = current.playerHands.some(
+            (h) => !h.isBusted && !h.isSurrendered && !h.isBlackjack
+          );
+          if (!needsDealerPlay) {
             const resolved = resolveRound(current, blackjackPayout);
             setGameState({ ...resolved, phase: 'payout' });
             return;
@@ -1261,6 +1349,8 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
             canDouble={canDoubleAction}
             canSplit={canSplitAction}
             canSurrender={canSurrenderAction}
+            handsToPlay={settings.handsToPlay ?? 1}
+            onCycleHandsToPlay={cycleHandsToPlay}
             // If a split hand is waiting for its first post-split card, lock input immediately
             // (effects run after paint, so this prevents a 1-frame window of invalid actions).
             disabled={gameState.phase !== 'player-action' || !!currentHand?.needsSplitCard}
@@ -1291,6 +1381,41 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
         <div className="settings-overlay" onClick={() => setShowSettings(false)}>
           <div className="settings-panel" onClick={e => e.stopPropagation()}>
             <h2>Settings</h2>
+
+            <div className="settings-section">
+              <div className="settings-section-title">Scenario (from Simulator)</div>
+              <div className="settings-readonly">
+                <div className="settings-ro-row">
+                  <span>Rules</span>
+                  <span>{hitSoft17 ? 'H17' : 'S17'} · {doubleAfterSplit ? 'DAS' : 'No DAS'} · {doubleAnyTwo ? 'DA2' : 'D 9-11'} · {allowSurrender ? 'Surrender' : 'No Surrender'}</span>
+                </div>
+                <div className="settings-ro-row">
+                  <span>Decks</span>
+                  <span>{numDecks}</span>
+                </div>
+                <div className="settings-ro-row">
+                  <span>Penetration</span>
+                  <span>{Math.round(penetration * 100)}%</span>
+                </div>
+                <div className="settings-ro-row">
+                  <span>BJ Payout</span>
+                  <span>{blackjackPayout.toFixed(2)}</span>
+                </div>
+                <div className="settings-ro-row">
+                  <span>Splits</span>
+                  <span>Max {maxSplits} · {resplitAces ? 'RSA' : 'No RSA'} · {hitSplitAces ? 'Hit split Aces' : '1 card on split Aces'}</span>
+                </div>
+                <div className="settings-ro-row">
+                  <span>TC Estimation</span>
+                  <span>{tcEstimationMethod === 'perfect' ? 'Perfect' : tcEstimationMethod === 'halfDeck' ? 'Half-deck' : 'Floor (full-deck)'}</span>
+                </div>
+                <div className="settings-ro-row">
+                  <span>Deviations</span>
+                  <span>{settings.showDeviations ? 'I18 + Fab4 (On)' : 'I18 + Fab4 (Off)'}</span>
+                </div>
+              </div>
+              <div className="settings-hint">Change rules in Simulator mode.</div>
+            </div>
 
             <label className="setting-row">
               <span>Show Count</span>
@@ -1370,18 +1495,6 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
                 checked={settings.onlyShowMistakes}
                 onChange={e => setSettings(s => ({ ...s, onlyShowMistakes: e.target.checked }))}
               />
-            </label>
-
-            <label className="setting-row">
-              <span>TC Estimation</span>
-              <select
-                value={settings.tcEstimationMethod ?? 'floor'}
-                onChange={e => setSettings(s => ({ ...s, tcEstimationMethod: e.target.value as 'perfect' | 'floor' | 'halfDeck' }))}
-              >
-                <option value="floor">Floor (realistic)</option>
-                <option value="halfDeck">Half-Deck</option>
-                <option value="perfect">Perfect</option>
-              </select>
             </label>
 
             <label className="setting-row">

@@ -2178,6 +2178,11 @@ function App() {
           penetration={rules?.penetration ?? 0.75}
           hitSoft17={rules?.hit_soft_17 ?? true}
           allowSurrender={rules?.surrender ?? false}
+          doubleAfterSplit={rules?.double_after_split ?? true}
+          doubleAnyTwo={rules?.double_any_two ?? true}
+          resplitAces={rules?.resplit_aces ?? false}
+          hitSplitAces={rules?.hit_split_aces ?? false}
+          maxSplits={rules?.max_splits ?? 3}
           blackjackPayout={rules?.blackjack_payout ?? 1.5}
           tcEstimationMethod={
             tcEstStep === 0 ? 'perfect' :
