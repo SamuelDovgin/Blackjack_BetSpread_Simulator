@@ -546,22 +546,31 @@ export const Table: React.FC<TableProps> = ({
                 }}
               >
                 {playerHands.map((hand, handIdx) => {
-                const handTotal = calculateFullHandTotal(hand.cards);
-                const isActive = handIdx === activeHandIndex && phase === 'player-action';
+                  const handTotal = calculateFullHandTotal(hand.cards);
+                  const isActive = handIdx === activeHandIndex && phase === 'player-action';
+                  const blackjackDealtToPlayer =
+                    !isInitialDeal ||
+                    // During initial deal, cards are all in state immediately; use the visible gate
+                    // so we don't show "Blackjack" until the 2nd card has actually been dealt/seen.
+                    visibleCardCount > (playerHands.length + 1 + handIdx);
 
-                // Ensure any dealing animation renders above other split hands.
-                // NOTE: opacity on a busted hand creates a stacking context, so we must
-                // raise the *hand container* z-index for the currently dealing hand.
-                const focusHandIdx =
-                  (phase === 'player-action' && (isSplitting || splitDealingPhase === 1))
-                    ? splitRightHandIdx
-                    : activeHandIndex;
-                const handZ = handIdx === focusHandIdx ? 200 : handIdx;
+                  // Ensure any dealing animation renders above other split hands.
+                  // NOTE: opacity on a busted hand creates a stacking context, so we must
+                  // raise the *hand container* z-index for the currently dealing hand.
+                 const focusHandIdx =
+                   (phase === 'player-action' && (isSplitting || splitDealingPhase === 1))
+                     ? splitRightHandIdx
+                     : activeHandIndex;
+                 const handZ = handIdx === focusHandIdx ? 200 : handIdx;
+                 // While a new card is moving, we temporarily hide badges on the *active/focus* hand
+                 // to avoid visual fights with the dealing animation. Completed/non-focus hands should
+                 // keep their badges (e.g., BUST) visible so the table doesn't "blink".
+                 const showBadgesForHand = showBadges || handIdx !== focusHandIdx;
 
-                // Calculate card offset for this hand (if split, cards dealt later)
-                const cardOffsetBase = handIdx > 0
-                  ? playerHands.slice(0, handIdx).reduce((sum, h) => sum + h.cards.length, 0)
-                  : 0;
+                 // Calculate card offset for this hand (if split, cards dealt later)
+                 const cardOffsetBase = handIdx > 0
+                   ? playerHands.slice(0, handIdx).reduce((sum, h) => sum + h.cards.length, 0)
+                   : 0;
 
                 const stackWidth = playerHandStackWidths[handIdx] ?? cardW;
 
@@ -662,15 +671,15 @@ export const Table: React.FC<TableProps> = ({
                           style={{ ['--stack-rise-px' as any]: `${stackRisePx}px` } as React.CSSProperties}
                         >
                           <div className={`hand-info-overlay-inner ${isRemovingCards ? 'removing' : ''}`}>
-                            {showHandTotals && (
-                              <div className={`hand-total ${hand.isBusted && showBadges ? 'busted' : ''}`}>
+                             {showHandTotals && (
+                              <div className={`hand-total ${hand.isBusted && showBadgesForHand ? 'busted' : ''}`}>
                                 {handTotal.total}
                                 {handTotal.isSoft && handTotal.total <= 21 && ' (soft)'}
-                                {hand.isBusted && showBadges && ' BUST'}
+                                {hand.isBusted && showBadgesForHand && ' BUST'}
                               </div>
                             )}
 
-                            {!showHandTotals && hand.isBusted && showBadges && (
+                            {!showHandTotals && hand.isBusted && showBadgesForHand && (
                               <div className="hand-total busted">BUST</div>
                             )}
 
@@ -686,9 +695,11 @@ export const Table: React.FC<TableProps> = ({
                             )}
 
                             <div className="hand-meta-row">
-                              {hand.isBlackjack && showBadges && <span className="hand-tag tag-blackjack">Blackjack</span>}
-                              {hand.isDoubled && showBadges && <span className="hand-tag tag-doubled">Double</span>}
-                              {hand.isSurrendered && showBadges && <span className="hand-tag tag-surrendered">SUR</span>}
+                              {hand.isBlackjack && showBadgesForHand && blackjackDealtToPlayer && (
+                                <span className="hand-tag tag-blackjack">Blackjack</span>
+                              )}
+                              {hand.isDoubled && showBadgesForHand && <span className="hand-tag tag-doubled">Double</span>}
+                              {hand.isSurrendered && showBadgesForHand && <span className="hand-tag tag-surrendered">SUR</span>}
                             </div>
                           </div>
                         </div>

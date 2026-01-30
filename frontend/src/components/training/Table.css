@@ -138,7 +138,11 @@
 }
 
 .player-hand-container.busted {
-  opacity: 0.7;
+  /* Dim the busted hand's CARDS without fading the outcome/label icons. */
+}
+
+.player-hand-container.busted .card {
+  opacity: 0.72;
 }
 
 /* Hand info badges (absolute overlay so they never affect layout / card positioning). */
