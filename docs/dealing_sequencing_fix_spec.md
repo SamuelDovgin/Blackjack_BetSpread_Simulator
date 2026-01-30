@@ -275,3 +275,27 @@ Recommended implementation:
   - `centerBuffer` should be noticeable (e.g., 60-120ms depending on speed)
 
 This makes the sequence feel like a real dealer: one motion at a time, short pause, next card.
+
+---
+
+## 10) Right-Edge Slack (Reduce Micro-Slides While Hitting)
+
+When the active player hand is near the right edge (especially on mobile), a common visual glitch is:
+- the hand is flush against the right margin, and
+- the next hit causes the row to slide *after* the card appears (or causes clipping/snapping during the deal animation).
+
+To make this feel more natural and reduce horizontal movement:
+
+- Reserve room for **1 hit card** on the active/focus hand before sliding the row.
+  - Treat the active hand as if it had **3 cards total** (2-card start + 1 hit) when computing its "required right edge".
+  - Keep this reserved width constant until the hand exceeds 3 cards.
+
+Expected behavior:
+- Hit #1: **no row shift** (the slack was reserved already).
+- Hit #2+: row may shift as needed.
+
+Implementation note:
+- In `Table.tsx` row-translate logic, compute a `targetWidth` for the focus hand using:
+  - `targetCards = max(actualCards, 3)` while the hand is not complete
+  - then use `focusCardRight = focusCardLeft + targetWidth`
+- Optionally compute a `projectedRowWidth = actualRowWidth + slackAdded` and use it for centering/clamping, so the row doesn't "re-center" during the first two hits.

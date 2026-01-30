@@ -40,6 +40,7 @@
 - Payout badges: blackjack hands show normal WIN/LOSE/PUSH outcome badges, plus a "Blackjack" tag (instead of replacing the result with a special "BLACKJACK" outcome badge).
 - Layout: Training Mode renders full-bleed (no simulator padding/background) to avoid beige margins and prevent page scrollbars.
 - Multi-hand layout: when the player-hand row fits the viewport, the entire group is centered (e.g., 3 hands -> middle hand centered). When it does not fit, the row shifts minimally to keep the active (or split-deal focus) hand visible.
+- Multi-hand "right edge slack": when translating the player-hand row, the active/focus hand reserves room for 1 additional hit card (3 cards total). This prevents a micro-slide on hit #1; the row may shift again once the hand exceeds 3 cards (hit #2+).
 - Hand labels/badges: per-hand totals/results/tags are rendered as an absolute overlay on the card stack so they never affect layout (prevents vertical "jumping" between hands with different stack heights).
 - Dealing animation: only the single newest card is marked as "dealing" at any time (initial deal uses the `visibleCardCount` gate; hits/draws only animate the newest card).
 - Dealing speed consistency: CSS animation durations are driven by `dealingSpeed` via CSS vars (`--deal-anim-ms`, `--player-slide-ms`) so timing-based delays and visual motion match. Initial deal uses `dealCardInterval` to include a human-like pause between cards, and seat-slides wait an additional buffer before the next card appears.
