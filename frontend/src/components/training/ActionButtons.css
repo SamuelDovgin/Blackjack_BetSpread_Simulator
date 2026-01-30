@@ -5,8 +5,9 @@
   display: flex;
   gap: 8px;
   justify-content: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   padding: 12px;
+  overflow-x: auto;
 }
 
 .action-btn {

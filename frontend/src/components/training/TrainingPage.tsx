@@ -56,18 +56,18 @@ import {
 import './TrainingPage.css';
 
 // Animation timing constants (ms)
-const CARD_DEAL_ANIM_MS = 350;
-const DEAL_CARD_INTERVAL = 380; // Keep > CARD_DEAL_ANIM_MS so the previous card stops before the next appears
-const DEALER_DRAW_INTERVAL = 520; // Dealer hits should feel slightly slower than player cards
+const CARD_DEAL_ANIM_MS = 320;
+const DEAL_CARD_INTERVAL = 340; // Keep > CARD_DEAL_ANIM_MS so the previous card stops before the next appears
+const DEALER_DRAW_INTERVAL = 480; // Dealer hits should feel slightly slower than player cards
 const HOLE_CARD_REVEAL_TIME = 500; // Time to flip hole card
 const DEALER_STACK_TRANSITION_MS = 400; // Matches Card.css stack transition
 const CARD_REMOVE_ANIM_MS = 400; // Matches Card.css removal animation
 const SPLIT_SEPARATE_MS = 400; // Matches Card.css splitSlide / splitSettle
-const PLAYER_CENTER_SLIDE_MS = 350; // Matches Table.css .player-hands transition
+const PLAYER_CENTER_SLIDE_MS = 320; // Matches Table.css .player-hands transition
 // Small buffer so we never start dealing a card while the player-hand row is still sliding.
 // (The transform transition starts on the next frame; a tiny buffer avoids 1-frame overlap.)
-const PLAYER_CENTER_BUFFER_MS = 40;
-const CARD_SETTLE_BUFFER_MS = 40;
+const PLAYER_CENTER_BUFFER_MS = 30;
+const CARD_SETTLE_BUFFER_MS = 30;
 
 function getInitialDealTotalTimeMs(totalCards: number): number {
   // The last card starts at (totalCards - 1) * interval, then runs for CARD_DEAL_ANIM_MS.
