@@ -354,15 +354,8 @@ export const Table: React.FC<TableProps> = ({
       return;
     }
 
-    // When the entire row fits, keep it centered as a group.
-    if (playerRowWidth <= playerViewportWidth) {
-      const centered = Math.round((playerViewportWidth - playerRowWidth) / 2);
-      setPlayerRowTranslateX(centered);
-      return;
-    }
-
-    // Row doesn't fit: shift minimally to keep the currently relevant hand visible.
-    // Use the split hand being dealt to during the split sequence so the dealing card is in view.
+    // Keep the currently relevant hand visible with minimal translation.
+    // During split dealing we "focus" the right-hand split so the dealt card lands on-screen.
     const splitLeftHandIdx = splitOriginHandIndex ?? activeHandIndex;
     const splitRightHandIdx = Math.min(splitLeftHandIdx + 1, playerHands.length - 1);
     const focusIdx =
@@ -382,23 +375,29 @@ export const Table: React.FC<TableProps> = ({
       left += playerHandGapPx;
     }
 
-    const focusWidth = playerHandStackWidths[focusIdx] ?? cardW;
     const focusCardLeft = left + handInnerPad;
-    // Pre-allocate space for the next likely hit so the active hand isn't pressed
-    // against the right edge. But do NOT apply this "extra space" on the exact render
-    // where a new card was just appended, otherwise the row may shift while the dealt
-    // card is animating (feels like a snap).
-    const prevLens = prevPlayerCountsRef.current;
-    const justGrew =
-      (playerHands[focusIdx]?.cards.length ?? 0) > (prevLens[focusIdx] ?? 0);
-    const prefetchExtra =
-      phase === 'player-action' && !justGrew && !playerHands[focusIdx]?.isComplete
-        ? playerCardOffset.x
-        : 0;
-    const focusCardRight = focusCardLeft + focusWidth + prefetchExtra;
+
+    // Reserve enough room for at least 1 hit (3 cards total) without shifting the row.
+    // We deliberately keep the "required right edge" constant until the hand exceeds 3 cards,
+    // which eliminates the micro-slide on the 1st hit.
+    const focusCards = playerHands[focusIdx]?.cards.length ?? 0;
+    const focusIsComplete = !!playerHands[focusIdx]?.isComplete;
+    const minCardsNoShift = 3; // 2-card start + 1 hit
+    const targetCards = focusIsComplete ? focusCards : Math.max(focusCards, minCardsNoShift);
+    const focusWidth = playerHandStackWidths[focusIdx] ?? cardW;
+    const targetWidth = cardW + Math.max(0, targetCards - 1) * playerCardOffset.x;
+    const focusCardRight = focusCardLeft + targetWidth;
+    const slackAdded = Math.max(0, targetWidth - focusWidth);
+    const projectedRowWidth = playerRowWidth + slackAdded;
 
     setPlayerRowTranslateX((current) => {
       let next = current;
+
+      // If the row (including the reserved "2-hit slack") fits, prefer a centered position
+      // that stays stable across the first 2 hits (projectedRowWidth stays constant until 5th card).
+      if (projectedRowWidth <= playerViewportWidth) {
+        next = Math.round((playerViewportWidth - projectedRowWidth) / 2);
+      }
       const leftVis = next + focusCardLeft;
       const rightVis = next + focusCardRight;
 
@@ -406,8 +405,17 @@ export const Table: React.FC<TableProps> = ({
       if (rightVis > playerViewportWidth - edgeMargin) next -= rightVis - (playerViewportWidth - edgeMargin);
 
       // Clamp so we don't slide beyond the row edges.
-      const minT = Math.round((playerViewportWidth - playerRowWidth) - edgeMargin);
-      const maxT = Math.round(edgeMargin);
+      let minT = 0;
+      let maxT = 0;
+      if (projectedRowWidth <= playerViewportWidth) {
+        // Keep the (projected) row fully on-screen when it fits.
+        minT = 0;
+        maxT = Math.round(playerViewportWidth - projectedRowWidth);
+      } else {
+        // Allow small breathing margins when the row doesn't fit.
+        minT = Math.round((playerViewportWidth - projectedRowWidth) - edgeMargin);
+        maxT = Math.round(edgeMargin);
+      }
       if (next < minT) next = minT;
       if (next > maxT) next = maxT;
 
@@ -416,7 +424,7 @@ export const Table: React.FC<TableProps> = ({
     });
   }, [
     playerViewportWidth,
-    playerHands.length,
+    playerHands,
     playerRowWidth,
     playerHandStackWidths,
     playerHandGapPx,
