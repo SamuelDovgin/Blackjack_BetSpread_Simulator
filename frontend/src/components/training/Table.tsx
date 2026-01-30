@@ -365,7 +365,8 @@ export const Table: React.FC<TableProps> = ({
     const handOuterPad = 16;
     const handInnerPad = 8;
     // Keep some breathing room so the active hand isn't flush against the viewport edge.
-    const edgeMargin = isMobile ? 20 : 28;
+    const edgeMarginLeft = isMobile ? 20 : 28;
+    const edgeMarginRight = isMobile ? 8 : 10;
 
     let left = 0;
     for (let i = 0; i < focusIdx; i++) {
@@ -417,12 +418,12 @@ export const Table: React.FC<TableProps> = ({
       const leftVis = next + focusCardLeft;
       const rightVis = next + focusCardRight;
 
-      if (leftVis < edgeMargin) next += edgeMargin - leftVis;
-      if (rightVis > playerViewportWidth - edgeMargin) next -= rightVis - (playerViewportWidth - edgeMargin);
+      if (leftVis < edgeMarginLeft) next += edgeMarginLeft - leftVis;
+      if (rightVis > playerViewportWidth - edgeMarginRight) next -= rightVis - (playerViewportWidth - edgeMarginRight);
 
       // Clamp so we don't slide beyond the row edges.
-      const minT = Math.round((playerViewportWidth - effectiveRowWidth) - edgeMargin);
-      const maxT = Math.round(edgeMargin);
+      const minT = Math.round((playerViewportWidth - effectiveRowWidth) - edgeMarginRight);
+      const maxT = Math.round(edgeMarginLeft);
       if (next < minT) next = minT;
       if (next > maxT) next = maxT;
 
