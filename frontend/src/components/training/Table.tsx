@@ -73,34 +73,46 @@ export const CARD_SCALE_VALUES: Record<string, number> = {
 
 /**
  * Get the global deal sequence index for a card.
- * Deal order: Player card 1 (idx 0), Dealer card 1 (idx 1), Player card 2 (idx 2), Dealer card 2 (idx 3)
- * Then hits continue sequentially from there.
+ * Supports 1-3 starting player hands.
+ *
+ * Deal order (N hands):
+ * - Player first card to each hand left-to-right (N cards)
+ * - Dealer hole card (face down)
+ * - Player second card to each hand left-to-right (N cards)
+ * - Dealer upcard (face up)
+ * Then hits continue sequentially from there (player first, then dealer).
  */
 function getDealSequenceIndex(
   isDealer: boolean,
   cardIndex: number,
   totalPlayerCards: number,
-  totalDealerCards: number
+  totalDealerCards: number,
+  playerHandsCount: number
 ): number {
-  // During initial deal (4 cards total: 2 player, 2 dealer)
-  // Sequence: P0=0, D0=1, P1=2, D1=3
-  if (cardIndex === 0) {
-    return isDealer ? 1 : 0;
-  }
-  if (cardIndex === 1) {
-    return isDealer ? 3 : 2;
+  const nHands = Math.max(1, Math.floor(playerHandsCount));
+  const initialPlayerCards = 2 * nHands;
+  const initialTotalCards = initialPlayerCards + 2; // + dealer hole + dealer upcard
+
+  // Initial deal mapping (player cardIndex is global across all player hands).
+  if (!isDealer) {
+    if (cardIndex < initialPlayerCards) {
+      const seat = Math.floor(cardIndex / 2);
+      const within = cardIndex % 2; // 0=first card, 1=second card
+      if (within === 0) return seat;
+      // Dealer hole card happens after all first cards.
+      return nHands + 1 + seat;
+    }
+
+    // Player hits: after initial deal, continue sequentially from there.
+    return initialTotalCards + (cardIndex - initialPlayerCards);
   }
 
-  // After initial deal, cards are dealt sequentially
-  // Player hits happen first, then dealer hits
-  if (!isDealer) {
-    // Player hits start at index 4
-    return 4 + (cardIndex - 2);
-  } else {
-    // Dealer hits come after all player cards
-    // Base: 4 (initial) + (playerCards - 2) for player hits + cardIndex - 2 for dealer hits
-    return 4 + Math.max(0, totalPlayerCards - 2) + (cardIndex - 2);
-  }
+  // Dealer initial cards.
+  if (cardIndex === 0) return nHands; // hole card after first round of player cards
+  if (cardIndex === 1) return (2 * nHands) + 1; // upcard after second round of player cards
+
+  // Dealer hits: after initial deal + all player cards (including hits/splits).
+  return initialTotalCards + Math.max(0, totalPlayerCards - initialPlayerCards) + (cardIndex - 2);
 }
 
 type StackOutline = {
@@ -353,7 +365,7 @@ export const Table: React.FC<TableProps> = ({
               {dealerHand.length > 0 ? (
                 <div className="card-stack dealer-stack" style={{ width: `${dealerStackWidth}px`, transform: `translateX(${dealerCardShiftPx}px)` }}>
                   {dealerHand.map((card, i) => {
-                    const dealIndex = getDealSequenceIndex(true, i, totalPlayerCards, totalDealerCards);
+                    const dealIndex = getDealSequenceIndex(true, i, totalPlayerCards, totalDealerCards, playerHands.length);
                     const isThisCardDealing = isInitialDeal || (phase === 'dealer-turn' && i >= 2);
                     const isFlipping = isRevealingHoleCard && i === 0;
                     const isHoleCard = i === 0;
@@ -500,7 +512,7 @@ export const Table: React.FC<TableProps> = ({
                           // For initial deal: cardIdx 0 = deal seq 0, cardIdx 1 = deal seq 2
                           // For hits: continue from there
                           const globalCardIdx = cardOffsetBase + cardIdx;
-                          const dealIndex = getDealSequenceIndex(false, globalCardIdx, totalPlayerCards, totalDealerCards);
+                          const dealIndex = getDealSequenceIndex(false, globalCardIdx, totalPlayerCards, totalDealerCards, playerHands.length);
                           const isThisCardDealing = isInitialDeal && cardIdx < 2;
                           const isHitDealing = phase === 'player-action' && cardIdx >= 2;
                           const isCardVisible = !isInitialDeal || dealIndex < visibleCardCount;

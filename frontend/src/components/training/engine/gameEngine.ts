@@ -192,65 +192,78 @@ export function createInitialGameState(numDecks: number = 6, startingBankroll: n
 // Deal initial cards for a new round
 export function dealInitialCards(
   state: GameState,
-  bet: number
+  bet: number,
+  handsToPlay: number = 1
 ): GameState {
+  const nHands = Math.max(1, Math.min(3, Math.floor(handsToPlay)));
   let shoe = [...state.shoe];
-  const dealtCards: Card[] = [];
 
-  // Deal player first card
-  const p1 = drawCard(shoe);
-  if (!p1) return state;
-  shoe = p1.remainingShoe;
-  dealtCards.push(p1.card);
+  const firstCards: Card[] = [];
+  const secondCards: Card[] = [];
 
-  // Deal dealer first card (face down - hole card)
+  // Deal first card to each player hand (left-to-right)
+  for (let i = 0; i < nHands; i++) {
+    const draw = drawCard(shoe);
+    if (!draw) return state;
+    shoe = draw.remainingShoe;
+    firstCards.push(draw.card);
+  }
+
+  // Dealer hole card (face down)
   const d1 = drawCard(shoe);
   if (!d1) return state;
   shoe = d1.remainingShoe;
   const dealerHoleCard: Card = { ...d1.card, faceUp: false };
 
-  // Deal player second card
-  const p2 = drawCard(shoe);
-  if (!p2) return state;
-  shoe = p2.remainingShoe;
-  dealtCards.push(p2.card);
+  // Deal second card to each player hand (left-to-right)
+  for (let i = 0; i < nHands; i++) {
+    const draw = drawCard(shoe);
+    if (!draw) return state;
+    shoe = draw.remainingShoe;
+    secondCards.push(draw.card);
+  }
 
-  // Deal dealer second card (face up - upcard)
+  // Dealer upcard (face up)
   const d2 = drawCard(shoe);
   if (!d2) return state;
   shoe = d2.remainingShoe;
-  dealtCards.push(d2.card);
 
-  const playerCards = [p1.card, p2.card];
   const dealerCards = [dealerHoleCard, d2.card];
 
-  const playerHand: HandState = {
-    cards: playerCards,
-    bet,
-    isDoubled: false,
-    isSurrendered: false,
-    isBusted: false,
-    isBlackjack: isBlackjack(playerCards),
-    isComplete: false,
-  };
+  const playerHands: HandState[] = [];
+  for (let i = 0; i < nHands; i++) {
+    const cards = [firstCards[i], secondCards[i]];
+    playerHands.push({
+      cards,
+      bet,
+      isDoubled: false,
+      isSurrendered: false,
+      isBusted: false,
+      isBlackjack: isBlackjack(cards),
+      isComplete: false,
+    });
+  }
 
-  // Update running count (only for face-up cards: p1, p2, d2)
-  const newRunningCount = state.runningCount +
-    getCountValue(p1.card) +
-    getCountValue(p2.card) +
-    getCountValue(d2.card);
+  // Update running count (only for face-up cards: all player cards + dealer upcard)
+  let newRunningCount = state.runningCount;
+  for (const c of firstCards) newRunningCount += getCountValue(c);
+  for (const c of secondCards) newRunningCount += getCountValue(c);
+  newRunningCount += getCountValue(d2.card);
 
   return {
     ...state,
     shoe,
-    cardsDealt: state.cardsDealt + 4,
+    cardsDealt: state.cardsDealt + (2 * nHands) + 2,
     runningCount: newRunningCount,
     dealerHand: dealerCards,
     dealerTotal: null,
-    playerHands: [playerHand],
+    playerHands,
+    // During the initial deal, keep the camera on the first seat (leftmost) so each
+    // dealt card lands on a centered hand. TrainingPage will pick the correct active
+    // hand (rightmost incomplete) once we enter player-action.
     activeHandIndex: 0,
     currentBet: bet,
-    bankroll: state.bankroll - bet,
+    bankroll: state.bankroll - (bet * nHands),
     roundNumber: state.roundNumber + 1,
     phase: 'dealing',  // Start with dealing animation, TrainingPage will transition to player-action
     lastAction: null,

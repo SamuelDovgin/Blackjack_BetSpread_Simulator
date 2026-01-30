@@ -356,6 +356,10 @@ export function checkDeviation(
     if (dev.isPair) {
       if (!isPair || pairValue !== dev.pairValue) continue;
     } else {
+      // IMPORTANT: Do not apply hard/soft total deviations to a splittable pair.
+      // Pair decisions are evaluated separately (and have their own pair deviations, e.g. TT vs 5/6).
+      // Without this guard, a pair like 6,6 can incorrectly match a "12 vs 6" deviation.
+      if (isPair) continue;
       if (dev.playerTotal !== 0 && dev.playerTotal !== playerTotal) continue;
       if (dev.isSoft !== isSoft) continue;
     }

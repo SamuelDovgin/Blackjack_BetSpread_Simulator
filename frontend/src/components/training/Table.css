@@ -3,7 +3,8 @@
 
 .table {
   width: 100%;
-  max-width: 700px;
+  /* Wider on desktop so multi-hand rounds can be seen at once. */
+  max-width: 1100px;
   height: 100%;
   margin: 0 auto;
   padding: 16px;

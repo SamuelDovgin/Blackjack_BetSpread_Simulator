@@ -80,6 +80,8 @@ export interface TrainingSettings {
   // Gameplay
   autoBet: boolean;
   defaultBet: number;
+  /** Number of starting hands to deal to the player each round (applies to the next round). */
+  handsToPlay: 1 | 2 | 3;
   correctionMode: 'inline' | 'modal' | 'off';
   autoAdvanceDelay: number; // ms
   onlyShowMistakes: boolean; // Only show feedback when player makes a mistake
@@ -205,6 +207,7 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
   showHints: false,        // Opt-in feature
   autoBet: true,
   defaultBet: 1,
+  handsToPlay: 1,
   correctionMode: 'inline',
   autoAdvanceDelay: 2000,
   onlyShowMistakes: true,  // Only show feedback on mistakes by default
