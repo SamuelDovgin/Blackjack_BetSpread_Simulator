@@ -297,7 +297,7 @@ export const Table: React.FC<TableProps> = ({
   // Dealer card shift: nudge the card stack slightly right so the visual center
   // after stacking (cards collapse left) feels centered on the table.
   // Only applies to the card-stack element, not labels/badges.
-  const dealerCardShiftPx = isMobile ? Math.round(cardW * 0.2) : Math.round(cardW * 0.25);
+  const dealerCardShiftPx = isMobile ? Math.round(cardW * 0.2) : Math.round(cardW * 0.4);
 
   // Dynamic spacing: each hand's allocated width grows with its card count.
   // This prevents long hit stacks from overlapping neighboring split hands.
