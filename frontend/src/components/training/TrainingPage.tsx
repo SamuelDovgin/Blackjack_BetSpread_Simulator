@@ -59,26 +59,26 @@ import './TrainingPage.css';
 const BASE_TIMING = {
   slow: {
     cardDealAnim: 380,
-    dealCardInterval: 520, // includes a visible pause after the card lands
+    dealCardInterval: 460, // faster initial deal, still leaves a small pause after landing
     dealerDrawInterval: 640,
     playerCenterSlide: 360,
-    centerBuffer: 120, // pause after sliding the row before dealing the next card
+    centerBuffer: 100, // pause after sliding the row before dealing the next card
     settleBuffer: 40,
   },
   medium: {
     cardDealAnim: 320,
-    dealCardInterval: 420,
+    dealCardInterval: 360,
     dealerDrawInterval: 560,
     playerCenterSlide: 320,
-    centerBuffer: 90,
+    centerBuffer: 100,
     settleBuffer: 30,
   },
   fast: {
     cardDealAnim: 240,
-    dealCardInterval: 320,
+    dealCardInterval: 280,
     dealerDrawInterval: 440,
     playerCenterSlide: 240,
-    centerBuffer: 60,
+    centerBuffer: 70,
     settleBuffer: 20,
   },
 };

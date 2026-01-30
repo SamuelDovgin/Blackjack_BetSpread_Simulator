@@ -373,7 +373,8 @@ export const Table: React.FC<TableProps> = ({
     // .player-hand-container has 8px horizontal padding on each side.
     const handOuterPad = 16;
     const handInnerPad = 8;
-    const edgeMargin = isMobile ? 14 : 22;
+    // Keep some breathing room so the active hand isn't flush against the viewport edge.
+    const edgeMargin = isMobile ? 20 : 28;
 
     let left = 0;
     for (let i = 0; i < focusIdx; i++) {
