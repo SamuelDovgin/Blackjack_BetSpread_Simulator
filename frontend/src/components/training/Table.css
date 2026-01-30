@@ -156,6 +156,28 @@
   white-space: nowrap;
 }
 
+.hand-info-overlay-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+/* When clearing the table, move badges with the cards so nothing "hangs in the air". */
+.hand-info-overlay-inner.removing {
+  animation: removeToDiscard 0.4s linear forwards;
+}
+
+.stack-outline.removing {
+  animation: removeToDiscard 0.4s linear forwards;
+}
+
+.hand-total.removing,
+.hand-result.removing,
+.dealer-meta-row.removing {
+  animation: removeToDiscard 0.4s linear forwards;
+}
+
 .hand-meta-row {
   display: flex;
   align-items: center;

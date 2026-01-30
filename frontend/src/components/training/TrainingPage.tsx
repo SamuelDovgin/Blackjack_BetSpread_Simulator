@@ -92,6 +92,7 @@ const HOLE_CARD_REVEAL_TIME = 500; // Time to flip hole card
 const DEALER_STACK_TRANSITION_MS = 400; // Matches Card.css stack transition
 const CARD_REMOVE_ANIM_MS = 400; // Matches Card.css removal animation
 const SPLIT_SEPARATE_MS = 400; // Matches Card.css splitSlide / splitSettle
+const INITIAL_DEAL_SPEED_FACTOR = 0.6; // ~40% faster initial deal (vs hits/draws)
 
 function getInitialDealTotalTimeMs(totalCards: number, timing: ReturnType<typeof getTimingConstants>): number {
   // The last card starts at (totalCards - 1) * interval, then runs for cardDealAnim.
@@ -366,7 +367,11 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Get timing constants based on dealing speed setting
     const timing = getTimingConstants(settings.dealingSpeed ?? 'medium');
-    const DEAL_CARD_INTERVAL_MS = timing.dealCardInterval; // includes a pause after the card lands
+    const INITIAL_DEAL_ANIM_MS = Math.round(timing.cardDealAnim * INITIAL_DEAL_SPEED_FACTOR);
+    const DEAL_CARD_INTERVAL_MS = Math.max(
+      INITIAL_DEAL_ANIM_MS + 15,
+      Math.round(timing.dealCardInterval * INITIAL_DEAL_SPEED_FACTOR)
+    ); // faster initial deal, still no overlap
     const PLAYER_CENTER_SLIDE_MS = timing.playerCenterSlide;
     const PLAYER_CENTER_BUFFER_MS = timing.centerBuffer;
 
@@ -379,6 +384,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     // Interval > animation duration gives a "dealer pause" between cards.
     let t = DEAL_CARD_INTERVAL_MS;
     let currentSeat = 0;
+    let lastShowMs = 0;
 
     const scheduleSetSeat = (seat: number, atMs: number) => {
       const id = window.setTimeout(() => {
@@ -407,6 +413,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       }
 
       scheduleShowCount(count, t);
+      lastShowMs = t;
       t += DEAL_CARD_INTERVAL_MS;
     }
 
@@ -463,7 +470,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
         return { ...prev, playerHands: updatedHands, activeHandIndex: nextActive, phase: 'player-action' as GamePhase };
       });
-    }, Math.max(getInitialDealTotalTimeMs(initialCardsToShow, timing), t));
+    }, lastShowMs + INITIAL_DEAL_ANIM_MS + 20);
     timersRef.current.push(doneId);
   }, [numDecks, penetration, settings.defaultBet, settings.handsToPlay, settings.dealingSpeed, blackjackPayout]);
 
@@ -1281,13 +1288,17 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     }
   }, [gameState.phase, settings.autoAdvanceDelay]);
 
+  const uiTiming = getTimingConstants(settings.dealingSpeed ?? 'medium');
+  const uiInitialDealAnimMs = Math.round(uiTiming.cardDealAnim * INITIAL_DEAL_SPEED_FACTOR);
+  const uiDealAnimMs = gameState.phase === 'dealing' ? uiInitialDealAnimMs : uiTiming.cardDealAnim;
+
   return (
     <div
       className="training-page"
       style={{
         '--card-scale': CARD_SCALE_VALUES[settings.cardScale ?? 'medium'],
-        '--deal-anim-ms': getTimingConstants(settings.dealingSpeed ?? 'medium').cardDealAnim,
-        '--player-slide-ms': getTimingConstants(settings.dealingSpeed ?? 'medium').playerCenterSlide,
+        '--deal-anim-ms': uiDealAnimMs,
+        '--player-slide-ms': uiTiming.playerCenterSlide,
       } as React.CSSProperties}
     >
       {/* Header */}
