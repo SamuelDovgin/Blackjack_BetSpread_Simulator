@@ -65,7 +65,7 @@ components/training/ → Self-contained training mode (no backend dependency)
 - **Multiprocessing fallback:** Uses ProcessPoolExecutor when available, falls back to single-thread in sandboxed environments.
 - **Training mode is standalone:** Runs entirely in-browser with no backend calls, enabling GitHub Pages deployment with `VITE_DISABLE_BACKEND=1`.
 - **Client-side defaults (`frontend/src/api/client.ts`):** `CLIENT_DEFAULTS` mirrors `backend/app/data/presets.py` — Midwest 6D H17 DAS rules (surrender OFF, resplit aces ON, 0.75 pen), Hi-Lo count, I18 + Fab 4 deviations, 1-12 bet ramp. When the backend is unavailable, `App.tsx` uses these to populate the rules widget, deviations list, and bet ramp so the full UI works without a backend. Training mode's own `DEFAULT_RULES` in `basicStrategy.ts` and `DEFAULT_TRAINING_SETTINGS` in `types.ts` also default surrender OFF and TC estimation to floor.
-- **Card sizing:** Desktop cards are 1.5x standard (135x189 large, 105x147 medium). Mobile sizes are unchanged. Card layout constants in `Table.tsx` (offsets, stack spacing) must stay in sync with `Card.css` sizes.
+- **Card sizing:** Card dimensions use a `--card-scale` CSS variable (set on `.training-page`) with base sizes at scale 1.0 (90x126 large). Three presets: small (1.0x), medium (1.2x, default), large (1.5x). The setting is in `TrainingSettings.cardScale` and persisted to localStorage. `Table.tsx` exports `CARD_SCALE_VALUES` and computes JS layout offsets from the same scale factor. Both CSS and JS must use the same base values.
 
 ### Environment Variables
 - `VITE_API_BASE` — Backend API URL (default: `http://127.0.0.1:8001/api`)
