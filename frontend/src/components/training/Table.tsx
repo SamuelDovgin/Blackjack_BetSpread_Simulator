@@ -404,6 +404,13 @@ export const Table: React.FC<TableProps> = ({
     const reservedWidth = shouldReserveSlack ? targetWidth : focusWidth;
     const focusCardRight = focusCardLeft + reservedWidth;
 
+    // Use an effective row width that includes the reserved slack so the clamp
+    // doesn't undo the reservation. This keeps minT identical before and after
+    // the first hit, eliminating the visible shift.
+    const effectiveRowWidth = shouldReserveSlack
+      ? playerRowWidth - focusWidth + reservedWidth
+      : playerRowWidth;
+
     setPlayerRowTranslateX((current) => {
       let next = current;
 
@@ -414,7 +421,7 @@ export const Table: React.FC<TableProps> = ({
       if (rightVis > playerViewportWidth - edgeMargin) next -= rightVis - (playerViewportWidth - edgeMargin);
 
       // Clamp so we don't slide beyond the row edges.
-      const minT = Math.round((playerViewportWidth - playerRowWidth) - edgeMargin);
+      const minT = Math.round((playerViewportWidth - effectiveRowWidth) - edgeMargin);
       const maxT = Math.round(edgeMargin);
       if (next < minT) next = minT;
       if (next > maxT) next = maxT;
