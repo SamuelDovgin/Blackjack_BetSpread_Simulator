@@ -102,7 +102,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px;
+  padding: 16px 12px;
 }
 
 /* Pip grid for number cards */
