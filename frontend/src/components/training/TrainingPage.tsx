@@ -59,26 +59,26 @@ import './TrainingPage.css';
 const BASE_TIMING = {
   slow: {
     cardDealAnim: 380,
-    dealCardInterval: 400,
-    dealerDrawInterval: 540,
+    dealCardInterval: 520, // includes a visible pause after the card lands
+    dealerDrawInterval: 640,
     playerCenterSlide: 360,
-    centerBuffer: 40,
+    centerBuffer: 120, // pause after sliding the row before dealing the next card
     settleBuffer: 40,
   },
   medium: {
     cardDealAnim: 320,
-    dealCardInterval: 340,
-    dealerDrawInterval: 480,
+    dealCardInterval: 420,
+    dealerDrawInterval: 560,
     playerCenterSlide: 320,
-    centerBuffer: 30,
+    centerBuffer: 90,
     settleBuffer: 30,
   },
   fast: {
     cardDealAnim: 240,
-    dealCardInterval: 260,
-    dealerDrawInterval: 380,
+    dealCardInterval: 320,
+    dealerDrawInterval: 440,
     playerCenterSlide: 240,
-    centerBuffer: 20,
+    centerBuffer: 60,
     settleBuffer: 20,
   },
 };
@@ -366,8 +366,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Get timing constants based on dealing speed setting
     const timing = getTimingConstants(settings.dealingSpeed ?? 'medium');
-    const CARD_DEAL_ANIM_MS = timing.cardDealAnim;
-    const CARD_SETTLE_BUFFER_MS = timing.settleBuffer;
+    const DEAL_CARD_INTERVAL_MS = timing.dealCardInterval; // includes a pause after the card lands
     const PLAYER_CENTER_SLIDE_MS = timing.playerCenterSlide;
     const PLAYER_CENTER_BUFFER_MS = timing.centerBuffer;
 
@@ -376,7 +375,9 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     // (We never deal a card while the row is still sliding.)
     setVisibleCardCount(1);
 
-    let t = CARD_DEAL_ANIM_MS + CARD_SETTLE_BUFFER_MS; // after the first card finishes
+    // The first card is visible immediately; schedule subsequent cards at a fixed interval.
+    // Interval > animation duration gives a "dealer pause" between cards.
+    let t = DEAL_CARD_INTERVAL_MS;
     let currentSeat = 0;
 
     const scheduleSetSeat = (seat: number, atMs: number) => {
@@ -406,7 +407,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       }
 
       scheduleShowCount(count, t);
-      t += CARD_DEAL_ANIM_MS + CARD_SETTLE_BUFFER_MS;
+      t += DEAL_CARD_INTERVAL_MS;
     }
 
     // Deal cards - this sets phase to 'dealing'
@@ -1281,7 +1282,14 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   }, [gameState.phase, settings.autoAdvanceDelay]);
 
   return (
-    <div className="training-page" style={{ '--card-scale': CARD_SCALE_VALUES[settings.cardScale ?? 'medium'] } as React.CSSProperties}>
+    <div
+      className="training-page"
+      style={{
+        '--card-scale': CARD_SCALE_VALUES[settings.cardScale ?? 'medium'],
+        '--deal-anim-ms': getTimingConstants(settings.dealingSpeed ?? 'medium').cardDealAnim,
+        '--player-slide-ms': getTimingConstants(settings.dealingSpeed ?? 'medium').playerCenterSlide,
+      } as React.CSSProperties}
+    >
       {/* Header */}
       <header className="training-header">
         <button className="back-button" onClick={onBack}>

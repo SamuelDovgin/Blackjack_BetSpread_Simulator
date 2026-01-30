@@ -78,7 +78,7 @@
   align-items: flex-start;
   gap: 24px;
   will-change: transform;
-  transition: transform 0.35s ease;
+  transition: transform calc(var(--player-slide-ms, 350) * 1ms) ease;
 }
 
 /* Never wrap player hands; we translate the row horizontally to keep the active hand in view. */

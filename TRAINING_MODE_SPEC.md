@@ -41,6 +41,8 @@
 - Layout: Training Mode renders full-bleed (no simulator padding/background) to avoid beige margins and prevent page scrollbars.
 - Multi-hand layout: when the player-hand row fits the viewport, the entire group is centered (e.g., 3 hands -> middle hand centered). When it does not fit, the row shifts minimally to keep the active (or split-deal focus) hand visible.
 - Hand labels/badges: per-hand totals/results/tags are rendered as an absolute overlay on the card stack so they never affect layout (prevents vertical "jumping" between hands with different stack heights).
+- Dealing animation: only the single newest card is marked as "dealing" at any time (initial deal uses the `visibleCardCount` gate; hits/draws only animate the newest card).
+- Dealing speed consistency: CSS animation durations are driven by `dealingSpeed` via CSS vars (`--deal-anim-ms`, `--player-slide-ms`) so timing-based delays and visual motion match. Initial deal uses `dealCardInterval` to include a human-like pause between cards, and seat-slides wait an additional buffer before the next card appears.
 - Notes on the layout experiments that led here: `docs/TRAINING_LAYOUT_EXPERIMENTS.md`.
 
 ---
