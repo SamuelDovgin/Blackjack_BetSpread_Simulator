@@ -290,7 +290,12 @@ To make this feel more natural and reduce horizontal movement:
   - Treat the active hand as if it had **3 cards total** (2-card start + 1 hit) when computing its "required right edge".
   - Keep this reserved width constant until the hand exceeds 3 cards.
 
-Expected behavior:
+When to apply slack (important):
+- Only apply this slack when there are **3+ player hands** (multi-hand / split-heavy layouts) and the active/focus hand is the **rightmost** hand.
+- Only apply it when the rightmost hand is actually "pressed up" against the right side of the viewport (i.e., without slack, the next hit would be clipped or would immediately force a slide). Do NOT add slack if there is already room.
+- Do not apply slack globally (otherwise 1-hand / 2-hand layouts look off-center for no reason).
+
+Expected behavior (when slack is active):
 - Hit #1: **no row shift** (the slack was reserved already).
 - Hit #2+: row may shift as needed.
 

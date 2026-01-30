@@ -354,8 +354,6 @@ export const Table: React.FC<TableProps> = ({
       return;
     }
 
-    // Keep the currently relevant hand visible with minimal translation.
-    // During split dealing we "focus" the right-hand split so the dealt card lands on-screen.
     const splitLeftHandIdx = splitOriginHandIndex ?? activeHandIndex;
     const splitRightHandIdx = Math.min(splitLeftHandIdx + 1, playerHands.length - 1);
     const focusIdx =
@@ -383,21 +381,32 @@ export const Table: React.FC<TableProps> = ({
     const focusCards = playerHands[focusIdx]?.cards.length ?? 0;
     const focusIsComplete = !!playerHands[focusIdx]?.isComplete;
     const minCardsNoShift = 3; // 2-card start + 1 hit
+
+    // When the entire row fits, keep it centered as a group (no slack needed).
+    if (playerRowWidth <= playerViewportWidth) {
+      const next = Math.round((playerViewportWidth - playerRowWidth) / 2);
+      setPlayerRowTranslateX((current) => (current === next ? current : next));
+      return;
+    }
+
+    // For overflow scenarios: apply slack to rightmost active hand to prevent horizontal jump on first hit.
+    // Always reserve space for minCardsNoShift when:
+    // - Row doesn't fit (we're in scroll/shift mode)
+    // - 3+ hands AND rightmost is active AND not complete
+    const shouldReserveSlack =
+      !focusIsComplete &&
+      playerHands.length >= 3 &&
+      focusIdx === playerHands.length - 1;
+
     const targetCards = focusIsComplete ? focusCards : Math.max(focusCards, minCardsNoShift);
     const focusWidth = playerHandStackWidths[focusIdx] ?? cardW;
     const targetWidth = cardW + Math.max(0, targetCards - 1) * playerCardOffset.x;
-    const focusCardRight = focusCardLeft + targetWidth;
-    const slackAdded = Math.max(0, targetWidth - focusWidth);
-    const projectedRowWidth = playerRowWidth + slackAdded;
+    const reservedWidth = shouldReserveSlack ? targetWidth : focusWidth;
+    const focusCardRight = focusCardLeft + reservedWidth;
 
     setPlayerRowTranslateX((current) => {
       let next = current;
 
-      // If the row (including the reserved "2-hit slack") fits, prefer a centered position
-      // that stays stable across the first 2 hits (projectedRowWidth stays constant until 5th card).
-      if (projectedRowWidth <= playerViewportWidth) {
-        next = Math.round((playerViewportWidth - projectedRowWidth) / 2);
-      }
       const leftVis = next + focusCardLeft;
       const rightVis = next + focusCardRight;
 
@@ -405,17 +414,8 @@ export const Table: React.FC<TableProps> = ({
       if (rightVis > playerViewportWidth - edgeMargin) next -= rightVis - (playerViewportWidth - edgeMargin);
 
       // Clamp so we don't slide beyond the row edges.
-      let minT = 0;
-      let maxT = 0;
-      if (projectedRowWidth <= playerViewportWidth) {
-        // Keep the (projected) row fully on-screen when it fits.
-        minT = 0;
-        maxT = Math.round(playerViewportWidth - projectedRowWidth);
-      } else {
-        // Allow small breathing margins when the row doesn't fit.
-        minT = Math.round((playerViewportWidth - projectedRowWidth) - edgeMargin);
-        maxT = Math.round(edgeMargin);
-      }
+      const minT = Math.round((playerViewportWidth - playerRowWidth) - edgeMargin);
+      const maxT = Math.round(edgeMargin);
       if (next < minT) next = minT;
       if (next > maxT) next = maxT;
 
@@ -429,12 +429,14 @@ export const Table: React.FC<TableProps> = ({
     playerHandStackWidths,
     playerHandGapPx,
     cardW,
+    playerCardOffset.x,
     isMobile,
     activeHandIndex,
     phase,
     isSplitting,
     splitDealingPhase,
     splitOriginHandIndex,
+    playerRowTranslateX,
   ]);
 
   // Track global card index for sequential visibility
