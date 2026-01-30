@@ -384,7 +384,18 @@ export const Table: React.FC<TableProps> = ({
 
     const focusWidth = playerHandStackWidths[focusIdx] ?? cardW;
     const focusCardLeft = left + handInnerPad;
-    const focusCardRight = focusCardLeft + focusWidth;
+    // Pre-allocate space for the next likely hit so the active hand isn't pressed
+    // against the right edge. But do NOT apply this "extra space" on the exact render
+    // where a new card was just appended, otherwise the row may shift while the dealt
+    // card is animating (feels like a snap).
+    const prevLens = prevPlayerCountsRef.current;
+    const justGrew =
+      (playerHands[focusIdx]?.cards.length ?? 0) > (prevLens[focusIdx] ?? 0);
+    const prefetchExtra =
+      phase === 'player-action' && !justGrew && !playerHands[focusIdx]?.isComplete
+        ? playerCardOffset.x
+        : 0;
+    const focusCardRight = focusCardLeft + focusWidth + prefetchExtra;
 
     setPlayerRowTranslateX((current) => {
       let next = current;
@@ -476,7 +487,7 @@ export const Table: React.FC<TableProps> = ({
             </div>
 
             {showHandTotals && dealerHand.length > 0 && (
-              <div className={`hand-total dealer-total ${dealerIsBusted && showFullDealer && showBadges ? 'busted' : ''}`}>
+              <div className={`hand-total dealer-total ${dealerIsBusted && showFullDealer && showBadges ? 'busted' : ''} ${isRemovingCards ? 'removing' : ''}`}>
                 {dealerIsBusted && showFullDealer && showBadges
                   ? `${dealerFull.total} BUST`
                   : showFullDealer
@@ -486,19 +497,19 @@ export const Table: React.FC<TableProps> = ({
               </div>
             )}
             {!showHandTotals && dealerHand.length > 0 && dealerIsBusted && showFullDealer && showBadges && (
-              <div className="hand-total busted dealer-total">BUST</div>
+              <div className={`hand-total busted dealer-total ${isRemovingCards ? 'removing' : ''}`}>BUST</div>
             )}
 
             {/* Dealer outcome badges during payout (single-hand only). */}
             {phase === 'payout' && showBadges && dealerOutcome && (
-              <div className={`hand-result dealer-result result-${dealerOutcome}`}>
+              <div className={`hand-result dealer-result result-${dealerOutcome} ${isRemovingCards ? 'removing' : ''}`}>
                 {dealerOutcome === 'win' && 'WIN'}
                 {dealerOutcome === 'push' && 'PUSH'}
                 {dealerOutcome === 'lose' && 'LOSE'}
               </div>
             )}
             {phase === 'payout' && showBadges && dealerIsBlackjack && (
-              <div className="hand-meta-row dealer-meta-row">
+              <div className={`hand-meta-row dealer-meta-row ${isRemovingCards ? 'removing' : ''}`}>
                 <span className="hand-tag tag-blackjack">Blackjack</span>
               </div>
             )}
@@ -613,7 +624,7 @@ export const Table: React.FC<TableProps> = ({
                         {/* Render AFTER cards so the first card stays the "base" in CSS (:first-child). */}
                         {isActive && outline && (
                           <svg
-                            className="stack-outline"
+                            className={`stack-outline ${isRemovingCards ? 'removing' : ''}`}
                             viewBox={`0 0 ${outline.width} ${outline.height}`}
                             style={{
                               left: outline.left,
@@ -632,33 +643,35 @@ export const Table: React.FC<TableProps> = ({
                           className="hand-info-overlay"
                           style={{ ['--stack-rise-px' as any]: `${stackRisePx}px` } as React.CSSProperties}
                         >
-                          {showHandTotals && (
-                            <div className={`hand-total ${hand.isBusted && showBadges ? 'busted' : ''}`}>
-                              {handTotal.total}
-                              {handTotal.isSoft && handTotal.total <= 21 && ' (soft)'}
-                              {hand.isBusted && showBadges && ' BUST'}
+                          <div className={`hand-info-overlay-inner ${isRemovingCards ? 'removing' : ''}`}>
+                            {showHandTotals && (
+                              <div className={`hand-total ${hand.isBusted && showBadges ? 'busted' : ''}`}>
+                                {handTotal.total}
+                                {handTotal.isSoft && handTotal.total <= 21 && ' (soft)'}
+                                {hand.isBusted && showBadges && ' BUST'}
+                              </div>
+                            )}
+
+                            {!showHandTotals && hand.isBusted && showBadges && (
+                              <div className="hand-total busted">BUST</div>
+                            )}
+
+                            {/* Outcome badges during payout phase */}
+                            {phase === 'payout' && showBadges && hand.result && (
+                              <div
+                                className={`hand-result result-${hand.result === 'blackjack' ? 'win' : hand.result}`}
+                              >
+                                {(hand.result === 'win' || hand.result === 'blackjack') && 'WIN'}
+                                {hand.result === 'push' && 'PUSH'}
+                                {hand.result === 'lose' && 'LOSE'}
+                              </div>
+                            )}
+
+                            <div className="hand-meta-row">
+                              {hand.isBlackjack && showBadges && <span className="hand-tag tag-blackjack">Blackjack</span>}
+                              {hand.isDoubled && showBadges && <span className="hand-tag tag-doubled">Double</span>}
+                              {hand.isSurrendered && showBadges && <span className="hand-tag tag-surrendered">SUR</span>}
                             </div>
-                          )}
-
-                          {!showHandTotals && hand.isBusted && showBadges && (
-                            <div className="hand-total busted">BUST</div>
-                          )}
-
-                          {/* Outcome badges during payout phase */}
-                          {phase === 'payout' && showBadges && hand.result && (
-                            <div
-                              className={`hand-result result-${hand.result === 'blackjack' ? 'win' : hand.result}`}
-                            >
-                              {(hand.result === 'win' || hand.result === 'blackjack') && 'WIN'}
-                              {hand.result === 'push' && 'PUSH'}
-                              {hand.result === 'lose' && 'LOSE'}
-                            </div>
-                          )}
-
-                          <div className="hand-meta-row">
-                            {hand.isBlackjack && showBadges && <span className="hand-tag tag-blackjack">Blackjack</span>}
-                            {hand.isDoubled && showBadges && <span className="hand-tag tag-doubled">Double</span>}
-                            {hand.isSurrendered && showBadges && <span className="hand-tag tag-surrendered">SUR</span>}
                           </div>
                         </div>
                       </div>
