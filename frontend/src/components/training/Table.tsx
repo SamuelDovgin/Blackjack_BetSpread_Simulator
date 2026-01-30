@@ -314,7 +314,7 @@ export const Table: React.FC<TableProps> = ({
 
   // Dynamic spacing: each hand's allocated width grows with its card count.
   // This prevents long hit stacks from overlapping neighboring split hands.
-  const playerHandGapPx = Math.round(playerCardOffset.x * 1.2);
+  const playerHandGapPx = Math.round(playerCardOffset.x * 0.8);
 
   const playerHandStackWidths = useMemo(() => {
     return playerHands.map((h) => cardW + Math.max(0, h.cards.length - 1) * playerCardOffset.x);
@@ -623,7 +623,6 @@ export const Table: React.FC<TableProps> = ({
                           )}
 
                           <div className="hand-meta-row">
-                            {playerHands.length > 1 && <span className="hand-tag tag-bet">{hand.bet}u</span>}
                             {hand.isBlackjack && showBadges && <span className="hand-tag tag-blackjack">Blackjack</span>}
                             {hand.isDoubled && showBadges && <span className="hand-tag tag-doubled">Double</span>}
                             {hand.isSurrendered && showBadges && <span className="hand-tag tag-surrendered">SUR</span>}
