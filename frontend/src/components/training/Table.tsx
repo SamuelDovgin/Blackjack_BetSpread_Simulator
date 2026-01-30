@@ -411,8 +411,7 @@ export const Table: React.FC<TableProps> = ({
     -(((playerHandStackWidths[splitLeftHandIdx] ?? cardW) + 16) + playerHandGapPx);
 
   return (
-    <div className="table">
-      <div className="table-felt">
+    <div className="table-felt">
         {/* Shoe - desktop only (hidden via CSS on mobile) */}
         <Shoe cardsRemaining={cardsRemaining} totalCards={totalCards} />
 
@@ -641,7 +640,6 @@ export const Table: React.FC<TableProps> = ({
           <div className="player-label">PLAYER</div>
         </div>
       </div>
-    </div>
   );
 };
 

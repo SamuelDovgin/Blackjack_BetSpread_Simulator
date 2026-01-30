@@ -357,7 +357,7 @@
 
 .shoe {
   position: absolute;
-  right: 20px;
+  right: 120px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -402,7 +402,7 @@
 
 .discard-pile {
   position: absolute;
-  left: 20px;
+  left: 120px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;

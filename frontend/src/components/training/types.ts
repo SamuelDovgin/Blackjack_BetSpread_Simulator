@@ -216,7 +216,7 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
   onlyShowMistakes: true,  // Only show feedback on mistakes by default
   tcEstimationMethod: 'floor',  // Floor TC by default (realistic casino practice)
   cardScale: 'medium',         // 1.2x cards by default
-  dealingSpeed: 'medium',      // Medium speed by default
+  dealingSpeed: 'fast',        // Fast speed by default
   soundEnabled: false,     // Off by default
   practiceMode: 'free-play',
   highCountTcMin: 2,
