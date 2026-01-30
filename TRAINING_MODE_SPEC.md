@@ -39,6 +39,9 @@
 - Dealing animation reset: card components are keyed by `roundNumber` so the first card (and all cards) animate reliably every new hand instead of "popping" in.
 - Payout badges: blackjack hands show normal WIN/LOSE/PUSH outcome badges, plus a "Blackjack" tag (instead of replacing the result with a special "BLACKJACK" outcome badge).
 - Layout: Training Mode renders full-bleed (no simulator padding/background) to avoid beige margins and prevent page scrollbars.
+- Multi-hand layout: when the player-hand row fits the viewport, the entire group is centered (e.g., 3 hands -> middle hand centered). When it does not fit, the row shifts minimally to keep the active (or split-deal focus) hand visible.
+- Hand labels/badges: per-hand totals/results/tags are rendered as an absolute overlay on the card stack so they never affect layout (prevents vertical "jumping" between hands with different stack heights).
+- Notes on the layout experiments that led here: `docs/TRAINING_LAYOUT_EXPERIMENTS.md`.
 
 ---
 
