@@ -44,6 +44,9 @@
 - Hand labels/badges: per-hand totals/results/tags are rendered as an absolute overlay on the card stack so they never affect layout (prevents vertical "jumping" between hands with different stack heights).
 - Dealing animation: only the single newest card is marked as "dealing" at any time (initial deal uses the `visibleCardCount` gate; hits/draws only animate the newest card).
 - Dealing speed consistency: CSS animation durations are driven by `dealingSpeed` via CSS vars (`--deal-anim-ms`, `--player-slide-ms`) so timing-based delays and visual motion match. Initial deal uses `dealCardInterval` to include a human-like pause between cards, and seat-slides wait an additional buffer before the next card appears.
+- Badge consistency: busted-hand dimming is applied to the card elements only (not the badges), so BUST/WIN/LOSE/Blackjack tags render at consistent opacity.
+- Blackjack tag timing: the "Blackjack" tag is gated by `visibleCardCount` during the initial deal, so it doesn't appear until the 2nd card has actually been dealt/seen.
+- Badge hiding scope: while a new card is animating, we only suppress badges on the active/focus hand (to avoid animation conflicts). Completed/non-focus hands keep badges visible, preventing global "badge blinking" during multi-hand play.
 - Notes on the layout experiments that led here: `docs/TRAINING_LAYOUT_EXPERIMENTS.md`.
 
 ---
