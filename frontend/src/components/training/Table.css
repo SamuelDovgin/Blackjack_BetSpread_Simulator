@@ -156,7 +156,8 @@
   align-items: center;
   gap: 3px;
   pointer-events: none;
-  z-index: 5000;
+  /* Keep badges above moving/dealing cards so the table doesn't "blink" while a card travels. */
+  z-index: 20000;
   white-space: nowrap;
 }
 

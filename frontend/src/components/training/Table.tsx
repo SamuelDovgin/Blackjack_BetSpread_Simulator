@@ -554,18 +554,14 @@ export const Table: React.FC<TableProps> = ({
                     // so we don't show "Blackjack" until the 2nd card has actually been dealt/seen.
                     visibleCardCount > (playerHands.length + 1 + handIdx);
 
-                  // Ensure any dealing animation renders above other split hands.
-                  // NOTE: opacity on a busted hand creates a stacking context, so we must
-                  // raise the *hand container* z-index for the currently dealing hand.
-                 const focusHandIdx =
-                   (phase === 'player-action' && (isSplitting || splitDealingPhase === 1))
-                     ? splitRightHandIdx
-                     : activeHandIndex;
-                 const handZ = handIdx === focusHandIdx ? 200 : handIdx;
-                 // While a new card is moving, we temporarily hide badges on the *active/focus* hand
-                 // to avoid visual fights with the dealing animation. Completed/non-focus hands should
-                 // keep their badges (e.g., BUST) visible so the table doesn't "blink".
-                 const showBadgesForHand = showBadges || handIdx !== focusHandIdx;
+                const focusHandIdx =
+                  (phase === 'player-action' && (isSplitting || splitDealingPhase === 1))
+                    ? splitRightHandIdx
+                    : activeHandIndex;
+                // While a new card is moving, we temporarily hide badges on the *active/focus* hand
+                // to avoid visual fights with the dealing animation. Completed/non-focus hands should
+                // keep their badges (e.g., BUST) visible so the table doesn't "blink".
+                const showBadgesForHand = showBadges || handIdx !== focusHandIdx;
 
                  // Calculate card offset for this hand (if split, cards dealt later)
                  const cardOffsetBase = handIdx > 0
@@ -589,7 +585,6 @@ export const Table: React.FC<TableProps> = ({
                     className={`player-hand-container ${isActive ? 'active' : ''} ${
                       hand.isComplete ? 'complete' : ''
                     } ${hand.isBusted ? 'busted' : ''}`}
-                    style={{ zIndex: handZ }}
                   >
                     <div className="hand" style={{ width: `${stackWidth}px` }}>
                       <div className="card-stack player-stack" style={{ width: `${stackWidth}px` }}>
