@@ -80,6 +80,10 @@ export interface TrainingSettings {
   // Gameplay
   autoBet: boolean;
   defaultBet: number;
+  /** Current bankroll in UNITS (training engine uses units, not dollars). */
+  bankrollUnits: number;
+  /** Dollars per unit for display-only conversions (does not affect gameplay). */
+  dollarsPerUnit: number;
   /** Number of starting hands to deal to the player each round (applies to the next round). */
   handsToPlay: 1 | 2 | 3;
   correctionMode: 'inline' | 'modal' | 'off';
@@ -94,6 +98,9 @@ export interface TrainingSettings {
 
   // Dealing speed: 'slow', 'medium' (default), 'fast'
   dealingSpeed: 'slow' | 'medium' | 'fast';
+
+  // Deck estimation image (shoe depth visualization)
+  showDeckEstimation: boolean;
 
   // Sound
   soundEnabled: boolean;
@@ -125,6 +132,14 @@ export interface TrainingStats {
 
   // Per-hand tracking for weak spots
   handStats: Record<string, { correct: number; total: number; mistakes: Record<string, number> }>;
+
+  // Most recent mistake for quick reference
+  lastMistake?: {
+    handKey: string;
+    userAction: PlayerAction;
+    correctAction: PlayerAction;
+    explanation?: string;
+  };
 
   // Counting
   countChecksPassed: number;
@@ -210,6 +225,8 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
   showHints: false,        // Opt-in feature
   autoBet: true,
   defaultBet: 1,
+  bankrollUnits: 1000,
+  dollarsPerUnit: 10,
   handsToPlay: 1,
   correctionMode: 'inline',
   autoAdvanceDelay: 2000,
@@ -217,6 +234,7 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
   tcEstimationMethod: 'floor',  // Floor TC by default (realistic casino practice)
   cardScale: 'large',          // 1.5x cards by default
   dealingSpeed: 'fast',        // Fast speed by default
+  showDeckEstimation: true,    // Show deck estimation image by default
   soundEnabled: false,     // Off by default
   practiceMode: 'free-play',
   highCountTcMin: 2,

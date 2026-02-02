@@ -36,6 +36,17 @@
   justify-content: center;
 }
 
+/* Dealer hand needs position context for the deck estimation image */
+.dealer-hand {
+  position: relative;
+}
+
+/* Dealer stack wrapper: centered as a unit; provides positioning context for the deck image. */
+.dealer-stack-wrap {
+  position: relative;
+  display: inline-block;
+}
+
 /* Hand totals */
 .hand-total {
   font-size: 14px;
