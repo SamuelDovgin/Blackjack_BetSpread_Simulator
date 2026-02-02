@@ -1559,11 +1559,12 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
               <span>Card Size</span>
               <select
                 value={settings.cardScale ?? 'medium'}
-                onChange={e => setSettings(s => ({ ...s, cardScale: e.target.value as 'small' | 'medium' | 'large' }))}
+                onChange={e => setSettings(s => ({ ...s, cardScale: e.target.value as 'small' | 'medium' | 'large' | 'xlarge' }))}
               >
                 <option value="small">Small</option>
                 <option value="medium">Medium</option>
                 <option value="large">Large</option>
+                <option value="xlarge">Extra Large</option>
               </select>
             </label>
 

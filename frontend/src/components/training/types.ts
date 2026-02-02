@@ -89,8 +89,8 @@ export interface TrainingSettings {
   // TC estimation: 'floor' rounds down (realistic), 'halfDeck' rounds to nearest 0.5, 'perfect' uses exact TC
   tcEstimationMethod: 'perfect' | 'floor' | 'halfDeck';
 
-  // Card size: 'small' (original), 'medium' (1.2x, default), 'large' (1.5x)
-  cardScale: 'small' | 'medium' | 'large';
+  // Card size: 'small' (original), 'medium' (1.2x), 'large' (1.5x, default), 'xlarge' (1.8x)
+  cardScale: 'small' | 'medium' | 'large' | 'xlarge';
 
   // Dealing speed: 'slow', 'medium' (default), 'fast'
   dealingSpeed: 'slow' | 'medium' | 'fast';

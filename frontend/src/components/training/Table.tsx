@@ -57,18 +57,19 @@ const BASE_CARD_SIZE_DESKTOP = { w: 90, h: 126 };
 // Dealer initial (two-card) layout: keep the two cards slightly closer than "card width + 10px"
 // so scaling up doesn't feel like the upcard drifts too far right.
 const BASE_DEALER_INITIAL_DESKTOP = { x: 98, y: 0 };
-const BASE_DEALER_STACKED_DESKTOP = { x: 28, y: 0 };
+const BASE_DEALER_STACKED_DESKTOP = { x: 19, y: 0 };
 // Mobile base values (not scaled — mobile uses its own CSS base sizes)
 const BASE_PLAYER_OFFSET_MOBILE = { x: 15, y: -22 };
 const BASE_CARD_SIZE_MOBILE = { w: 70, h: 98 };
 const BASE_DEALER_INITIAL_MOBILE = { x: 76, y: 0 };
-const BASE_DEALER_STACKED_MOBILE = { x: 22, y: 0 };
+const BASE_DEALER_STACKED_MOBILE = { x: 15, y: 0 };
 
 /** Scale name → numeric multiplier */
 export const CARD_SCALE_VALUES: Record<string, number> = {
   small: 1.0,
   medium: 1.2,
   large: 1.5,
+  xlarge: 1.8,
 };
 
 /**
@@ -326,7 +327,7 @@ export const Table: React.FC<TableProps> = ({
   // Dealer card shift: nudge the card stack slightly right so the visual center
   // after stacking (cards collapse left) feels centered on the table.
   // Only applies to the card-stack element, not labels/badges.
-  const dealerCardShiftPx = isMobile ? Math.round(cardW * 0.2) : Math.round(cardW * 0.4);
+  const dealerCardShiftPx = isMobile ? Math.round(cardW * 0.28) : Math.round(cardW * 0.5);
 
   // Dynamic spacing: each hand's allocated width grows with its card count.
   // This prevents long hit stacks from overlapping neighboring split hands.
