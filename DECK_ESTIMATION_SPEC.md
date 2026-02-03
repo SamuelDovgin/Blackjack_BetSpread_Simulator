@@ -57,8 +57,13 @@ This prevents the deck image from changing mid-dealer-play or mid-removal, and k
 - The deck image stays rendered whenever the setting is enabled (it should not "blink" between rounds).
 - The dealer stack wrapper has a fixed height equal to card height to avoid vertical "jumping" as dealer cards become visible.
 - Spacing between the deck image and the hole card:
-  - Uses a comfortable default gap on normal screens.
-  - Collapses the gap on narrow screens (based on available left space) so the image is less likely to be clipped.
+  - Uses a comfortable default gap (~55% of card width) on wide screens.
+  - Never collapses below a minimum gap (~50% of stacked card offset) so it doesn't look like it "touches" the hole card.
+- **Narrow-screen behavior (responsive gap compression):**
+  - Keep a small left-edge margin (8-12px) so the deck image never touches the viewport edge.
+  - As the screen narrows, the gap between the deck image and the hole card **shrinks first** (compresses toward the hole card).
+  - The dealer upcard stays visible as long as possible — only shifts off-screen if even the minimum gap cannot fit.
+  - This prioritizes keeping all dealer cards visible over maintaining a large gap.
 
 ## Styling
 - The deck image has **no card-like shadow** (it is a photo cue, not a playing card).

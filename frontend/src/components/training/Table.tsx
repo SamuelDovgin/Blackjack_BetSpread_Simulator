@@ -229,6 +229,8 @@ export const Table: React.FC<TableProps> = ({
   const isMobile =
     typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
 
+  const showDeckEstimationImage = !!showDeckEstimation;
+
   const newestVisibleDealIndex =
     Number.isFinite(visibleCardCount) && visibleCardCount > 0 ? visibleCardCount - 1 : -1;
   const isNewestByVisible = (dealIndex: number) => dealIndex === newestVisibleDealIndex;
@@ -331,15 +333,52 @@ export const Table: React.FC<TableProps> = ({
   // draw cards can overflow to the right (more like a real table).
   const dealerStackWidth = cardW + dealerInitialOffset.x;
 
-  // Dealer card shift: nudge the card stack slightly right so the visual center
-  // after stacking (cards collapse left) feels centered on the table.
-  // Only applies to the card-stack element, not labels/badges.
-  const dealerCardShiftPx = isMobile ? Math.round(cardW * 0.8) : Math.round(cardW * 0.5);
+  // Deck estimation image spacing + dealer stack shift:
+  // When deck estimation is enabled, shift the dealer stack LEFT so the deck image
+  // and dealer cards are both visible. The gap between deck image and hole card
+  // shrinks on narrow screens before the upcard goes off-screen.
+  const viewportW = typeof window !== 'undefined' ? window.innerWidth : 0;
+  const deckEdgeMarginLeftPx = isMobile ? 8 : 12;
 
-  // Deck estimation image spacing: try to keep a comfortable gap, but collapse it on
-  // narrow viewports so the image doesn't get cut off-screen.
-  const dealerStackWrapRef = useRef<HTMLDivElement | null>(null);
-  const [deckEstGapPx, setDeckEstGapPx] = useState(0);
+  // Gap between deck estimation image and hole card.
+  const deckEstDesiredGapPx = Math.round(cardW * 0.3); // Tighter gap
+  const deckEstMinGapPx = Math.round(dealerStackedOffset.x * 0.4); // Minimum gap
+
+  // When deck estimation is OFF, use the original centering shift.
+  // When deck estimation is ON, don't shift right — keep dealer stack more centered/left.
+  const baseShiftWithoutDeckEst = isMobile ? Math.round(cardW * 0.28) : Math.round(cardW * 0.5);
+
+  // Calculate where the dealer stack sits when centered (no shift).
+  const baseDealerLeftPx = viewportW ? Math.floor((viewportW - dealerStackWidth) / 2) : 0;
+
+  let deckEstGapPx = 0;
+  let dealerCardShiftPx = 0;
+
+  if (showDeckEstimationImage && viewportW) {
+    // Space needed on the left for deck image: edge margin + card width + gap.
+    const spaceNeededWithDesiredGap = deckEdgeMarginLeftPx + cardW + deckEstDesiredGapPx;
+    const spaceNeededWithMinGap = deckEdgeMarginLeftPx + cardW + deckEstMinGapPx;
+
+    // How much space do we have on the left if we don't shift?
+    const availableLeftNoShift = baseDealerLeftPx;
+
+    if (availableLeftNoShift >= spaceNeededWithDesiredGap) {
+      // Plenty of room — use desired gap, no shift needed.
+      deckEstGapPx = deckEstDesiredGapPx;
+      dealerCardShiftPx = 0;
+    } else if (availableLeftNoShift >= spaceNeededWithMinGap) {
+      // Some room — shrink the gap to fit, no shift needed.
+      deckEstGapPx = Math.max(deckEstMinGapPx, availableLeftNoShift - deckEdgeMarginLeftPx - cardW);
+      dealerCardShiftPx = 0;
+    } else {
+      // Not enough room even with min gap — shift dealer stack right minimally.
+      deckEstGapPx = deckEstMinGapPx;
+      dealerCardShiftPx = spaceNeededWithMinGap - availableLeftNoShift;
+    }
+  } else {
+    // No deck estimation — use original shift behavior.
+    dealerCardShiftPx = baseShiftWithoutDeckEst;
+  }
 
   // Dynamic spacing: each hand's allocated width grows with its card count.
   // This prevents long hit stacks from overlapping neighboring split hands.
@@ -471,31 +510,6 @@ export const Table: React.FC<TableProps> = ({
 
   // Deck estimation image is a static table aid. Keep it rendered whenever enabled so it
   // doesn't "blink" during initial deal / between rounds. (TrainingPage freezes updates.)
-  const showDeckEstimationImage = !!showDeckEstimation;
-
-  useLayoutEffect(() => {
-    if (!showDeckEstimationImage) return;
-    const el = dealerStackWrapRef.current;
-    if (!el) return;
-
-    const measure = () => {
-      const rect = el.getBoundingClientRect();
-      const desired = Math.round(cardW * 0.35); // more space, scaled with card size
-      const marginLeft = 6;
-      const maxGap = Math.max(0, rect.left - cardW - marginLeft);
-      const next = Math.min(desired, maxGap);
-      setDeckEstGapPx(Math.round(next));
-    };
-
-    measure();
-    window.addEventListener('resize', measure);
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => {
-      window.removeEventListener('resize', measure);
-      ro.disconnect();
-    };
-  }, [showDeckEstimationImage, cardW, dealerCardShiftPx, dealerStackWidth, isDealerStacked, visibleCardCount, phase]);
 
   return (
     <div className="table-felt">
@@ -511,7 +525,6 @@ export const Table: React.FC<TableProps> = ({
             <div className="hand dealer-hand">
               <div
                 className="dealer-stack-wrap"
-                ref={dealerStackWrapRef}
                 style={{
                   width: `${dealerStackWidth}px`,
                   height: `${cardH}px`,
