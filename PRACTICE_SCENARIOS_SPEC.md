@@ -3,6 +3,17 @@
 ## Overview
 A new "Scenario" button in the Training Mode header that opens a panel for controlling the current shoe state and generating practice scenarios for specific deviations or count situations.
 
+## TC Estimation (IMPORTANT)
+Practice Scenarios target the *training/practice* True Count, not the exact math TC.
+
+This means scenario generation uses the same TC estimation method as the Training UI:
+- **Perfect**: `TC = RC / exactDecksRemaining` (continuous), match within a tolerance (ex: +/- 0.5).
+- **Half-deck**: estimate divisor to nearest 0.5 deck and quantize TC to 0.5 steps.
+- **Full-deck (conservative)**: estimate divisor by rounding decks remaining **UP** to the next whole deck (ceil),
+  then compute `TC = floor(RC / divisor)`.
+
+Implication: When using Half-deck or Full-deck modes, "Jump to TC" and "Jump to Deviation" target an *exact* discrete TC bucket (no tolerance).
+
 ## UI Location
 
 ### Header Layout

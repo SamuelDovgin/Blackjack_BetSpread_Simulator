@@ -19,6 +19,8 @@ function getCountValue(card: Card): number {
   return -1; // T, J, Q, K, A
 }
 
+export type TcEstimationMethod = 'perfect' | 'floor' | 'halfDeck';
+
 /**
  * Create a fresh shuffled shoe
  */
@@ -54,6 +56,28 @@ function calculateTrueCount(runningCount: number, decksRemaining: number): numbe
   return runningCount / decksRemaining;
 }
 
+function estimateDivisor(exactDecksRemaining: number, method: TcEstimationMethod): number {
+  if (method === 'perfect') return exactDecksRemaining;
+  if (method === 'halfDeck') return Math.max(0.5, Math.round(exactDecksRemaining * 2) / 2);
+  // Conservative full-deck estimation: round decks remaining UP.
+  return Math.max(1, Math.ceil(exactDecksRemaining));
+}
+
+function applyTcEstimation(rawTc: number, method: TcEstimationMethod): number {
+  if (method === 'floor') return Math.floor(rawTc);
+  if (method === 'halfDeck') return Math.round(rawTc * 2) / 2;
+  return rawTc;
+}
+
+function calculatePracticeTrueCount(
+  runningCount: number,
+  exactDecksRemaining: number,
+  method: TcEstimationMethod
+): number {
+  const divisor = estimateDivisor(exactDecksRemaining, method);
+  return applyTcEstimation(calculateTrueCount(runningCount, divisor), method);
+}
+
 export interface GeneratedScenario {
   shoe: Card[];
   runningCount: number;
@@ -69,7 +93,8 @@ export function generateShoeForTargetTC(
   targetTC: number,
   numDecks: number,
   tolerance: number = 0.5,
-  maxAttempts: number = 500
+  maxAttempts: number = 500,
+  tcEstimationMethod: TcEstimationMethod = 'perfect'
 ): GeneratedScenario | null {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const fullShoe = createShuffledShoe(numDecks);
@@ -86,10 +111,14 @@ export function generateShoeForTargetTC(
       cardsDealt++;
 
       const decksRemaining = (fullShoe.length - cardsDealt) / 52;
-      const currentTC = calculateTrueCount(runningCount, decksRemaining);
+      const currentTC = calculatePracticeTrueCount(runningCount, decksRemaining, tcEstimationMethod);
 
       // Check if we've hit the target TC
-      if (Math.abs(currentTC - targetTC) <= tolerance) {
+      const hit =
+        tcEstimationMethod === 'perfect'
+          ? Math.abs(currentTC - targetTC) <= tolerance
+          : currentTC === targetTC;
+      if (hit) {
         // Found a good state! Return the remaining shoe
         const remainingShoe = fullShoe.slice(cardsDealt);
         return {
@@ -100,14 +129,17 @@ export function generateShoeForTargetTC(
         };
       }
 
-      // If we've overshot significantly, try a new shoe
-      if (targetTC > 0 && currentTC > targetTC + 3) break;
-      if (targetTC < 0 && currentTC < targetTC - 3) break;
+      // For perfect TC (continuous), it's safe to bail out when we've overshot badly.
+      // For rounded/quantized modes, TC can swing back; don't overshoot-break.
+      if (tcEstimationMethod === 'perfect') {
+        if (targetTC > 0 && currentTC > targetTC + 3) break;
+        if (targetTC < 0 && currentTC < targetTC - 3) break;
+      }
     }
   }
 
   // Fallback: return a shoe at approximately the right count using construction
-  return constructShoeForTargetTC(targetTC, numDecks);
+  return constructShoeForTargetTC(targetTC, numDecks, tcEstimationMethod);
 }
 
 /**
@@ -116,7 +148,8 @@ export function generateShoeForTargetTC(
  */
 function constructShoeForTargetTC(
   targetTC: number,
-  numDecks: number
+  numDecks: number,
+  tcEstimationMethod: TcEstimationMethod
 ): GeneratedScenario {
   // Target: 2-3 decks remaining for realistic play
   const targetDecksRemaining = Math.max(2, Math.min(3, numDecks - 1));
@@ -192,12 +225,12 @@ function constructShoeForTargetTC(
   shuffle(remainingShoe);
 
   const actualDecksRemaining = remainingShoe.length / 52;
-  const actualTC = calculateTrueCount(currentRC, actualDecksRemaining);
+  const practiceTC = calculatePracticeTrueCount(currentRC, actualDecksRemaining, tcEstimationMethod);
 
   return {
     shoe: remainingShoe,
     runningCount: currentRC,
-    trueCount: actualTC,
+    trueCount: practiceTC,
     cardsDealt: removedCards.length,
   };
 }
@@ -328,7 +361,8 @@ function extractRandomNonAce(shoe: Card[]): Card | null {
  */
 export function generateShoeForDeviation(
   deviationIndex: number,
-  numDecks: number
+  numDecks: number,
+  tcEstimationMethod: TcEstimationMethod = 'perfect'
 ): DeviationScenario | null {
   const deviation = ALL_DEVIATIONS[deviationIndex];
   if (!deviation) return null;
@@ -342,7 +376,7 @@ export function generateShoeForDeviation(
   // For positive thresholds, use threshold value directly
   const targetTC = tcThreshold;
 
-  const baseScenario = generateShoeForTargetTC(targetTC, numDecks, 0.5, 300);
+  const baseScenario = generateShoeForTargetTC(targetTC, numDecks, 0.5, 300, tcEstimationMethod);
   if (!baseScenario) return null;
 
   const shoe = [...baseScenario.shoe];

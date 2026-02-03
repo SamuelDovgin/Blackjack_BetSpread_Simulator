@@ -759,15 +759,30 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       };
     }
 
+    // Action availability for this decision point.
+    // (Important: some deviations call for Double/Surrender, but those are only legal on 2-card hands.)
+    const canDoubleNow =
+      hand.cards.length === 2 &&
+      !hand.isDoubled &&
+      !hand.isSurrendered &&
+      (!hand.isSplitHand || doubleAfterSplit);
+    const canSplitNow = canSplit(hand);
+    const canSurrenderNow =
+      allowSurrender &&
+      hand.cards.length === 2 &&
+      !hand.isDoubled &&
+      !hand.isSurrendered &&
+      !hand.isSplitHand;
+
     // Get basic strategy recommendation
     const strategyResult = getBasicStrategyAction({
       playerCards: hand.cards,
       dealerUpcard,
       rules: ruleSet,
       isSplitHand: hand.isSplitHand,
-      canDouble: canDouble(hand),
-      canSplit: canSplit(hand),
-      canSurrender: canSurrender(hand, dealerUpcard, allowSurrender),
+      canDouble: canDoubleNow,
+      canSplit: canSplitNow,
+      canSurrender: canSurrenderNow,
     });
 
     const divisor = estimateDivisor(state.shoe.length / 52);
@@ -792,7 +807,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       const deviationResult = checkDeviation(
         total,
         isSoft,
-        isPair(hand.cards) && canSplit(hand),
+        isPair(hand.cards) && canSplitNow,
         pairVal,
         dealerUp,
         tc,
@@ -806,10 +821,24 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
         deviationAction = deviationResult.deviation.deviationAction;
 
         if (deviationResult.shouldDeviate) {
-          // TC meets threshold - deviation applies
-          deviationApplies = true;
-          correctAction = deviationResult.deviation.deviationAction;
-          reason = deviationResult.reason;
+          // TC meets threshold - deviation applies *only if the action is legal right now*.
+          // (Example: 9v2 Double at TC+1 should not be enforced after you've already hit,
+          // because doubling is no longer allowed.)
+          const desired = deviationResult.deviation.deviationAction;
+          const allowed =
+            (desired !== 'double' || canDoubleNow) &&
+            (desired !== 'surrender' || canSurrenderNow) &&
+            (desired !== 'split' || canSplitNow);
+
+          if (allowed) {
+            deviationApplies = true;
+            correctAction = desired;
+            reason = deviationResult.reason;
+          } else {
+            deviationApplies = false;
+            correctAction = basicAction;
+            reason = `Deviation available, but ${desired} isn't allowed right now (requires a 2-card decision). Basic strategy applies.`;
+          }
         }
         // If TC doesn't meet threshold, basic strategy applies (deviationApplies stays false)
       }
@@ -1021,7 +1050,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     preActionStatsRef.current = null;
     setShowScenario(false);
     showToast('Shoe reshuffled', 'success');
-  }, [numDecks, gameState.bankroll, showToast]);
+  }, [numDecks, gameState.bankroll, showToast, effectiveTcMethod]);
 
   // Handle TC scenario generation
   const handleGenerateTCScenario = useCallback((targetTC: number, mode: ScenarioMode) => {
@@ -1029,12 +1058,21 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Run generation in a timeout to allow UI to update
     window.setTimeout(() => {
+      const formatTcForBanner = (tc: number) => {
+        if (effectiveTcMethod === 'perfect') return tc.toFixed(2);
+        if (effectiveTcMethod === 'halfDeck') return tc.toFixed(1);
+        return tc.toFixed(0);
+      };
+
       const result = mode === 'jump'
-        ? generateShoeForTargetTC(targetTC, numDecks)
+        ? generateShoeForTargetTC(targetTC, numDecks, 0.5, 500, effectiveTcMethod)
         : generatePlayToTCShoe(targetTC, numDecks);
 
       if (result) {
         clearTimers();
+        // In "jump" mode the whole point is verifying the starting count state.
+        // Auto-show RC/divisor/TC values so the user can confirm it's correct.
+        if (mode === 'jump') setShowCountValues(true);
         // Create a completely fresh game state with the generated shoe
         const freshState = createInitialGameState(numDecks, gameState.bankroll);
         freshState.shoe = result.shoe;
@@ -1063,26 +1101,35 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
         preActionStatsRef.current = null;
         setShowScenario(false);
         const modeText = mode === 'jump' ? 'at' : 'will reach';
-        showToast(`Shoe ${modeText} TC ${result.trueCount.toFixed(1)}`, 'success');
+        const tcForToast = mode === 'jump' ? result.trueCount : targetTC;
+        showToast(`Shoe ${modeText} TC ${formatTcForBanner(tcForToast)}`, 'success');
       } else {
         showToast('Failed to generate scenario', 'error');
       }
 
       setIsGeneratingScenario(false);
     }, 50);
-  }, [numDecks, gameState.bankroll, showToast]);
+  }, [numDecks, gameState.bankroll, showToast, effectiveTcMethod]);
 
   // Handle deviation scenario generation
   const handleGenerateDeviationScenario = useCallback((deviationIndex: number, mode: ScenarioMode) => {
     setIsGeneratingScenario(true);
 
     window.setTimeout(() => {
+      const formatTcForBanner = (tc: number) => {
+        if (effectiveTcMethod === 'perfect') return tc.toFixed(2);
+        if (effectiveTcMethod === 'halfDeck') return tc.toFixed(1);
+        return tc.toFixed(0);
+      };
+
       const result = mode === 'jump'
-        ? generateShoeForDeviation(deviationIndex, numDecks)
+        ? generateShoeForDeviation(deviationIndex, numDecks, effectiveTcMethod)
         : generatePlayToDeviationShoe(deviationIndex, numDecks);
 
       if (result) {
         clearTimers();
+        // In "jump" mode the whole point is verifying the starting count state.
+        if (mode === 'jump') setShowCountValues(true);
         // Create a completely fresh game state with the arranged shoe
         const freshState = createInitialGameState(numDecks, gameState.bankroll);
         freshState.shoe = result.shoe;
@@ -1111,7 +1158,11 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
         preActionStatsRef.current = null;
         setShowScenario(false);
         const modeText = mode === 'jump' ? 'ready' : 'will encounter';
-        showToast(`Deviation scenario ${modeText} (TC ${result.trueCount.toFixed(1)})`, 'success');
+        if (mode === 'jump') {
+          showToast(`Deviation scenario ${modeText} (TC ${formatTcForBanner(result.trueCount)})`, 'success');
+        } else {
+          showToast(`Deviation scenario ${modeText}`, 'success');
+        }
       } else {
         showToast('Failed to generate scenario', 'error');
       }
