@@ -77,11 +77,41 @@
 }
 
 .player-hands-viewport {
+  position: relative;
   width: 100%;
   /* Clip horizontally (so we can keep 1 row), but allow vertical overflow for stacked cards + labels. */
   overflow: visible;
   /* Give extra right-side "slack" so the deal-from-right animation doesn't get clipped (prevents snapping at edges). */
   clip-path: inset(-240px -320px -240px -80px);
+  /* Allow horizontal swipe gestures without triggering browser navigation/scroll */
+  touch-action: pan-y pinch-zoom;
+}
+
+/* Invisible left/right "tap zones" for stepping the player-hands viewport by hand. */
+.hand-nav-zone {
+  position: absolute;
+  top: 0;
+  width: 56px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 30000;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hand-nav-zone:disabled {
+  pointer-events: none;
+}
+
+.hand-nav-zone.left {
+  left: 0;
+}
+
+.hand-nav-zone.right {
+  right: 0;
 }
 
 .player-hands {
@@ -91,7 +121,19 @@
   align-items: flex-start;
   gap: 24px;
   will-change: transform;
+  /* Default transition for auto-centering; inline styles override for dragging */
   transition: transform calc(var(--player-slide-ms, 350) * 1ms) ease;
+}
+
+/* Disable pointer events on children during drag to prevent accidental taps */
+.player-hands-viewport.dragging .player-hand-container {
+  pointer-events: none;
+}
+
+/* Prevent text selection during drag */
+.player-hands-viewport.dragging {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* Never wrap player hands; we translate the row horizontally to keep the active hand in view. */
