@@ -47,6 +47,7 @@
 - Badge consistency: busted-hand dimming is applied to the card elements only (not the badges), so BUST/WIN/LOSE/Blackjack tags render at consistent opacity.
 - Blackjack tag timing: the "Blackjack" tag is gated by `visibleCardCount` during the initial deal, so it doesn't appear until the 2nd card has actually been dealt/seen.
 - Badge hiding scope: while a new card is animating, we only suppress badges on the active/focus hand (to avoid animation conflicts). Completed/non-focus hands keep badges visible, preventing global "badge blinking" during multi-hand play.
+- Badge layering: per-hand badges use a high z-index and player-hand containers avoid creating independent stacking contexts, so badges stay visible even when a dealt card passes over adjacent hands.
 - Notes on the layout experiments that led here: `docs/TRAINING_LAYOUT_EXPERIMENTS.md`.
 
 ---
