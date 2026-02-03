@@ -40,23 +40,30 @@ The discard pile visualization is hidden while deck estimation is enabled.
 
 ## Sizing / Cropping Rules
 - The image matches the same dimensions as the training cards (it follows `.card-large` sizes and scales with `--card-scale`).
-- The image uses `object-fit: contain` to avoid cropping (the full photo is always visible).
+- The image is stretched to fill the card-sized box (no letterboxing). This keeps the discard tray photo exactly the same height as the dealer cards.
 
 ## Freeze / Flicker Rules
-To avoid flicker while the dealer is drawing cards or while cards are being removed from the table, the displayed image does NOT update continuously.
+To avoid flicker and to match how a real discard tray "updates" at the end of a round, the displayed image does NOT update continuously.
 
 Implementation:
 - TrainingPage owns a frozen value `deckEstimationCards`.
-- That value updates only during safe phases:
-  - `idle`
-  - `betting`
-  - `insurance`
-  - `player-action`
-- The value is intentionally NOT updated during:
-  - `dealer-turn`
-  - `payout` (including the card removal animation)
+- That value updates **once per round**, at the moment cards begin moving off the table (the removal animation starts).
+- The value is intentionally NOT updated card-by-card during player hits or dealer draws.
+- If a shuffle happens (new shoe), the deck image is reset immediately to full shoe.
 
-This prevents the deck image from changing mid-dealer-play or mid-removal.
+This prevents the deck image from changing mid-dealer-play or mid-removal, and keeps the visual cue stable during decision-making.
+
+## Layout Details
+- The deck image stays rendered whenever the setting is enabled (it should not "blink" between rounds).
+- The dealer stack wrapper has a fixed height equal to card height to avoid vertical "jumping" as dealer cards become visible.
+- Spacing between the deck image and the hole card:
+  - Uses a comfortable default gap on normal screens.
+  - Collapses the gap on narrow screens (based on available left space) so the image is less likely to be clipped.
+
+## Styling
+- The deck image has **no card-like shadow** (it is a photo cue, not a playing card).
+- There is no "card-like" placeholder background while loading; the image simply appears once loaded.
+- When the deck image changes, it swaps only after the next file is preloaded (prevents flicker).
 
 ## Tooltip / Decks Remaining Display
 The deck estimation tooltip uses whole-deck (full-deck) estimation:
@@ -71,10 +78,16 @@ Because the frontend is deployed as a GitHub Pages project site (`/<repo>/`), de
 
 - `imagePath = ${import.meta.env.BASE_URL}assets/deck-estimation/<file>.webp`
 
+## Count Bar (Divisor / True Count)
+Training Mode shows both the estimated (human-style) and exact math values:
+- `Divisor`: quantized decks remaining (full-deck floor or half-deck step depending on training settings)
+- `True`: TC computed from RC / divisor, then quantized per training setting
+- `Exact Div`: exact decks remaining (`shoe.length / 52`, shown to 1 decimal)
+- `Exact TC`: exact TC (`RC / exactDiv`, shown to 1 decimal)
+
 ## Implementation Files
 - `frontend/src/components/training/DeckEstimationImage.tsx`
 - `frontend/src/components/training/DeckEstimationImage.css`
 - `frontend/src/components/training/Table.tsx`
 - `frontend/src/components/training/Table.css`
 - `frontend/src/components/training/TrainingPage.tsx`
-

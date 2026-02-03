@@ -4,7 +4,7 @@
 
 .deck-estimation {
   position: absolute;
-  right: calc(100% + 10px);
+  right: calc(100% + var(--deck-est-gap-px, 16px));
   top: 0;
   transform: none;
   z-index: 5;
@@ -15,45 +15,20 @@
   width: calc(90px * var(--card-scale, 1.2));
   height: calc(126px * var(--card-scale, 1.2));
   border-radius: 0;
-  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.3);
-  /* No cropping — show the full image */
-  object-fit: contain;
-  opacity: 0;
-  transition: opacity 0.3s ease;
+  /* No shadow/border: this is a photo cue, not a playing card. */
+  box-shadow: none;
+  /* Force the photo to fill the exact card-sized box (no letterboxing). */
+  object-fit: fill;
   display: block;
 }
 
-.deck-estimation-image.loaded {
-  opacity: 1;
-}
-
-/* Loading skeleton — use card dimensions as placeholder */
-.deck-estimation-skeleton {
-  width: calc(90px * var(--card-scale, 1.2));
-  height: calc(126px * var(--card-scale, 1.2));
-  border-radius: 0;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.05) 0%,
-    rgba(255, 255, 255, 0.1) 50%,
-    rgba(255, 255, 255, 0.05) 100%
-  );
-  background-size: 200% 100%;
-  animation: deckEstShimmer 1.5s infinite;
-}
-
-@keyframes deckEstShimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-/* Error fallback */
+/* Error fallback (no "card" background). */
 .deck-estimation-error {
   width: calc(90px * var(--card-scale, 1.2));
   height: calc(126px * var(--card-scale, 1.2));
   border-radius: 0;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  border: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -65,30 +40,15 @@
   font-weight: 600;
 }
 
-/* Mobile — match mobile card height, keep at left edge */
+/* Mobile - match mobile card height */
 @media (max-width: 768px) {
   .deck-estimation-image {
     width: calc(70px * var(--card-scale, 1.2));
     height: calc(98px * var(--card-scale, 1.2));
   }
 
-  .deck-estimation-skeleton,
   .deck-estimation-error {
     width: calc(70px * var(--card-scale, 1.2));
     height: calc(98px * var(--card-scale, 1.2));
-  }
-}
-
-/* Landscape mobile */
-@media (max-width: 896px) and (orientation: landscape) {
-  .deck-estimation-image {
-    width: calc(60px * var(--card-scale, 1.2));
-    height: calc(84px * var(--card-scale, 1.2));
-  }
-
-  .deck-estimation-skeleton,
-  .deck-estimation-error {
-    width: calc(60px * var(--card-scale, 1.2));
-    height: calc(84px * var(--card-scale, 1.2));
   }
 }

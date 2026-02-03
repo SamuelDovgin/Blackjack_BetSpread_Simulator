@@ -45,6 +45,7 @@
 .dealer-stack-wrap {
   position: relative;
   display: inline-block;
+  overflow: visible;
 }
 
 /* Hand totals */

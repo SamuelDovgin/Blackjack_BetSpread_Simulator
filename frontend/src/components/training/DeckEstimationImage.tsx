@@ -2,7 +2,7 @@
 // Displays cropped shoe image showing remaining deck depth for visual training
 // Replaces the discard pile on the left side of the table (desktop only)
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import './DeckEstimationImage.css';
 
 interface DeckEstimationImageProps {
@@ -23,40 +23,60 @@ export const DeckEstimationImage: React.FC<DeckEstimationImageProps> = ({
   totalCards,
   cardScale = 'medium',
 }) => {
-  const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
 
-  const imageFilename = getImageFilename(cardsRemaining);
+  const desiredFilename = getImageFilename(cardsRemaining);
+  const [displayFilename, setDisplayFilename] = useState(desiredFilename);
+
   // Use Vite's BASE_URL so this works on GitHub Pages project sites (/repo/).
-  const imagePath = `${import.meta.env.BASE_URL}assets/deck-estimation/${imageFilename}`;
+  const baseUrl = import.meta.env.BASE_URL;
+  const desiredPath = useMemo(
+    () => `${baseUrl}assets/deck-estimation/${desiredFilename}`,
+    [baseUrl, desiredFilename]
+  );
+  const displayPath = useMemo(
+    () => `${baseUrl}assets/deck-estimation/${displayFilename}`,
+    [baseUrl, displayFilename]
+  );
 
   // Calculate decks remaining for tooltip
   const decksRemaining = Math.max(0, Math.floor(cardsRemaining / 52));
 
-  // Reset loading state when image changes
+  // Keep the image visually stable: preload the next file and only swap the displayed
+  // src once it's already loaded. This avoids "blinking" between rounds.
   useEffect(() => {
-    setImageLoaded(false);
     setImageError(false);
-  }, [imageFilename]);
+    if (desiredFilename === displayFilename) return;
+
+    let cancelled = false;
+    const img = new Image();
+    img.src = desiredPath;
+    img.onload = () => {
+      if (cancelled) return;
+      setDisplayFilename(desiredFilename);
+    };
+    img.onerror = () => {
+      if (cancelled) return;
+      setImageError(true);
+    };
+
+    return () => {
+      cancelled = true;
+    };
+  }, [desiredFilename, displayFilename, desiredPath]);
 
   return (
     <div
       className="deck-estimation"
       title={`${decksRemaining} decks remaining (${cardsRemaining} cards)`}
     >
-      {!imageLoaded && !imageError && (
-        <div className="deck-estimation-skeleton" />
-      )}
-
       <img
-        src={imagePath}
+        src={displayPath}
         alt={`Shoe depth showing ${decksRemaining} decks remaining`}
-        className={`deck-estimation-image ${imageLoaded ? 'loaded' : ''}`}
-        loading="lazy"
-        onLoad={() => setImageLoaded(true)}
+        className="deck-estimation-image"
         onError={() => {
           setImageError(true);
-          console.error(`Failed to load deck estimation image: ${imagePath}`);
+          console.error(`Failed to load deck estimation image: ${displayPath}`);
         }}
       />
 
