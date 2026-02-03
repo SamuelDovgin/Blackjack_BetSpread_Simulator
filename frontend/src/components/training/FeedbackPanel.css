@@ -14,6 +14,11 @@
   pointer-events: none;
 }
 
+/* Enable pointer events when banner has buttons */
+.feedback-banner-wrapper:has(.persistent) {
+  pointer-events: auto;
+}
+
 .feedback-panel {
   border-radius: 20px;
   padding: 6px 14px;
@@ -24,6 +29,24 @@
   font-weight: 500;
   white-space: nowrap;
   animation: feedbackFadeInOut 1.5s ease-out forwards;
+}
+
+/* Persistent banner (incorrect decisions) - no auto-fade */
+.feedback-panel.persistent {
+  animation: feedbackFadeIn 0.2s ease-out forwards;
+  padding: 8px 10px 8px 14px;
+  gap: 8px;
+}
+
+@keyframes feedbackFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes feedbackFadeInOut {
@@ -99,6 +122,65 @@
 .feedback-tag.tag-missed {
   background: rgba(255, 255, 255, 0.2);
   color: rgba(255, 255, 255, 0.9);
+}
+
+/* ============================================
+   Feedback Banner Buttons (Undo/Dismiss)
+   ============================================ */
+
+.feedback-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.feedback-action-text {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.feedback-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.feedback-btn {
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  transition: background 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+
+.feedback-btn:active {
+  transform: scale(0.95);
+}
+
+.feedback-btn-undo {
+  background: rgba(255, 255, 255, 0.25);
+  color: white;
+}
+
+.feedback-btn-undo:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.feedback-btn-dismiss {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 4px 6px;
+  font-size: 14px;
+}
+
+.feedback-btn-dismiss:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.15);
 }
 
 /* ============================================
