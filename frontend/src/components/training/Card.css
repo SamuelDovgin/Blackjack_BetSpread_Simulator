@@ -11,7 +11,7 @@
 .card.card-large {
   position: relative;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.3);
   user-select: none;
   flex-shrink: 0;
   transform-style: preserve-3d;
@@ -63,28 +63,28 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  line-height: 1;
+  line-height: 0.75;
+  gap: 0px;
 }
 
 .card-corner-top {
-  top: 4px;
-  left: 4px;
+  top: 5px;
+  left: 6px;
 }
 
 .card-corner-bottom {
-  bottom: 4px;
-  right: 4px;
+  bottom: 5px;
+  right: 6px;
   transform: rotate(180deg);
 }
 
 .card-rank {
   font-weight: bold;
-  font-size: 1em;
+  font-size: 0.85em;
 }
 
 .card-corner .card-suit {
-  font-size: 0.8em;
-  margin-top: -2px;
+  font-size: 0.7em;
 }
 
 .card-corner .card-suit,
@@ -102,7 +102,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px 12px;
+  padding: 16px 19px;
 }
 
 /* Pip grid for number cards */
@@ -456,6 +456,12 @@
   .shoe,
   .discard-pile {
     display: none;
+  }
+
+  .card.card-small,
+  .card.card-medium,
+  .card.card-large {
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
   }
 
   .card-medium {

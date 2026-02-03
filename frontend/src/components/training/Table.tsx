@@ -52,14 +52,14 @@ interface TableProps {
 
 // Base card layout constants at scale=1.0 — multiplied by cardScale prop at runtime.
 // Desktop base values
-const BASE_PLAYER_OFFSET_DESKTOP = { x: 28, y: -20 };
+const BASE_PLAYER_OFFSET_DESKTOP = { x: 19, y: -28 };
 const BASE_CARD_SIZE_DESKTOP = { w: 90, h: 126 };
 // Dealer initial (two-card) layout: keep the two cards slightly closer than "card width + 10px"
 // so scaling up doesn't feel like the upcard drifts too far right.
 const BASE_DEALER_INITIAL_DESKTOP = { x: 98, y: 0 };
 const BASE_DEALER_STACKED_DESKTOP = { x: 28, y: 0 };
 // Mobile base values (not scaled — mobile uses its own CSS base sizes)
-const BASE_PLAYER_OFFSET_MOBILE = { x: 22, y: -16 };
+const BASE_PLAYER_OFFSET_MOBILE = { x: 15, y: -22 };
 const BASE_CARD_SIZE_MOBILE = { w: 70, h: 98 };
 const BASE_DEALER_INITIAL_MOBILE = { x: 76, y: 0 };
 const BASE_DEALER_STACKED_MOBILE = { x: 22, y: 0 };
