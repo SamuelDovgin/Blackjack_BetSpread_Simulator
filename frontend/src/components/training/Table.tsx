@@ -333,51 +333,43 @@ export const Table: React.FC<TableProps> = ({
   // draw cards can overflow to the right (more like a real table).
   const dealerStackWidth = cardW + dealerInitialOffset.x;
 
-  // Deck estimation image spacing + dealer stack shift:
-  // When deck estimation is enabled, shift the dealer stack LEFT so the deck image
-  // and dealer cards are both visible. The gap between deck image and hole card
-  // shrinks on narrow screens before the upcard goes off-screen.
+  // Deck estimation image gap + dealer stack shift:
+  // 1. Start with the original right-of-center offset (desktop 40%, mobile 20%).
+  // 2. As screen narrows, shrink the gap between deck image and hole card.
+  // 3. Once the gap hits minimum, start shifting dealer cards further right.
   const viewportW = typeof window !== 'undefined' ? window.innerWidth : 0;
   const deckEdgeMarginLeftPx = isMobile ? 8 : 12;
 
-  // Gap between deck estimation image and hole card.
-  const deckEstDesiredGapPx = Math.round(cardW * 0.3); // Tighter gap
-  const deckEstMinGapPx = Math.round(dealerStackedOffset.x * 0.4); // Minimum gap
+  // Original dealer shift (right of center).
+  const baseShiftPx = isMobile ? Math.round(cardW * 0.2) : Math.round(cardW * 0.4);
 
-  // When deck estimation is OFF, use the original centering shift.
-  // When deck estimation is ON, don't shift right — keep dealer stack more centered/left.
-  const baseShiftWithoutDeckEst = isMobile ? Math.round(cardW * 0.28) : Math.round(cardW * 0.5);
+  // Gap settings.
+  const deckEstDesiredGapPx = Math.round(cardW * 0.3);
+  const deckEstMinGapPx = Math.round(dealerStackedOffset.x * 0.4);
 
-  // Calculate where the dealer stack sits when centered (no shift).
-  const baseDealerLeftPx = viewportW ? Math.floor((viewportW - dealerStackWidth) / 2) : 0;
-
-  let deckEstGapPx = 0;
-  let dealerCardShiftPx = 0;
+  let deckEstGapPx = deckEstDesiredGapPx;
+  let dealerCardShiftPx = baseShiftPx;
 
   if (showDeckEstimationImage && viewportW) {
-    // Space needed on the left for deck image: edge margin + card width + gap.
-    const spaceNeededWithDesiredGap = deckEdgeMarginLeftPx + cardW + deckEstDesiredGapPx;
-    const spaceNeededWithMinGap = deckEdgeMarginLeftPx + cardW + deckEstMinGapPx;
+    // Calculate available space on the left with the base shift.
+    const baseDealerLeftPx = Math.floor((viewportW - dealerStackWidth) / 2);
+    const availableLeftPx = baseDealerLeftPx + baseShiftPx;
+    const spaceNeededDesired = deckEdgeMarginLeftPx + cardW + deckEstDesiredGapPx;
+    const spaceNeededMin = deckEdgeMarginLeftPx + cardW + deckEstMinGapPx;
 
-    // How much space do we have on the left if we don't shift?
-    const availableLeftNoShift = baseDealerLeftPx;
-
-    if (availableLeftNoShift >= spaceNeededWithDesiredGap) {
-      // Plenty of room — use desired gap, no shift needed.
+    if (availableLeftPx >= spaceNeededDesired) {
+      // Plenty of room — use desired gap, base shift.
       deckEstGapPx = deckEstDesiredGapPx;
-      dealerCardShiftPx = 0;
-    } else if (availableLeftNoShift >= spaceNeededWithMinGap) {
-      // Some room — shrink the gap to fit, no shift needed.
-      deckEstGapPx = Math.max(deckEstMinGapPx, availableLeftNoShift - deckEdgeMarginLeftPx - cardW);
-      dealerCardShiftPx = 0;
+      dealerCardShiftPx = baseShiftPx;
+    } else if (availableLeftPx >= spaceNeededMin) {
+      // Shrink gap to fit, keep base shift.
+      deckEstGapPx = availableLeftPx - deckEdgeMarginLeftPx - cardW;
+      dealerCardShiftPx = baseShiftPx;
     } else {
-      // Not enough room even with min gap — shift dealer stack right minimally.
+      // Gap is at minimum — now shift dealer cards further right.
       deckEstGapPx = deckEstMinGapPx;
-      dealerCardShiftPx = spaceNeededWithMinGap - availableLeftNoShift;
+      dealerCardShiftPx = baseShiftPx + (spaceNeededMin - availableLeftPx);
     }
-  } else {
-    // No deck estimation — use original shift behavior.
-    dealerCardShiftPx = baseShiftWithoutDeckEst;
   }
 
   // Dynamic spacing: each hand's allocated width grows with its card count.
