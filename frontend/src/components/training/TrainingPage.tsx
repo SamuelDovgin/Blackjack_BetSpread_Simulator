@@ -114,6 +114,7 @@ function seatForInitialDealIndex(dealIndex: number, handsToPlay: number): number
 // localStorage keys for persistence
 const STORAGE_KEY_SETTINGS = 'blackjack-training-settings';
 const STORAGE_KEY_STATS = 'blackjack-training-stats';
+const STORAGE_KEY_GAME_STATE = 'blackjack-training-game-state';
 
 /**
  * Load settings from localStorage, merging with defaults
@@ -171,6 +172,53 @@ function saveStats(stats: TrainingStats): void {
   }
 }
 
+type PersistedGameStateV1 = {
+  v: 1;
+  numDecks: number;
+  savedAt: number;
+  state: GameState;
+};
+
+const SAFE_PERSIST_PHASES: GamePhase[] = ['player-action', 'insurance', 'idle', 'betting'];
+
+function loadGameState(numDecks: number): GameState | null {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_GAME_STATE);
+    if (!stored) return null;
+
+    const parsed = JSON.parse(stored) as PersistedGameStateV1;
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (parsed.v !== 1) return null;
+    if (parsed.numDecks !== numDecks) return null;
+    if (!parsed.state || typeof parsed.state !== 'object') return null;
+    if (!SAFE_PERSIST_PHASES.includes(parsed.state.phase)) return null;
+
+    // Minimal sanity checks so we don't crash on malformed storage.
+    if (!Array.isArray(parsed.state.shoe)) return null;
+    if (!Array.isArray(parsed.state.dealerHand)) return null;
+    if (!Array.isArray(parsed.state.playerHands)) return null;
+
+    return parsed.state;
+  } catch (e) {
+    console.warn('Failed to load training game state from localStorage:', e);
+    return null;
+  }
+}
+
+function saveGameState(numDecks: number, state: GameState): void {
+  try {
+    const payload: PersistedGameStateV1 = {
+      v: 1,
+      numDecks,
+      savedAt: Date.now(),
+      state,
+    };
+    localStorage.setItem(STORAGE_KEY_GAME_STATE, JSON.stringify(payload));
+  } catch (e) {
+    console.warn('Failed to save training game state to localStorage:', e);
+  }
+}
+
 interface TrainingPageProps {
   onBack: () => void;
   // Config from main app
@@ -203,9 +251,12 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   tcEstimationMethod = 'floor',
 }) => {
   // Game state
-  const [gameState, setGameState] = useState<GameState>(() =>
-    createInitialGameState(numDecks, 1000)
-  );
+  const [gameState, setGameState] = useState<GameState>(() => {
+    const restored = loadGameState(numDecks);
+    if (restored) return restored;
+    const initialSettings = loadSettings();
+    return createInitialGameState(numDecks, initialSettings.bankrollUnits ?? 1000);
+  });
 
   // Settings (persisted to localStorage)
   const [settings, setSettings] = useState<TrainingSettings>(() => loadSettings());
@@ -232,6 +283,13 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
   // Stats panel state
   const [showStats, setShowStats] = useState(false);
+
+  // Count visibility toggle state (not persisted - always starts hidden)
+  const [showCountValues, setShowCountValues] = useState(false);
+
+  // Deck estimation: freeze the displayed card count so the image doesn't
+  // flicker during dealer draws or card removal animations.
+  const [deckEstCards, setDeckEstCards] = useState(numDecks * 52);
 
   // Insurance state
   const [showInsurancePrompt, setShowInsurancePrompt] = useState(false);
@@ -286,6 +344,35 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
+
+  // Update deck estimation image only during safe phases (not while dealer draws / cards leaving)
+  useEffect(() => {
+    const safePhases: GamePhase[] = ['player-action', 'insurance', 'idle', 'betting'];
+    if (safePhases.includes(gameState.phase)) {
+      setDeckEstCards(gameState.shoe.length);
+    }
+  }, [gameState.phase, gameState.shoe.length]);
+
+  // Persist game state (including bankroll + current hand) so Training Mode can be resumed.
+  // Only persist during "safe" phases, never mid-deal / mid-dealer-play / mid-removal.
+  const gameStateTimeoutRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!SAFE_PERSIST_PHASES.includes(gameState.phase)) return;
+    if (isRemovingCards || isRevealingHoleCard || isSplitting || splitDealingPhase !== 0) return;
+
+    if (gameStateTimeoutRef.current) {
+      window.clearTimeout(gameStateTimeoutRef.current);
+    }
+    gameStateTimeoutRef.current = window.setTimeout(() => {
+      saveGameState(numDecks, gameState);
+    }, 500);
+
+    return () => {
+      if (gameStateTimeoutRef.current) {
+        window.clearTimeout(gameStateTimeoutRef.current);
+      }
+    };
+  }, [gameState, numDecks, isRemovingCards, isRevealingHoleCard, isSplitting, splitDealingPhase]);
 
   const cycleHandsToPlay = useCallback(() => {
     setSettings((s) => {
@@ -422,7 +509,8 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       const reshuffleAt = numDecks * 52 * (1 - penetration);
       const needShuffle = prev.shoe.length < reshuffleAt;
       const base = needShuffle ? createInitialGameState(numDecks, prev.bankroll) : prev;
-      return dealInitialCards(base, settings.defaultBet, handsToPlay);
+      // Training mode always uses a 1-unit initial bet (bankroll is tracked in units).
+      return dealInitialCards(base, 1, handsToPlay);
     });
 
     // After the last card finishes moving, transition to player-action or dealer-turn.
@@ -472,7 +560,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       });
     }, lastShowMs + INITIAL_DEAL_ANIM_MS + 20);
     timersRef.current.push(doneId);
-  }, [numDecks, penetration, settings.defaultBet, settings.handsToPlay, settings.dealingSpeed, blackjackPayout]);
+  }, [numDecks, penetration, settings.handsToPlay, settings.dealingSpeed, blackjackPayout]);
 
   // Validate action against basic strategy and track decision
   const validateAndTrackDecision = useCallback((
@@ -654,6 +742,14 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       if (!decision.isCorrect) {
         const mistakeKey = decision.userAction;
         newHandStat.mistakes[mistakeKey] = (newHandStat.mistakes[mistakeKey] || 0) + 1;
+
+        // Track most recent mistake
+        newStats.lastMistake = {
+          handKey,
+          userAction: decision.userAction,
+          correctAction: decision.correctAction,
+          explanation: decision.reason,
+        };
       }
       newStats.handStats = { ...newStats.handStats, [handKey]: newHandStat };
 
@@ -1325,32 +1421,38 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
         </div>
       </header>
 
-      {/* Info bar */}
+      {/* Count info bar */}
       <div className="training-info-bar">
         <div className="info-item">
-          <span className="info-label">Bankroll</span>
-          <span className="info-value">{gameState.bankroll.toFixed(0)}u</span>
+          <span className="info-label">Running</span>
+          <span className={`info-value ${showCountValues ? '' : 'info-hidden'}`}>
+            {showCountValues ? gameState.runningCount : '—'}
+          </span>
         </div>
         <div className="info-item">
-          <span className="info-label">Hand</span>
-          <span className="info-value">#{gameState.roundNumber}</span>
+          <span className="info-label">Divisor</span>
+          <span className={`info-value ${showCountValues ? '' : 'info-hidden'}`}>
+            {showCountValues ? decksRemaining.toFixed(settings.tcEstimationMethod === 'perfect' ? 2 : 1) : '—'}
+          </span>
         </div>
-        {settings.showCount && (
-          <>
-            <div className="info-item">
-              <span className="info-label">RC</span>
-              <span className="info-value">{gameState.runningCount}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">TC</span>
-              <span className="info-value">{trueCount.toFixed(1)}</span>
-            </div>
-          </>
-        )}
         <div className="info-item">
-          <span className="info-label">Decks</span>
-          <span className="info-value">{decksRemaining.toFixed(1)}</span>
+          <span className="info-label">True</span>
+          <span className={`info-value ${showCountValues ? '' : 'info-hidden'}`}>
+            {showCountValues ? Math.floor(trueCount) : '—'}
+          </span>
         </div>
+        <button
+          className={`count-toggle-btn ${showCountValues ? 'active' : ''}`}
+          onClick={() => setShowCountValues(!showCountValues)}
+          title={showCountValues ? 'Hide count values' : 'Show count values'}
+          aria-label={showCountValues ? 'Hide count values' : 'Show count values'}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+            <circle cx="12" cy="12" r="3" />
+            {!showCountValues && <line x1="1" y1="1" x2="23" y2="23" />}
+          </svg>
+        </button>
       </div>
 
       {/* Main game area */}
@@ -1364,7 +1466,6 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           showHandTotals={settings.showHandTotals}
           cardsRemaining={gameState.shoe.length}
           totalCards={totalCards}
-          cardsDiscarded={totalCards - gameState.shoe.length}
           visibleCardCount={visibleCardCount}
           isRevealingHoleCard={isRevealingHoleCard}
           isRemovingCards={isRemovingCards}
@@ -1374,6 +1475,9 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           splitDealingPhase={splitDealingPhase}
           splitOriginHandIndex={splitOriginHandIndex}
           cardScale={settings.cardScale ?? 'medium'}
+          cardsDiscarded={totalCards - gameState.shoe.length}
+          showDeckEstimation={settings.showDeckEstimation ?? true}
+          deckEstimationCards={deckEstCards}
         />
       </main>
 
@@ -1511,14 +1615,37 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
               />
             </label>
 
+            <div className="setting-row">
+              <span>Bet / Hand (units)</span>
+              <span>1 (fixed)</span>
+            </div>
+
             <label className="setting-row">
-              <span>Default Bet</span>
+              <span>Bankroll (units)</span>
               <input
                 type="number"
-                min={1}
-                max={100}
-                value={settings.defaultBet}
-                onChange={e => setSettings(s => ({ ...s, defaultBet: parseInt(e.target.value) || 1 }))}
+                min={0}
+                step={1}
+                value={settings.bankrollUnits}
+                onChange={(e) => {
+                  const v = Math.max(0, parseInt(e.target.value) || 0);
+                  setSettings((s) => ({ ...s, bankrollUnits: v }));
+                  setGameState((g) => ({ ...g, bankroll: v }));
+                }}
+              />
+            </label>
+
+            <label className="setting-row">
+              <span>$ / Unit</span>
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                value={settings.dollarsPerUnit}
+                onChange={(e) => {
+                  const v = Math.max(0, Number(e.target.value) || 0);
+                  setSettings((s) => ({ ...s, dollarsPerUnit: v }));
+                }}
               />
             </label>
 
@@ -1578,6 +1705,15 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
                 <option value="medium">Medium</option>
                 <option value="fast">Fast</option>
               </select>
+            </label>
+
+            <label className="setting-row">
+              <span>Deck Estimation Image</span>
+              <input
+                type="checkbox"
+                checked={settings.showDeckEstimation ?? true}
+                onChange={e => setSettings(s => ({ ...s, showDeckEstimation: e.target.checked }))}
+              />
             </label>
 
             <button className="close-settings" onClick={() => setShowSettings(false)}>

@@ -52,11 +52,13 @@ engine/simulation.py   → Core simulation engine (~1200 lines): shoe management
 App.tsx              → Main SPA: simulator config forms + results display
 api/client.ts        → Axios client + shared TypeScript types (mirrors backend Pydantic models)
 components/training/ → Self-contained training mode (no backend dependency)
-  engine/gameEngine.ts     → Game state management (immutable state updates)
-  engine/basicStrategy.ts  → Pure functions for strategy lookup
-  engine/deviations.ts     → Deviation rule checking
-  TrainingPage.tsx         → Main training UI
-  Card.tsx, Table.tsx, ActionButtons.tsx, FeedbackPanel.tsx, StatsPanel.tsx
+  engine/gameEngine.ts       → Game state management (immutable state updates)
+  engine/basicStrategy.ts    → Pure functions for strategy lookup
+  engine/deviations.ts       → Deviation rule checking
+  TrainingPage.tsx           → Main training UI with count toggle
+  Table.tsx                  → Card layout and positioning
+  DeckEstimationImage.tsx    → Visual deck depth training aid (364 WebP images)
+  Card.tsx, ActionButtons.tsx, FeedbackPanel.tsx, StatsPanel.tsx
 ```
 
 ### Key Design Decisions
@@ -65,7 +67,9 @@ components/training/ → Self-contained training mode (no backend dependency)
 - **Multiprocessing fallback:** Uses ProcessPoolExecutor when available, falls back to single-thread in sandboxed environments.
 - **Training mode is standalone:** Runs entirely in-browser with no backend calls, enabling GitHub Pages deployment with `VITE_DISABLE_BACKEND=1`.
 - **Client-side defaults (`frontend/src/api/client.ts`):** `CLIENT_DEFAULTS` mirrors `backend/app/data/presets.py` — Midwest 6D H17 DAS rules (surrender OFF, resplit aces ON, 0.75 pen), Hi-Lo count, I18 + Fab 4 deviations, 1-12 bet ramp. When the backend is unavailable, `App.tsx` uses these to populate the rules widget, deviations list, and bet ramp so the full UI works without a backend. Training mode's own `DEFAULT_RULES` in `basicStrategy.ts` and `DEFAULT_TRAINING_SETTINGS` in `types.ts` also default surrender OFF and TC estimation to floor.
-- **Card sizing:** Card dimensions use a `--card-scale` CSS variable (set on `.training-page`) with base sizes at scale 1.0 (90x126 large). Three presets: small (1.0x), medium (1.2x, default), large (1.5x). The setting is in `TrainingSettings.cardScale` and persisted to localStorage. `Table.tsx` exports `CARD_SCALE_VALUES` and computes JS layout offsets from the same scale factor. Both CSS and JS must use the same base values.
+- **Card sizing:** Card dimensions use a `--card-scale` CSS variable (set on `.training-page`) with base sizes at scale 1.0 (90x126 large). Four presets: small (1.0x), medium (1.2x), large (1.5x, default), xlarge (1.8x). The setting is in `TrainingSettings.cardScale` and persisted to localStorage. `Table.tsx` exports `CARD_SCALE_VALUES` and computes JS layout offsets from the same scale factor. Both CSS and JS must use the same base values.
+- **Deck estimation visualization:** Opt-in training aid displaying 364 WebP images (000.webp to 363.webp) showing remaining deck depth in the shoe. Images sourced from cropped discard tray photos (~13MB total). Positioned 3 card widths left of shoe (desktop) or 1 card width left (mobile). Toggle via settings; default OFF to avoid mandatory asset download. Images lazy-load on demand.
+- **Count display toggle:** Top bar shows "Running | Divisor | True" count values with eye icon (👁) toggle. Default hidden (blank) for practice; users click to verify mental count accuracy. Not persisted - always starts hidden. Divisor precision follows `tcEstimationMethod` setting (floor/halfDeck/perfect). True count displays floored integer value.
 
 ### Environment Variables
 - `VITE_API_BASE` — Backend API URL (default: `http://127.0.0.1:8001/api`)

@@ -10,6 +10,7 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Card, Shoe, DiscardPile } from './Card';
+import { DeckEstimationImage } from './DeckEstimationImage';
 import type { Card as CardType, HandState, GamePhase } from './types';
 import { calculateHandTotal, calculateFullHandTotal } from './engine/gameEngine';
 import './Table.css';
@@ -48,6 +49,10 @@ interface TableProps {
   splitOriginHandIndex?: number | null;
   /** Card scale name ('small' | 'medium' | 'large') — controls card/offset sizing */
   cardScale?: string;
+  /** Whether to show deck estimation image to the left of the shoe */
+  showDeckEstimation?: boolean;
+  /** Frozen cards remaining for deck estimation (doesn't update during dealer/payout) */
+  deckEstimationCards?: number;
 }
 
 // Base card layout constants at scale=1.0 — multiplied by cardScale prop at runtime.
@@ -218,6 +223,8 @@ export const Table: React.FC<TableProps> = ({
   splitDealingPhase = 0,
   splitOriginHandIndex = null,
   cardScale: cardScaleName = 'medium',
+  showDeckEstimation = true,
+  deckEstimationCards,
 }) => {
   const isMobile =
     typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
@@ -462,43 +469,60 @@ export const Table: React.FC<TableProps> = ({
         {/* Shoe - desktop only (hidden via CSS on mobile) */}
         <Shoe cardsRemaining={cardsRemaining} totalCards={totalCards} />
 
-        {/* Discard pile - desktop only (hidden via CSS on mobile) */}
-        <DiscardPile cardsDiscarded={cardsDiscarded} />
+        {/* Discard pile - only shown when deck estimation is off */}
+        {!showDeckEstimation && <DiscardPile cardsDiscarded={cardsDiscarded} />}
 
         {/* Dealer area */}
         <div className="dealer-area">
           <div className="dealer-label">DEALER</div>
             <div className="hand dealer-hand">
               {dealerHand.length > 0 ? (
-                <div className="card-stack dealer-stack" style={{ width: `${dealerStackWidth}px`, transform: `translateX(${dealerCardShiftPx}px)` }}>
-                  {dealerHand.map((card, i) => {
-                    const dealIndex = getDealSequenceIndex(true, i, totalPlayerCards, totalDealerCards, playerHands.length);
-                    const isDealerInitialDealing = isInitialDeal && isNewestByVisible(dealIndex);
-                    const isNewDealerCard = dealerHand.length > prevDealerCount && i === dealerHand.length - 1;
-                    const isDealerHitDealing = phase === 'dealer-turn' && i >= 2 && isNewDealerCard;
-                    const isThisCardDealing = (isDealerInitialDealing || isDealerHitDealing) && !isRevealingHoleCard && !isRemovingCards;
-                    const isFlipping = isRevealingHoleCard && i === 0;
-                    const isHoleCard = i === 0;
-                    // Card is visible if its deal sequence index is less than visibleCardCount
-                    const isCardVisible = dealIndex < visibleCardCount;
-                    const cardZ = isThisCardDealing ? 10000 + i : i;
+                <div
+                  className="dealer-stack-wrap"
+                  style={{
+                    width: `${dealerStackWidth}px`,
+                    transform: `translateX(${dealerCardShiftPx}px)`,
+                  }}
+                >
+                  {/* Deck estimation image: card-sized and anchored to the hole card (left of dealer stack). */}
+                  {showDeckEstimation && (
+                    <DeckEstimationImage
+                      cardsRemaining={deckEstimationCards ?? cardsRemaining}
+                      totalCards={totalCards}
+                      cardScale={cardScaleName}
+                    />
+                  )}
 
-                    return (
-                      <Card
-                        key={`dealer-${roundNumber}-${i}`}
-                        card={card}
-                        size="large"
-                        isVisible={isCardVisible}
-                        isDealing={isThisCardDealing}
-                        isDealerCard={true}
-                        isHoleCard={isHoleCard}
-                        isFlipping={isFlipping}
-                        isRemoving={isRemovingCards}
-                        stackOffset={i > 0 ? { x: dealerOffset.x * i, y: dealerOffset.y * i } : undefined}
-                        zIndex={cardZ}
-                      />
-                    );
-                  })}
+                  <div className="card-stack dealer-stack" style={{ width: `${dealerStackWidth}px` }}>
+                    {dealerHand.map((card, i) => {
+                      const dealIndex = getDealSequenceIndex(true, i, totalPlayerCards, totalDealerCards, playerHands.length);
+                      const isDealerInitialDealing = isInitialDeal && isNewestByVisible(dealIndex);
+                      const isNewDealerCard = dealerHand.length > prevDealerCount && i === dealerHand.length - 1;
+                      const isDealerHitDealing = phase === 'dealer-turn' && i >= 2 && isNewDealerCard;
+                      const isThisCardDealing = (isDealerInitialDealing || isDealerHitDealing) && !isRevealingHoleCard && !isRemovingCards;
+                      const isFlipping = isRevealingHoleCard && i === 0;
+                      const isHoleCard = i === 0;
+                      // Card is visible if its deal sequence index is less than visibleCardCount
+                      const isCardVisible = dealIndex < visibleCardCount;
+                      const cardZ = isThisCardDealing ? 10000 + i : i;
+
+                      return (
+                        <Card
+                          key={`dealer-${roundNumber}-${i}`}
+                          card={card}
+                          size="large"
+                          isVisible={isCardVisible}
+                          isDealing={isThisCardDealing}
+                          isDealerCard={true}
+                          isHoleCard={isHoleCard}
+                          isFlipping={isFlipping}
+                          isRemoving={isRemovingCards}
+                          stackOffset={i > 0 ? { x: dealerOffset.x * i, y: dealerOffset.y * i } : undefined}
+                          zIndex={cardZ}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
               ) : (
                 <div className="empty-hand">Waiting...</div>

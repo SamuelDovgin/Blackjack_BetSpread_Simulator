@@ -30,7 +30,7 @@
 .back-button {
   background: none;
   border: none;
-  color: #4ecdc4;
+  color: rgba(255, 255, 255, 0.9);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -40,7 +40,7 @@
 }
 
 .back-button:hover {
-  background: rgba(78, 205, 196, 0.1);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .training-title {
@@ -71,6 +71,7 @@
   flex-shrink: 0;
   display: flex;
   justify-content: center;
+  align-items: center;
   gap: 16px;
   padding: 12px 16px;
   background: rgba(0, 0, 0, 0.2);
@@ -95,6 +96,50 @@
   font-size: 16px;
   font-weight: 600;
   color: #fff;
+  transition: opacity 0.2s ease;
+}
+
+.info-value.info-hidden {
+  color: rgba(255, 255, 255, 0.2);
+  font-style: normal;
+}
+
+/* Count toggle button */
+.count-toggle-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: rgba(255, 255, 255, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  line-height: 1;
+}
+
+.count-toggle-btn svg {
+  display: block;
+}
+
+.count-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.count-toggle-btn.active {
+  background: rgba(66, 153, 225, 0.2);
+  border-color: rgba(66, 153, 225, 0.5);
+  color: #63b3ed;
+}
+
+.count-toggle-btn.active:hover {
+  background: rgba(66, 153, 225, 0.3);
+  border-color: rgba(66, 153, 225, 0.6);
+  color: #90cdf4;
 }
 
 /* Main game area */

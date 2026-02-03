@@ -55,7 +55,7 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ stats, onClose, onReset 
     }).filter(a => a.total > 0);
   }, [stats]);
 
-  // Find weak spots (hands with <80% accuracy and at least 3 occurrences)
+  // Find weak spots (all hands with at least 3 occurrences, sorted by accuracy)
   const weakSpots: WeakSpot[] = useMemo(() => {
     return Object.entries(stats.handStats)
       .filter(([_, data]) => data.total >= 3)
@@ -78,9 +78,9 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ stats, onClose, onReset 
           commonMistake,
         };
       })
-      .filter(spot => spot.accuracy < 80)
+      .filter((spot) => spot.accuracy < 80)
       .sort((a, b) => a.accuracy - b.accuracy)
-      .slice(0, 10);
+      .slice(0, 15);
   }, [stats.handStats]);
 
   // Format hand key for display
@@ -184,16 +184,34 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ stats, onClose, onReset 
         )}
 
         {/* Weak Spots */}
-        {weakSpots.length > 0 && (
+        {/* Most Recent Mistake */}
+        {stats.lastMistake && (
           <div className="stats-section">
-            <h3>Weak Spots</h3>
-            <p className="section-desc">Hands where you need more practice (under 80% accuracy)</p>
+            <h3>Most Recent Mistake</h3>
+            <div className="last-mistake">
+              <div className="last-mistake-hand">{formatHandKey(stats.lastMistake.handKey)}</div>
+              <div className="last-mistake-actions">
+                <span className="mistake-action user-action">You: {ACTION_LABELS[stats.lastMistake.userAction]}</span>
+                <span className="mistake-arrow">→</span>
+                <span className="mistake-action correct-action">Correct: {ACTION_LABELS[stats.lastMistake.correctAction]}</span>
+              </div>
+              {stats.lastMistake.explanation && (
+                <div className="last-mistake-explanation">{stats.lastMistake.explanation}</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="stats-section">
+          <h3>Weak Spots</h3>
+          <p className="section-desc">Hands where you need more practice (under 80% accuracy)</p>
+          {weakSpots.length > 0 ? (
             <div className="weak-spots-list">
               {weakSpots.map(spot => (
                 <div key={spot.handKey} className="weak-spot-item">
                   <div className="weak-spot-main">
                     <span className="weak-spot-hand">{formatHandKey(spot.handKey)}</span>
-                    <span className={`weak-spot-accuracy ${spot.accuracy < 50 ? 'bad' : 'moderate'}`}>
+                    <span className={`weak-spot-accuracy ${spot.accuracy < 50 ? 'bad' : spot.accuracy < 80 ? 'moderate' : 'good'}`}>
                       {spot.accuracy.toFixed(0)}%
                     </span>
                   </div>
@@ -208,8 +226,10 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ stats, onClose, onReset 
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <p className="section-desc">No weak spots yet. Keep playing to populate this list.</p>
+          )}
+        </div>
 
         {/* Reset Button */}
         <div className="stats-footer">

@@ -179,6 +179,57 @@
   color: rgba(255, 255, 255, 0.4);
 }
 
+/* Most Recent Mistake */
+.last-mistake {
+  background: rgba(231, 76, 60, 0.1);
+  border: 1px solid rgba(231, 76, 60, 0.3);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.last-mistake-hand {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.last-mistake-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.mistake-action {
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-weight: 500;
+}
+
+.user-action {
+  background: rgba(231, 76, 60, 0.2);
+  color: #e74c3c;
+}
+
+.correct-action {
+  background: rgba(46, 204, 113, 0.2);
+  color: #2ecc71;
+}
+
+.mistake-arrow {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 14px;
+}
+
+.last-mistake-explanation {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 6px;
+  font-style: italic;
+}
+
 /* Weak Spots */
 .weak-spots-list {
   display: flex;
@@ -221,6 +272,11 @@
 .weak-spot-accuracy.moderate {
   background: rgba(243, 156, 18, 0.2);
   color: #f39c12;
+}
+
+.weak-spot-accuracy.good {
+  background: rgba(46, 204, 113, 0.2);
+  color: #2ecc71;
 }
 
 .weak-spot-details {
