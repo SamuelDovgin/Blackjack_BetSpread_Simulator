@@ -7,6 +7,13 @@ import { Table, CARD_SCALE_VALUES } from './Table';
 import { ActionButtons } from './ActionButtons';
 import { FeedbackPanel, CorrectionModal } from './FeedbackPanel';
 import { StatsPanel } from './StatsPanel';
+import { ScenarioPanel, type ScenarioMode } from './ScenarioPanel';
+import {
+  generateShoeForTargetTC,
+  generateShoeForDeviation,
+  generatePlayToTCShoe,
+  generatePlayToDeviationShoe,
+} from './engine/scenarioGenerator';
 import type {
   GameState,
   GamePhase,
@@ -124,6 +131,13 @@ function loadSettings(): TrainingSettings {
     const stored = localStorage.getItem(STORAGE_KEY_SETTINGS);
     if (stored) {
       const parsed = JSON.parse(stored);
+      // Migration: older defaults used 'large'. Prefer 'xlarge' as the new default.
+      // (User can still pick 'large' explicitly in settings.)
+      if (parsed && typeof parsed === 'object') {
+        if (!('cardScale' in parsed) || parsed.cardScale === 'large') {
+          parsed.cardScale = DEFAULT_TRAINING_SETTINGS.cardScale;
+        }
+      }
       // Merge with defaults to handle any new settings added in updates
       return { ...DEFAULT_TRAINING_SETTINGS, ...parsed };
     }
@@ -193,12 +207,64 @@ function loadGameState(numDecks: number): GameState | null {
     if (!parsed.state || typeof parsed.state !== 'object') return null;
     if (!SAFE_PERSIST_PHASES.includes(parsed.state.phase)) return null;
 
-    // Minimal sanity checks so we don't crash on malformed storage.
+    // Minimal sanity checks + small migrations so we don't crash on malformed storage.
     if (!Array.isArray(parsed.state.shoe)) return null;
     if (!Array.isArray(parsed.state.dealerHand)) return null;
     if (!Array.isArray(parsed.state.playerHands)) return null;
 
-    return parsed.state;
+    // Migration: some older persisted states used rank '10' instead of 'T' (ten).
+    // Normalize ranks/suits so count math doesn't become NaN and cards render correctly.
+    const VALID_RANKS = new Set(['2','3','4','5','6','7','8','9','T','J','Q','K','A']);
+    const VALID_SUITS = new Set(['hearts','diamonds','clubs','spades']);
+
+    const normalizeCard = (c: any) => {
+      if (!c || typeof c !== 'object') return null;
+      const rawRank = (c as any).rank;
+      const rawSuit = (c as any).suit;
+      const faceUp = !!(c as any).faceUp;
+
+      const rank = rawRank === '10' ? 'T' : rawRank;
+      if (typeof rank !== 'string' || !VALID_RANKS.has(rank)) return null;
+      if (typeof rawSuit !== 'string' || !VALID_SUITS.has(rawSuit)) return null;
+
+      return { rank, suit: rawSuit, faceUp };
+    };
+
+    const normalizeCardArray = (arr: any[]) => {
+      const out: any[] = [];
+      for (const c of arr) {
+        const next = normalizeCard(c);
+        if (!next) return null;
+        out.push(next);
+      }
+      return out;
+    };
+
+    const shoe = normalizeCardArray(parsed.state.shoe);
+    const dealerHand = normalizeCardArray(parsed.state.dealerHand);
+    if (!shoe || !dealerHand) return null;
+
+    const playerHands = parsed.state.playerHands.map((h: any) => {
+      if (!h || typeof h !== 'object') return null;
+      if (!Array.isArray(h.cards)) return null;
+      const cards = normalizeCardArray(h.cards);
+      if (!cards) return null;
+      return { ...h, cards };
+    });
+    if (playerHands.some((h) => h == null)) return null;
+
+    const runningCount = Number.isFinite(parsed.state.runningCount) ? parsed.state.runningCount : 0;
+    const activeHandIndexRaw = Number.isFinite(parsed.state.activeHandIndex) ? parsed.state.activeHandIndex : 0;
+    const activeHandIndex = Math.max(0, Math.min(playerHands.length - 1, activeHandIndexRaw));
+
+    return {
+      ...parsed.state,
+      shoe,
+      dealerHand,
+      playerHands: playerHands as any,
+      runningCount,
+      activeHandIndex,
+    };
   } catch (e) {
     console.warn('Failed to load training game state from localStorage:', e);
     return null;
@@ -255,7 +321,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     const restored = loadGameState(numDecks);
     if (restored) return restored;
     const initialSettings = loadSettings();
-    return createInitialGameState(numDecks, initialSettings.bankrollUnits ?? 1000);
+    return createInitialGameState(numDecks, initialSettings.bankrollUnits ?? 100);
   });
 
   // Settings (persisted to localStorage)
@@ -285,6 +351,11 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
   // Stats panel state
   const [showStats, setShowStats] = useState(false);
+
+  // Scenario panel state
+  const [showScenario, setShowScenario] = useState(false);
+  const [isGeneratingScenario, setIsGeneratingScenario] = useState(false);
+  const [scenarioToast, setScenarioToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Count visibility toggle state (not persisted - always starts hidden)
   const [showCountValues, setShowCountValues] = useState(false);
@@ -412,10 +483,10 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     // Quantize decks remaining for "human" deck estimation practice.
     // - perfect: use exact divisor
     // - halfDeck: round to nearest 0.5 deck
-    // - floor: full-deck estimation (floor to whole deck, min 1)
+    // - floor: full-deck conservative (ceil to whole deck, min 1)
     if (effectiveTcMethod === 'perfect') return exactDecks;
     if (effectiveTcMethod === 'halfDeck') return Math.max(0.5, Math.round(exactDecks * 2) / 2);
-    return Math.max(1, Math.floor(exactDecks));
+    return Math.max(1, Math.ceil(exactDecks));
   }, [effectiveTcMethod]);
 
   const applyTcEstimation = useCallback((rawTc: number): number => {
@@ -904,6 +975,140 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     if (lastDecision.userAction === 'split') return false; // Too complex to undo
     return true;
   })();
+
+  // Show toast notification
+  const showToast = useCallback((message: string, type: 'success' | 'error') => {
+    setScenarioToast({ message, type });
+    const id = window.setTimeout(() => setScenarioToast(null), 3000);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  // Handle reshuffle from scenario panel
+  const handleScenarioReshuffle = useCallback(() => {
+    clearTimers();
+    // Create completely fresh game state
+    const freshState = createInitialGameState(numDecks, gameState.bankroll);
+    freshState.phase = 'idle';
+    freshState.playerHands = [];
+    freshState.dealerHand = [];
+    freshState.activeHandIndex = 0;
+    setGameState(freshState);
+    // Reset deck estimation image to full shoe
+    setDeckEstCards(numDecks * 52);
+    // Reset all UI state
+    setLastDecision(null);
+    setFeedbackDismissed(false);
+    setShowCorrectionModal(false);
+    setActionLocked(false);
+    setShowBadges(true);
+    setIsRevealingHoleCard(false);
+    setIsRemovingCards(false);
+    setIsDealerStacked(false);
+    setIsSplitting(false);
+    setSplitDealingPhase(0);
+    setSplitOriginHandIndex(null);
+    preActionStateRef.current = null;
+    preActionStatsRef.current = null;
+    setShowScenario(false);
+    showToast('Shoe reshuffled', 'success');
+  }, [numDecks, gameState.bankroll, showToast]);
+
+  // Handle TC scenario generation
+  const handleGenerateTCScenario = useCallback((targetTC: number, mode: ScenarioMode) => {
+    setIsGeneratingScenario(true);
+
+    // Run generation in a timeout to allow UI to update
+    window.setTimeout(() => {
+      const result = mode === 'jump'
+        ? generateShoeForTargetTC(targetTC, numDecks)
+        : generatePlayToTCShoe(targetTC, numDecks);
+
+      if (result) {
+        clearTimers();
+        // Create a completely fresh game state with the generated shoe
+        const freshState = createInitialGameState(numDecks, gameState.bankroll);
+        freshState.shoe = result.shoe;
+        freshState.runningCount = result.runningCount;
+        // Reset to idle phase so user clicks Deal to start
+        freshState.phase = 'idle';
+        freshState.playerHands = [];
+        freshState.dealerHand = [];
+        freshState.activeHandIndex = 0;
+        setGameState(freshState);
+        // Reset deck estimation image to new shoe size
+        setDeckEstCards(result.shoe.length);
+        // Reset all UI state
+        setLastDecision(null);
+        setFeedbackDismissed(false);
+        setShowCorrectionModal(false);
+        setActionLocked(false);
+        setShowBadges(true);
+        setIsRevealingHoleCard(false);
+        setIsRemovingCards(false);
+        setIsDealerStacked(false);
+        setIsSplitting(false);
+        setSplitDealingPhase(0);
+        setSplitOriginHandIndex(null);
+        preActionStateRef.current = null;
+        preActionStatsRef.current = null;
+        setShowScenario(false);
+        const modeText = mode === 'jump' ? 'at' : 'will reach';
+        showToast(`Shoe ${modeText} TC ${result.trueCount.toFixed(1)}`, 'success');
+      } else {
+        showToast('Failed to generate scenario', 'error');
+      }
+
+      setIsGeneratingScenario(false);
+    }, 50);
+  }, [numDecks, gameState.bankroll, showToast]);
+
+  // Handle deviation scenario generation
+  const handleGenerateDeviationScenario = useCallback((deviationIndex: number, mode: ScenarioMode) => {
+    setIsGeneratingScenario(true);
+
+    window.setTimeout(() => {
+      const result = mode === 'jump'
+        ? generateShoeForDeviation(deviationIndex, numDecks)
+        : generatePlayToDeviationShoe(deviationIndex, numDecks);
+
+      if (result) {
+        clearTimers();
+        // Create a completely fresh game state with the arranged shoe
+        const freshState = createInitialGameState(numDecks, gameState.bankroll);
+        freshState.shoe = result.shoe;
+        freshState.runningCount = result.runningCount;
+        // Reset to idle phase so user clicks Deal to start
+        freshState.phase = 'idle';
+        freshState.playerHands = [];
+        freshState.dealerHand = [];
+        freshState.activeHandIndex = 0;
+        setGameState(freshState);
+        // Reset deck estimation image to new shoe size
+        setDeckEstCards(result.shoe.length);
+        // Reset all UI state
+        setLastDecision(null);
+        setFeedbackDismissed(false);
+        setShowCorrectionModal(false);
+        setActionLocked(false);
+        setShowBadges(true);
+        setIsRevealingHoleCard(false);
+        setIsRemovingCards(false);
+        setIsDealerStacked(false);
+        setIsSplitting(false);
+        setSplitDealingPhase(0);
+        setSplitOriginHandIndex(null);
+        preActionStateRef.current = null;
+        preActionStatsRef.current = null;
+        setShowScenario(false);
+        const modeText = mode === 'jump' ? 'ready' : 'will encounter';
+        showToast(`Deviation scenario ${modeText} (TC ${result.trueCount.toFixed(1)})`, 'success');
+      } else {
+        showToast('Failed to generate scenario', 'error');
+      }
+
+      setIsGeneratingScenario(false);
+    }, 50);
+  }, [numDecks, gameState.bankroll, showToast]);
 
   // Handle insurance decision
   const handleTakeInsurance = useCallback(() => {
@@ -1559,6 +1764,13 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
         <h1 className="training-title">Training Mode</h1>
         <div className="header-buttons">
           <button
+            className="scenario-button"
+            onClick={() => setShowScenario(true)}
+            title="Scenario Controls"
+          >
+            <span aria-hidden="true">{'\u{1F3AF}'}</span>
+          </button>
+          <button
             className="stats-button"
             onClick={() => setShowStats(true)}
             title="View Statistics"
@@ -1752,7 +1964,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
                 </div>
                 <div className="settings-ro-row">
                   <span>TC Estimation</span>
-                  <span>{tcEstimationMethod === 'perfect' ? 'Perfect' : tcEstimationMethod === 'halfDeck' ? 'Half-deck' : 'Floor (full-deck)'}</span>
+                  <span>{tcEstimationMethod === 'perfect' ? 'Perfect' : tcEstimationMethod === 'halfDeck' ? 'Half-deck' : 'Full-deck (conservative)'}</span>
                 </div>
                 <div className="settings-ro-row">
                   <span>Deviations</span>
@@ -1950,6 +2162,30 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
             saveStats(newStats);
           }}
         />
+      )}
+
+      {/* Scenario panel */}
+      {showScenario && (
+        <ScenarioPanel
+          bankroll={gameState.bankroll}
+          handsToPlay={settings.handsToPlay ?? 1}
+          onBankrollChange={(newBankroll) => {
+            setSettings((s) => ({ ...s, bankrollUnits: newBankroll }));
+            setGameState((g) => ({ ...g, bankroll: newBankroll }));
+          }}
+          onReshuffle={handleScenarioReshuffle}
+          onGenerateTCScenario={handleGenerateTCScenario}
+          onGenerateDeviationScenario={handleGenerateDeviationScenario}
+          onClose={() => setShowScenario(false)}
+          isGenerating={isGeneratingScenario}
+        />
+      )}
+
+      {/* Scenario toast notification */}
+      {scenarioToast && (
+        <div className={`scenario-toast ${scenarioToast.type}`}>
+          {scenarioToast.message}
+        </div>
       )}
     </div>
   );

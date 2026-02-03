@@ -480,6 +480,7 @@
   gap: 8px;
 }
 
+.scenario-button,
 .stats-button {
   background: none;
   border: none;
@@ -491,6 +492,7 @@
   transition: all 0.2s;
 }
 
+.scenario-button:hover,
 .stats-button:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
