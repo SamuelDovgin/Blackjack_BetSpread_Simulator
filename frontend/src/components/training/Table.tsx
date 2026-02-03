@@ -329,12 +329,17 @@ export const Table: React.FC<TableProps> = ({
   // the hole card doesn't snap due to flex centering when the width shrinks.
   // We anchor the container to the initial 2-card spread width; any additional dealer
   // draw cards can overflow to the right (more like a real table).
-  const dealerStackWidth = cardW + (dealerHand.length > 1 ? dealerInitialOffset.x : 0);
+  const dealerStackWidth = cardW + dealerInitialOffset.x;
 
   // Dealer card shift: nudge the card stack slightly right so the visual center
   // after stacking (cards collapse left) feels centered on the table.
   // Only applies to the card-stack element, not labels/badges.
-  const dealerCardShiftPx = isMobile ? Math.round(cardW * 0.28) : Math.round(cardW * 0.5);
+  const dealerCardShiftPx = isMobile ? Math.round(cardW * 0.8) : Math.round(cardW * 0.5);
+
+  // Deck estimation image spacing: try to keep a comfortable gap, but collapse it on
+  // narrow viewports so the image doesn't get cut off-screen.
+  const dealerStackWrapRef = useRef<HTMLDivElement | null>(null);
+  const [deckEstGapPx, setDeckEstGapPx] = useState(0);
 
   // Dynamic spacing: each hand's allocated width grows with its card count.
   // This prevents long hit stacks from overlapping neighboring split hands.
@@ -464,6 +469,34 @@ export const Table: React.FC<TableProps> = ({
   const splitSlideX =
     -(((playerHandStackWidths[splitLeftHandIdx] ?? cardW) + 16) + playerHandGapPx);
 
+  // Deck estimation image is a static table aid. Keep it rendered whenever enabled so it
+  // doesn't "blink" during initial deal / between rounds. (TrainingPage freezes updates.)
+  const showDeckEstimationImage = !!showDeckEstimation;
+
+  useLayoutEffect(() => {
+    if (!showDeckEstimationImage) return;
+    const el = dealerStackWrapRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      const desired = Math.round(cardW * 0.35); // more space, scaled with card size
+      const marginLeft = 6;
+      const maxGap = Math.max(0, rect.left - cardW - marginLeft);
+      const next = Math.min(desired, maxGap);
+      setDeckEstGapPx(Math.round(next));
+    };
+
+    measure();
+    window.addEventListener('resize', measure);
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => {
+      window.removeEventListener('resize', measure);
+      ro.disconnect();
+    };
+  }, [showDeckEstimationImage, cardW, dealerCardShiftPx, dealerStackWidth, isDealerStacked, visibleCardCount, phase]);
+
   return (
     <div className="table-felt">
         {/* Shoe - desktop only (hidden via CSS on mobile) */}
@@ -476,23 +509,27 @@ export const Table: React.FC<TableProps> = ({
         <div className="dealer-area">
           <div className="dealer-label">DEALER</div>
             <div className="hand dealer-hand">
-              {dealerHand.length > 0 ? (
-                <div
-                  className="dealer-stack-wrap"
-                  style={{
-                    width: `${dealerStackWidth}px`,
-                    transform: `translateX(${dealerCardShiftPx}px)`,
-                  }}
-                >
-                  {/* Deck estimation image: card-sized and anchored to the hole card (left of dealer stack). */}
-                  {showDeckEstimation && (
-                    <DeckEstimationImage
-                      cardsRemaining={deckEstimationCards ?? cardsRemaining}
-                      totalCards={totalCards}
-                      cardScale={cardScaleName}
-                    />
-                  )}
+              <div
+                className="dealer-stack-wrap"
+                ref={dealerStackWrapRef}
+                style={{
+                  width: `${dealerStackWidth}px`,
+                  height: `${cardH}px`,
+                  transform: `translateX(${dealerCardShiftPx}px)`,
+                  // CSS var used by DeckEstimationImage.css to control the gap.
+                  '--deck-est-gap-px': `${deckEstGapPx}px`,
+                } as React.CSSProperties}
+              >
+                {/* Deck estimation image: card-sized and anchored to the hole card (left of dealer stack). */}
+                {showDeckEstimationImage && (
+                  <DeckEstimationImage
+                    cardsRemaining={deckEstimationCards ?? cardsRemaining}
+                    totalCards={totalCards}
+                    cardScale={cardScaleName}
+                  />
+                )}
 
+                {dealerHand.length > 0 ? (
                   <div className="card-stack dealer-stack" style={{ width: `${dealerStackWidth}px` }}>
                     {dealerHand.map((card, i) => {
                       const dealIndex = getDealSequenceIndex(true, i, totalPlayerCards, totalDealerCards, playerHands.length);
@@ -523,10 +560,10 @@ export const Table: React.FC<TableProps> = ({
                       );
                     })}
                   </div>
-                </div>
-              ) : (
-                <div className="empty-hand">Waiting...</div>
-              )}
+                ) : (
+                  <div className="empty-hand">Waiting...</div>
+                )}
+              </div>
             </div>
 
             {showHandTotals && dealerHand.length > 0 && (

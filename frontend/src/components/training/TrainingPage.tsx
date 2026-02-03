@@ -289,7 +289,11 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
   // Deck estimation: freeze the displayed card count so the image doesn't
   // flicker during dealer draws or card removal animations.
-  const [deckEstCards, setDeckEstCards] = useState(numDecks * 52);
+  const [deckEstCards, setDeckEstCards] = useState(() => gameState.shoe.length);
+  const shoeLenRef = useRef(gameState.shoe.length);
+  useEffect(() => {
+    shoeLenRef.current = gameState.shoe.length;
+  }, [gameState.shoe.length]);
 
   // Insurance state
   const [showInsurancePrompt, setShowInsurancePrompt] = useState(false);
@@ -345,13 +349,8 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     saveSettings(settings);
   }, [settings]);
 
-  // Update deck estimation image only during safe phases (not while dealer draws / cards leaving)
-  useEffect(() => {
-    const safePhases: GamePhase[] = ['player-action', 'insurance', 'idle', 'betting'];
-    if (safePhases.includes(gameState.phase)) {
-      setDeckEstCards(gameState.shoe.length);
-    }
-  }, [gameState.phase, gameState.shoe.length]);
+  // Deck estimation image should update exactly once per round: at the moment cards
+  // start moving to the discard tray (when removal animation begins).
 
   // Persist game state (including bankroll + current hand) so Training Mode can be resumed.
   // Only persist during "safe" phases, never mid-deal / mid-dealer-play / mid-removal.
@@ -402,12 +401,21 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   const totalCards = numDecks * 52;
 
   // Calculate derived values
-  const decksRemaining = (gameState.shoe.length / 52);
-  const rawTrueCount = calculateTrueCount(gameState.runningCount, decksRemaining);
+  const exactDivisor = gameState.shoe.length / 52;
 
   // Helper to apply TC estimation method (floor for realistic casino play)
   // Prefer the persisted training setting; fall back to prop for backwards compat
   const effectiveTcMethod = settings.tcEstimationMethod ?? tcEstimationMethod;
+  const estimateDivisor = useCallback((exactDecks: number): number => {
+    // Quantize decks remaining for "human" deck estimation practice.
+    // - perfect: use exact divisor
+    // - halfDeck: round to nearest 0.5 deck
+    // - floor: full-deck estimation (floor to whole deck, min 1)
+    if (effectiveTcMethod === 'perfect') return exactDecks;
+    if (effectiveTcMethod === 'halfDeck') return Math.max(0.5, Math.round(exactDecks * 2) / 2);
+    return Math.max(1, Math.floor(exactDecks));
+  }, [effectiveTcMethod]);
+
   const applyTcEstimation = useCallback((rawTc: number): number => {
     if (effectiveTcMethod === 'floor') {
       return Math.floor(rawTc);
@@ -417,7 +425,10 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     return rawTc;
   }, [effectiveTcMethod]);
 
-  const trueCount = applyTcEstimation(rawTrueCount);
+  const divisorEstimate = estimateDivisor(exactDivisor);
+  const rawTrueCountExact = calculateTrueCount(gameState.runningCount, exactDivisor);
+  const rawTrueCountEstimated = calculateTrueCount(gameState.runningCount, divisorEstimate);
+  const trueCount = applyTcEstimation(rawTrueCountEstimated);
 
   // Current hand
   const currentHand = gameState.playerHands[gameState.activeHandIndex];
@@ -504,9 +515,15 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       t += DEAL_CARD_INTERVAL_MS;
     }
 
+    // If we are reshuffling for a new shoe, reset the deck image immediately so it doesn't
+    // show a stale depth from the previous shoe until the end of the next round.
+    const reshuffleAt = numDecks * 52 * (1 - penetration);
+    if (shoeLenRef.current < reshuffleAt) {
+      setDeckEstCards(numDecks * 52);
+    }
+
     // Deal cards - this sets phase to 'dealing'
     setGameState((prev) => {
-      const reshuffleAt = numDecks * 52 * (1 - penetration);
       const needShuffle = prev.shoe.length < reshuffleAt;
       const base = needShuffle ? createInitialGameState(numDecks, prev.bankroll) : prev;
       // Training mode always uses a 1-unit initial bet (bankroll is tracked in units).
@@ -604,7 +621,8 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       canSurrender: canSurrender(hand, dealerUpcard, allowSurrender),
     });
 
-    const rawTc = calculateTrueCount(state.runningCount, state.shoe.length / 52);
+    const divisor = estimateDivisor(state.shoe.length / 52);
+    const rawTc = calculateTrueCount(state.runningCount, divisor);
     const tc = applyTcEstimation(rawTc);
     const basicAction = strategyResult.action;
 
@@ -697,7 +715,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     const shouldBlock = !isCorrect && settings.correctionMode === 'modal';
 
     return { decision, shouldBlock };
-  }, [ruleSet, allowSurrender, settings.correctionMode, settings.showDeviations, applyTcEstimation]);
+  }, [ruleSet, allowSurrender, settings.correctionMode, settings.showDeviations, applyTcEstimation, estimateDivisor]);
 
   // Update stats after a decision
   const updateStatsForDecision = useCallback((decision: LastDecision) => {
@@ -772,7 +790,8 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Validate insurance decision against deviations
     if (settings.correctionMode !== 'off') {
-      const rawTc = calculateTrueCount(gameState.runningCount, gameState.shoe.length / 52);
+      const divisor = estimateDivisor(gameState.shoe.length / 52);
+      const rawTc = calculateTrueCount(gameState.runningCount, divisor);
       const tc = applyTcEstimation(rawTc);
       const shouldTake = shouldTakeInsurance(tc);
       const isCorrect = shouldTake; // Taking insurance is correct at TC +3 or higher
@@ -813,7 +832,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Continue to player action phase
     setGameState(prev => ({ ...prev, phase: 'player-action' as GamePhase }));
-  }, [gameState.runningCount, gameState.shoe.length, settings.correctionMode, updateStatsForDecision, applyTcEstimation]);
+  }, [gameState.runningCount, gameState.shoe.length, settings.correctionMode, updateStatsForDecision, applyTcEstimation, estimateDivisor]);
 
   const handleDeclineInsurance = useCallback(() => {
     setShowInsurancePrompt(false);
@@ -821,7 +840,8 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Validate insurance decision against deviations
     if (settings.correctionMode !== 'off') {
-      const rawTc = calculateTrueCount(gameState.runningCount, gameState.shoe.length / 52);
+      const divisor = estimateDivisor(gameState.shoe.length / 52);
+      const rawTc = calculateTrueCount(gameState.runningCount, divisor);
       const tc = applyTcEstimation(rawTc);
       const shouldTake = shouldTakeInsurance(tc);
       const isCorrect = !shouldTake; // Declining is correct when TC < +3
@@ -862,7 +882,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Continue to player action phase
     setGameState(prev => ({ ...prev, phase: 'player-action' as GamePhase }));
-  }, [gameState.runningCount, gameState.shoe.length, settings.correctionMode, updateStatsForDecision, applyTcEstimation]);
+  }, [gameState.runningCount, gameState.shoe.length, settings.correctionMode, updateStatsForDecision, applyTcEstimation, estimateDivisor]);
 
   // Handle "Continue anyway" from correction modal - execute the incorrect action
   const handleContinueAnyway = useCallback(() => {
@@ -1366,6 +1386,8 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
       const t1 = window.setTimeout(() => {
         if (cancelled) return;
+        // Freeze the deck estimation image at the exact moment cards start moving off-table.
+        setDeckEstCards(shoeLenRef.current);
         setIsRemovingCards(true);
 
         const t2 = window.setTimeout(() => {
@@ -1432,13 +1454,37 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
         <div className="info-item">
           <span className="info-label">Divisor</span>
           <span className={`info-value ${showCountValues ? '' : 'info-hidden'}`}>
-            {showCountValues ? decksRemaining.toFixed(settings.tcEstimationMethod === 'perfect' ? 2 : 1) : '—'}
+            {showCountValues
+              ? (effectiveTcMethod === 'perfect'
+                ? divisorEstimate.toFixed(2)
+                : effectiveTcMethod === 'halfDeck'
+                  ? divisorEstimate.toFixed(1)
+                  : divisorEstimate.toFixed(0))
+              : '—'}
           </span>
         </div>
         <div className="info-item">
           <span className="info-label">True</span>
           <span className={`info-value ${showCountValues ? '' : 'info-hidden'}`}>
-            {showCountValues ? Math.floor(trueCount) : '—'}
+            {showCountValues
+              ? (effectiveTcMethod === 'perfect'
+                ? trueCount.toFixed(2)
+                : effectiveTcMethod === 'halfDeck'
+                  ? trueCount.toFixed(1)
+                  : trueCount.toFixed(0))
+              : '—'}
+          </span>
+        </div>
+        <div className="info-item">
+          <span className="info-label">Exact Div</span>
+          <span className={`info-value ${showCountValues ? '' : 'info-hidden'}`}>
+            {showCountValues ? exactDivisor.toFixed(1) : '—'}
+          </span>
+        </div>
+        <div className="info-item">
+          <span className="info-label">Exact TC</span>
+          <span className={`info-value ${showCountValues ? '' : 'info-hidden'}`}>
+            {showCountValues ? rawTrueCountExact.toFixed(1) : '—'}
           </span>
         </div>
         <button
