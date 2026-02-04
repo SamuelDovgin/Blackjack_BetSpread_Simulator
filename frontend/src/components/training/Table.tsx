@@ -249,6 +249,8 @@ export const Table: React.FC<TableProps> = ({
   const translateXRef = useRef(0); // Keep in sync for event listener
   const dragBoundsRef = useRef({ min: 0, max: 0 }); // Keep bounds in ref for native listener
   const [userHasScrolled, setUserHasScrolled] = useState(false); // Track if user manually scrolled
+  // Track the gameplay state when user last scrolled - to know when to resume auto-centering
+  const scrolledAtGameStateRef = useRef<string | null>(null);
   const prevDealerCount = prevDealerCountRef.current;
   const prevPlayerCounts = prevPlayerCountsRef.current;
 
@@ -443,9 +445,15 @@ export const Table: React.FC<TableProps> = ({
     return w;
   }, [playerHands.length, playerHandStackWidths, cardW, playerHandGapPx]);
 
+  // Create a game state key for tracking when gameplay changes
+  const gameStateKey = `${dealerHand.length}-${playerCardsKey}-${phase}`;
+
   useLayoutEffect(() => {
-    // Skip auto-centering while user is dragging or has manually scrolled
-    if (isDragging || userHasScrolled) return;
+    // Skip auto-centering while user is dragging
+    if (isDragging) return;
+
+    // If user has scrolled, only skip if game state hasn't changed since then
+    if (userHasScrolled && scrolledAtGameStateRef.current === gameStateKey) return;
 
     if (!playerViewportWidth || playerHands.length === 0) {
       setPlayerRowTranslateX(0);
@@ -552,12 +560,23 @@ export const Table: React.FC<TableProps> = ({
     manualViewHandIdx,
     isDragging,
     userHasScrolled,
+    gameStateKey,
   ]);
 
-  // Reset userHasScrolled when new cards are dealt or game state changes significantly
-  useEffect(() => {
-    setUserHasScrolled(false);
-  }, [dealerHand.length, playerCardsKey, phase]);
+  // When user scrolls, save the current game state so we know when to resume auto-centering
+  useLayoutEffect(() => {
+    if (userHasScrolled) {
+      scrolledAtGameStateRef.current = gameStateKey;
+    }
+  }, [userHasScrolled, gameStateKey]);
+
+  // Reset userHasScrolled when game state changes after a scroll
+  useLayoutEffect(() => {
+    if (userHasScrolled && scrolledAtGameStateRef.current !== gameStateKey) {
+      setUserHasScrolled(false);
+      scrolledAtGameStateRef.current = null;
+    }
+  }, [userHasScrolled, gameStateKey]);
 
   // Track global card index for sequential visibility
   let globalCardIndex = 0;
@@ -678,18 +697,20 @@ export const Table: React.FC<TableProps> = ({
     playerNavState.rightMostVisible,
   ]);
 
-  // Calculate drag bounds - simple hard stops at edges
+  // Calculate drag bounds - hard stops at edges with margins
   const getDragBounds = useCallback(() => {
     if (!playerViewportWidth || playerRowWidth <= playerViewportWidth) {
       return { min: 0, max: 0 };
     }
-    // Hard stops: first hand fully visible on left, last hand fully visible on right
-    // max = 0 means first hand at left edge
-    // min = viewport - row means last hand at right edge
-    const minT = Math.round(playerViewportWidth - playerRowWidth);
-    const maxT = 0;
+    // Add margins so user can scroll a bit past the edges
+    const edgeMarginLeft = isMobile ? 20 : 28;
+    const edgeMarginRight = isMobile ? 20 : 28;
+    // max = positive means first hand can have margin on left
+    // min = negative means last hand can have margin on right
+    const minT = Math.round(playerViewportWidth - playerRowWidth - edgeMarginRight);
+    const maxT = edgeMarginLeft;
     return { min: minT, max: maxT };
-  }, [playerViewportWidth, playerRowWidth]);
+  }, [playerViewportWidth, playerRowWidth, isMobile]);
 
   // Keep bounds ref in sync for native event listener
   useEffect(() => {
@@ -794,8 +815,10 @@ export const Table: React.FC<TableProps> = ({
       setPlayerRowTranslateX(finalX);
     }
 
-    // Mark that user has manually scrolled - prevents auto-centering
+    // Mark that user has manually scrolled - prevents auto-centering until game state changes
     setUserHasScrolled(true);
+    // Note: gameStateKey is captured in the handler via closure, but we need fresh value
+    // We'll set this in a layout effect instead
 
     touchStartRef.current = null;
     lastTouchRef.current = null;
