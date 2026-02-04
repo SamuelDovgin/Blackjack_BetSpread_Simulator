@@ -521,10 +521,68 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       const seat = seatForInitialDealIndex(dealIndex, handsToPlay);
 
       if (seat !== null && seat !== currentSeat) {
-        // Switch to the next seat
-        scheduleSetSeat(seat, t);
-        // Only add pause if centering animation is needed (row doesn't fit in viewport)
+        // Determine if this seat change would cause a centering animation.
+        // The Table component shifts the view to keep the active hand visible.
+        // We need to estimate if translateX would change for this seat transition.
+        let needsPauseForThisChange = false;
+
         if (needsCenteringAnimation) {
+          // Row doesn't fit - calculate if view needs to shift for this seat change
+          // Simulate the Table's centering logic:
+          // - edgeMarginLeft/Right define the visible safe zone
+          // - If the target hand would be outside this zone, view shifts
+          const edgeMarginLeft = isMobileEst ? 20 : 28;
+          const edgeMarginRight = isMobileEst ? 8 : 10;
+          const handOuterPad = 16;
+
+          // Calculate left position of each hand in the row
+          const getHandLeft = (seatIdx: number) => {
+            let left = 0;
+            for (let i = 0; i < seatIdx; i++) {
+              left += handWidthEst + handOuterPad + handGapEst;
+            }
+            return left + 8; // +8 for inner padding
+          };
+
+          // Current view position (simplified: assume view is positioned to show currentSeat)
+          const currentHandLeft = getHandLeft(currentSeat);
+          const targetHandLeft = getHandLeft(seat);
+          const targetHandRight = targetHandLeft + handWidthEst;
+
+          // Estimate current translateX (view positioned to show current seat with margins)
+          const maxTranslateX = edgeMarginLeft;
+          const minTranslateX = viewportWEst - rowWidthEst - edgeMarginRight;
+
+          // Calculate translateX needed to show current seat
+          let estimatedTranslateX = Math.round((viewportWEst - rowWidthEst) / 2); // default centered
+          if (rowWidthEst > viewportWEst) {
+            // Need to position to show currentSeat
+            const currentLeft = estimatedTranslateX + currentHandLeft;
+            if (currentLeft < edgeMarginLeft) {
+              estimatedTranslateX += edgeMarginLeft - currentLeft;
+            }
+            const currentRight = estimatedTranslateX + currentHandLeft + handWidthEst;
+            if (currentRight > viewportWEst - edgeMarginRight) {
+              estimatedTranslateX -= currentRight - (viewportWEst - edgeMarginRight);
+            }
+            // Clamp
+            estimatedTranslateX = Math.max(minTranslateX, Math.min(maxTranslateX, estimatedTranslateX));
+          }
+
+          // Check if target hand would be visible with current translateX
+          const targetVisLeft = estimatedTranslateX + targetHandLeft;
+          const targetVisRight = estimatedTranslateX + targetHandRight;
+
+          if (targetVisLeft < edgeMarginLeft || targetVisRight > viewportWEst - edgeMarginRight) {
+            // Target hand is outside visible area - view will shift
+            needsPauseForThisChange = true;
+          }
+        }
+
+        // Schedule seat change first (this triggers the centering animation)
+        scheduleSetSeat(seat, t);
+        // Then add pause if animation needed (gives time for animation to complete)
+        if (needsPauseForThisChange) {
           t += PLAYER_CENTER_SLIDE_MS + PLAYER_CENTER_BUFFER_MS;
         }
         currentSeat = seat;
