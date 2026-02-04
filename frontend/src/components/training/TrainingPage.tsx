@@ -939,13 +939,23 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     // Cancel any running dealer turn or payout timers
     clearTimers();
 
+    const restoredState = preActionStateRef.current;
+
     // Restore game state (this restores phase to player-action)
-    setGameState(preActionStateRef.current);
+    setGameState(restoredState);
     preActionStateRef.current = null;
 
     // Restore stats (undo the mistake tracking)
     setStats(preActionStatsRef.current);
     preActionStatsRef.current = null;
+
+    // If the action we undid was an insurance decision, restore the prompt.
+    // (Insurance prompt visibility is UI state, not part of GameState.)
+    const shouldShowInsurance = restoredState.phase === 'insurance';
+    setShowInsurancePrompt(shouldShowInsurance);
+    if (shouldShowInsurance) {
+      setInsuranceDecisionMade(false);
+    }
 
     // Clear feedback
     setLastDecision(null);
@@ -1112,6 +1122,10 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
   // Handle insurance decision
   const handleTakeInsurance = useCallback(() => {
+    // Save pre-decision state/stats so undo returns to the insurance prompt.
+    preActionStateRef.current = gameState;
+    preActionStatsRef.current = stats;
+
     setShowInsurancePrompt(false);
     setInsuranceDecisionMade(true);
 
@@ -1159,9 +1173,13 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Continue to player action phase
     setGameState(prev => ({ ...prev, phase: 'player-action' as GamePhase }));
-  }, [gameState.runningCount, gameState.shoe.length, settings.correctionMode, updateStatsForDecision, applyTcEstimation, estimateDivisor]);
+  }, [gameState, stats, settings.correctionMode, updateStatsForDecision, applyTcEstimation, estimateDivisor]);
 
   const handleDeclineInsurance = useCallback(() => {
+    // Save pre-decision state/stats so undo returns to the insurance prompt.
+    preActionStateRef.current = gameState;
+    preActionStatsRef.current = stats;
+
     setShowInsurancePrompt(false);
     setInsuranceDecisionMade(true);
 
@@ -1209,7 +1227,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Continue to player action phase
     setGameState(prev => ({ ...prev, phase: 'player-action' as GamePhase }));
-  }, [gameState.runningCount, gameState.shoe.length, settings.correctionMode, updateStatsForDecision, applyTcEstimation, estimateDivisor]);
+  }, [gameState, stats, settings.correctionMode, updateStatsForDecision, applyTcEstimation, estimateDivisor]);
 
   // Handle "Continue anyway" from correction modal - execute the incorrect action
   const handleContinueAnyway = useCallback(() => {
