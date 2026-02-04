@@ -338,7 +338,8 @@ export const Table: React.FC<TableProps> = ({
   // 2. As screen narrows, shrink the gap between deck image and hole card.
   // 3. Once the gap hits minimum, start shifting dealer cards further right.
   const viewportW = typeof window !== 'undefined' ? window.innerWidth : 0;
-  const deckEdgeMarginLeftPx = isMobile ? 8 : 12;
+  // Keep a small but visible gutter so the deck image never touches the viewport edge.
+  const deckEdgeMarginLeftPx = isMobile ? 12 : 16;
 
   // Original dealer shift (right of center).
   const baseShiftPx = isMobile ? Math.round(cardW * 0.2) : Math.round(cardW * 0.4);

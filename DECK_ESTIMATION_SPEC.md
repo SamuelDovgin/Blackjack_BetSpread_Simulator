@@ -85,7 +85,7 @@ Because the frontend is deployed as a GitHub Pages project site (`/<repo>/`), de
 
 ## Count Bar (Divisor / True Count)
 Training Mode shows both the estimated (human-style) and exact math values:
-- `Divisor`: quantized decks remaining (full-deck floor or half-deck step depending on training settings)
+- `Divisor`: quantized decks remaining (full-deck conservative/ceil or half-deck step depending on training settings)
 - `True`: TC computed from RC / divisor, then quantized per training setting
 - `Exact Div`: exact decks remaining (`shoe.length / 52`, shown to 1 decimal)
 - `Exact TC`: exact TC (`RC / exactDiv`, shown to 1 decimal)

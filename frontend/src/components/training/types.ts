@@ -90,7 +90,7 @@ export interface TrainingSettings {
   autoAdvanceDelay: number; // ms
   onlyShowMistakes: boolean; // Only show feedback when player makes a mistake
 
-  // TC estimation: 'floor' rounds down (realistic), 'halfDeck' rounds to nearest 0.5, 'perfect' uses exact TC
+  // TC estimation: 'floor' uses conservative full-deck estimation (ceil divisor), 'halfDeck' rounds to nearest 0.5, 'perfect' uses exact TC
   tcEstimationMethod: 'perfect' | 'floor' | 'halfDeck';
 
   // Card size: 'small' (original), 'medium' (1.2x), 'large' (1.5x, default), 'xlarge' (1.8x)
@@ -225,14 +225,14 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
   showHints: false,        // Opt-in feature
   autoBet: true,
   defaultBet: 1,
-  bankrollUnits: 1000,
+  bankrollUnits: 100,
   dollarsPerUnit: 10,
   handsToPlay: 1,
   correctionMode: 'inline',
   autoAdvanceDelay: 2000,
   onlyShowMistakes: true,  // Only show feedback on mistakes by default
   tcEstimationMethod: 'floor',  // Floor TC by default (realistic casino practice)
-  cardScale: 'large',          // 1.5x cards by default
+  cardScale: 'xlarge',         // 1.8x cards by default
   dealingSpeed: 'fast',        // Fast speed by default
   showDeckEstimation: true,    // Show deck estimation image by default
   soundEnabled: false,     // Off by default
