@@ -16,6 +16,14 @@ Upgrade the inline feedback banner (shown when a player makes an incorrect decis
 - Undo reverts the game state to before the incorrect action
 - Dismiss accepts the mistake and continues play
 
+## Decision Legality (IMPORTANT)
+Some recommendations only make sense at a specific *decision point*:
+- **Double / Surrender**: only legal on a 2-card hand (and surrender is typically not allowed on split hands).
+- **Split**: only legal on a 2-card pair, and subject to rules (max splits, resplit aces, etc).
+
+Training Mode must not mark a move as "wrong" for failing to Double/Surrender/Split when the action is not legal *right now*
+(example: a 3-card total of 9 vs 2 should not be flagged as "missed 9v2 Double" because doubling is no longer allowed).
+
 ## UI Design
 
 ### Banner Layout (Incorrect Decision)
