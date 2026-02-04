@@ -1,5 +1,6 @@
 // Feedback Panel Component
 // Shows real-time feedback on player decisions
+// Incorrect decisions show persistent banner with Undo and Dismiss buttons
 
 import React from 'react';
 import type { LastDecision, PlayerAction, DecisionResultType } from './types';
@@ -12,6 +13,12 @@ interface FeedbackPanelProps {
   visible: boolean;
   /** Compact mode (inline with table) vs expanded */
   compact?: boolean;
+  /** Called when Undo button is clicked (only for incorrect decisions) */
+  onUndo?: () => void;
+  /** Called when X/dismiss button is clicked */
+  onDismiss?: () => void;
+  /** Whether undo is available (e.g., not available for splits or after dealer turn) */
+  canUndo?: boolean;
 }
 
 const ACTION_LABELS: Record<PlayerAction, string> = {
@@ -64,30 +71,71 @@ export const FeedbackPanel: React.FC<FeedbackPanelProps> = ({
   lastDecision,
   visible,
   compact = true,
+  onUndo,
+  onDismiss,
+  canUndo = false,
 }) => {
   if (!visible || !lastDecision) {
     return null;
   }
 
-  const { isCorrect, resultType } = lastDecision;
+  const { isCorrect, resultType, userAction, correctAction } = lastDecision;
   const feedbackText = getFeedbackText(lastDecision);
 
   // Add a tag for deviation-related outcomes
   const showDeviationTag = resultType === 'correct_deviation' || resultType === 'missed_deviation' || resultType === 'wrong_deviation';
 
+  // For incorrect decisions, show persistent banner with buttons
+  const showButtons = !isCorrect && (onUndo || onDismiss);
+
   if (compact) {
     return (
       <div className="feedback-banner-wrapper">
-        <div className={`feedback-panel compact ${isCorrect ? 'correct' : 'incorrect'}`}>
+        <div className={`feedback-panel compact ${isCorrect ? 'correct' : 'incorrect'} ${showButtons ? 'persistent' : ''}`}>
           <span className="feedback-icon">
             {isCorrect ? '\u2713' : '\u2717'}
           </span>
-          <span className="feedback-text">
-            {feedbackText}
+          <span className="feedback-main">
+            {!isCorrect && (
+              <span className="feedback-action-text">
+                {ACTION_LABELS[userAction]} → {ACTION_LABELS[correctAction]}
+              </span>
+            )}
+            <span className="feedback-text">
+              {feedbackText}
+            </span>
+            {showDeviationTag && (
+              <span className={`feedback-tag ${isCorrect ? 'tag-correct' : 'tag-missed'}`}>
+                {resultType === 'correct_deviation' ? 'DEV' : resultType === 'missed_deviation' ? 'MISS' : 'NO DEV'}
+              </span>
+            )}
           </span>
-          {showDeviationTag && (
-            <span className={`feedback-tag ${isCorrect ? 'tag-correct' : 'tag-missed'}`}>
-              {resultType === 'correct_deviation' ? 'DEV' : resultType === 'missed_deviation' ? 'MISS' : 'NO DEV'}
+          {showButtons && (
+            <span className="feedback-buttons">
+              {canUndo && onUndo && (
+                <button
+                  className="feedback-btn feedback-btn-undo"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUndo();
+                  }}
+                  title="Undo and try again"
+                >
+                  ↩ Undo
+                </button>
+              )}
+              {onDismiss && (
+                <button
+                  className="feedback-btn feedback-btn-dismiss"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDismiss();
+                  }}
+                  title="Dismiss"
+                >
+                  ✕
+                </button>
+              )}
             </span>
           )}
         </div>
@@ -96,7 +144,7 @@ export const FeedbackPanel: React.FC<FeedbackPanelProps> = ({
   }
 
   // Expanded mode with full explanation
-  const { userAction, correctAction, reason, handType, total, dealerUp, deviationName, deviationThreshold, trueCount } = lastDecision;
+  const { reason, handType, total, dealerUp, deviationName, deviationThreshold, trueCount } = lastDecision;
 
   const dealerStr = dealerUp === 11 ? 'A' : String(dealerUp);
   const handStr = handType === 'pair'

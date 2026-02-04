@@ -279,7 +279,9 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   // Decision validation state
   const [lastDecision, setLastDecision] = useState<LastDecision | null>(null);
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+  const [feedbackDismissed, setFeedbackDismissed] = useState(false);
   const preActionStateRef = useRef<GameState | null>(null);
+  const preActionStatsRef = useRef<TrainingStats | null>(null);
 
   // Stats panel state
   const [showStats, setShowStats] = useState(false);
@@ -473,6 +475,21 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     const PLAYER_CENTER_SLIDE_MS = timing.playerCenterSlide;
     const PLAYER_CENTER_BUFFER_MS = timing.centerBuffer;
 
+    // Estimate if row will need centering animation during initial deal.
+    // Each hand has 2 cards during initial deal. Calculate expected row width.
+    const scaleFactor = CARD_SCALE_VALUES[settings.cardScale ?? 'medium'] ?? 1.2;
+    const isMobileEst = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+    const cardWEst = Math.round((isMobileEst ? 70 : 90) * scaleFactor);
+    const offsetXEst = Math.round((isMobileEst ? 15 : 19) * scaleFactor);
+    const handGapEst = Math.round(offsetXEst * 0.8);
+    const handPadEst = 16; // .player-hand-container padding
+    // Each 2-card hand width: cardW + offsetX
+    const handWidthEst = cardWEst + offsetXEst;
+    const rowWidthEst = handsToPlay * (handWidthEst + handPadEst) + (handsToPlay - 1) * handGapEst;
+    const viewportWEst = typeof window !== 'undefined' ? window.innerWidth : 800;
+    // Only need centering animation if row doesn't fit in viewport
+    const needsCenteringAnimation = rowWidthEst > viewportWEst;
+
     // Gate visibility so cards appear sequentially with no overlap.
     // For multi-hand deals, "pan" the centered hand so every dealt player card lands on the centered hand.
     // (We never deal a card while the row is still sliding.)
@@ -504,9 +521,12 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       const seat = seatForInitialDealIndex(dealIndex, handsToPlay);
 
       if (seat !== null && seat !== currentSeat) {
-        // Move the "camera" to the next seat, then wait until the slide finishes.
+        // Switch to the next seat
         scheduleSetSeat(seat, t);
-        t += PLAYER_CENTER_SLIDE_MS + PLAYER_CENTER_BUFFER_MS;
+        // Only add pause if centering animation is needed (row doesn't fit in viewport)
+        if (needsCenteringAnimation) {
+          t += PLAYER_CENTER_SLIDE_MS + PLAYER_CENTER_BUFFER_MS;
+        }
         currentSeat = seat;
       }
 
@@ -783,6 +803,50 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     setLastDecision(null);
   }, []);
 
+  // Handle undo from inline feedback banner - restore game state AND reverse stats
+  const handleFeedbackUndo = useCallback(() => {
+    if (!preActionStateRef.current || !preActionStatsRef.current) return;
+
+    // Cancel any running dealer turn or payout timers
+    clearTimers();
+
+    // Restore game state (this restores phase to player-action)
+    setGameState(preActionStateRef.current);
+    preActionStateRef.current = null;
+
+    // Restore stats (undo the mistake tracking)
+    setStats(preActionStatsRef.current);
+    preActionStatsRef.current = null;
+
+    // Clear feedback
+    setLastDecision(null);
+    setFeedbackDismissed(false);
+
+    // Reset animation states
+    setActionLocked(false);
+    setShowBadges(true);
+    setIsRevealingHoleCard(false);
+    setIsDealerStacked(false);
+    setIsRemovingCards(false);
+  }, []);
+
+  // Handle dismiss from inline feedback banner
+  const handleFeedbackDismiss = useCallback(() => {
+    setFeedbackDismissed(true);
+  }, []);
+
+  // Determine if undo is available for the last action
+  // Allow undo during player-action, dealer-turn, and payout phases (until next hand)
+  const canUndoLastAction = (() => {
+    if (!lastDecision || lastDecision.isCorrect) return false;
+    if (!preActionStateRef.current) return false;
+    // Allow undo until the next hand is dealt (idle means waiting for new deal)
+    const allowedPhases: GamePhase[] = ['player-action', 'dealer-turn', 'payout'];
+    if (!allowedPhases.includes(gameState.phase)) return false;
+    if (lastDecision.userAction === 'split') return false; // Too complex to undo
+    return true;
+  })();
+
   // Handle insurance decision
   const handleTakeInsurance = useCallback(() => {
     setShowInsurancePrompt(false);
@@ -1024,13 +1088,16 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     // Clear previous decision feedback when starting new action
     if (settings.correctionMode !== 'off') {
       setLastDecision(null);
+      setFeedbackDismissed(false);
     }
 
     // Validate decision against basic strategy
     const { decision, shouldBlock } = validateAndTrackDecision(action, gameState);
 
-    // Save pre-action state for potential take-back
+    // Save pre-action state for potential take-back (game state)
     preActionStateRef.current = gameState;
+    // Save pre-action stats for potential undo
+    preActionStatsRef.current = stats;
 
     // Track decision in stats
     if (settings.correctionMode !== 'off') {
@@ -1225,7 +1292,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       }, timingRef.current.cardDealAnim + 40);
       timersRef.current.push(id);
     }
-  }, [actionLocked, gameState, validateAndTrackDecision, updateStatsForDecision, settings.correctionMode]);
+  }, [actionLocked, gameState, stats, validateAndTrackDecision, updateStatsForDecision, settings.correctionMode]);
 
   // When switching to a split hand that still needs its first post-split card,
   // deal it before allowing play. Wait for centering animation first.
@@ -1369,13 +1436,20 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     prevPhaseRef.current = gameState.phase;
   }, [gameState.phase]);
 
-  // Auto-dismiss feedback banner after 1.5 seconds
+  // Auto-dismiss feedback banner after 1.5 seconds - ONLY for correct decisions
+  // Incorrect decisions persist until user dismisses or undoes
   useEffect(() => {
     if (!lastDecision) return;
-    const dismissTimer = window.setTimeout(() => {
-      setLastDecision(null);
-    }, 1500);
-    return () => window.clearTimeout(dismissTimer);
+
+    // Only auto-dismiss correct decisions
+    if (lastDecision.isCorrect) {
+      const dismissTimer = window.setTimeout(() => {
+        setLastDecision(null);
+      }, 1500);
+      return () => window.clearTimeout(dismissTimer);
+    }
+
+    // Incorrect decisions: no auto-dismiss (persistent until undo/dismiss)
   }, [lastDecision]);
 
   // Auto-advance after payout display with card removal animation
@@ -1531,15 +1605,20 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       <div className="training-actions">
         <div className="training-actions-inner">
           {/* Feedback banner overlay - positioned above buttons */}
+          {/* Show during player-action, dealer-turn, and payout phases (until next hand) */}
           {settings.correctionMode === 'inline' && (
             <FeedbackPanel
               lastDecision={lastDecision}
               visible={
                 !!lastDecision &&
-                gameState.phase === 'player-action' &&
+                !feedbackDismissed &&
+                ['player-action', 'dealer-turn', 'payout'].includes(gameState.phase) &&
                 (!settings.onlyShowMistakes || !lastDecision.isCorrect)
               }
               compact={true}
+              onUndo={handleFeedbackUndo}
+              onDismiss={handleFeedbackDismiss}
+              canUndo={canUndoLastAction}
             />
           )}
 
