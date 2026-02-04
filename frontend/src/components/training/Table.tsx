@@ -8,7 +8,7 @@
 // 3. Slide upcard LEFT to overlap hole card vertically (only left edge of hole card visible)
 // 4. Additional dealer hits stack the same way - each card covers previous, showing only left edge
 
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Card, Shoe, DiscardPile } from './Card';
 import { DeckEstimationImage } from './DeckEstimationImage';
 import type { Card as CardType, HandState, GamePhase } from './types';
@@ -239,6 +239,16 @@ export const Table: React.FC<TableProps> = ({
   // This prevents "the last card is always dealing" during player-action / dealer-turn.
   const prevDealerCountRef = useRef<number>(dealerHand.length);
   const prevPlayerCountsRef = useRef<number[]>(playerHands.map((h) => h.cards.length));
+
+  // Touch/swipe handling for navigating between player hands
+  const touchStartRef = useRef<{ x: number; y: number; time: number; startTranslateX: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const isDraggingRef = useRef(false); // Ref version for event listener
+  const velocityRef = useRef<number>(0);
+  const lastTouchRef = useRef<{ x: number; time: number } | null>(null);
+  const translateXRef = useRef(0); // Keep in sync for event listener
+  const dragBoundsRef = useRef({ min: 0, max: 0 }); // Keep bounds in ref for native listener
+  const [userHasScrolled, setUserHasScrolled] = useState(false); // Track if user manually scrolled
   const prevDealerCount = prevDealerCountRef.current;
   const prevPlayerCounts = prevPlayerCountsRef.current;
 
@@ -266,9 +276,22 @@ export const Table: React.FC<TableProps> = ({
   const playerViewportRef = useRef<HTMLDivElement | null>(null);
   const [playerViewportWidth, setPlayerViewportWidth] = useState(0);
   const [playerRowTranslateX, setPlayerRowTranslateX] = useState(0);
+  // When the player-hand row overflows, allow manual stepping the view left/right by hand.
+  // This is intentionally short-lived (cleared on any dealing/state changes) so gameplay
+  // always snaps back to the active hand when new cards arrive.
+  const [manualViewHandIdx, setManualViewHandIdx] = useState<number | null>(null);
   // Disable the translate transition until we've measured the viewport once.
   // This avoids the "first deal finds its spot" look when the width goes 0 -> measured.
   const [centerTransitionEnabled, setCenterTransitionEnabled] = useState(false);
+
+  // Keep refs in sync with state for native event listeners
+  useEffect(() => {
+    translateXRef.current = playerRowTranslateX;
+  }, [playerRowTranslateX]);
+
+  useEffect(() => {
+    isDraggingRef.current = isDragging;
+  }, [isDragging]);
 
   useLayoutEffect(() => {
     const el = playerViewportRef.current;
@@ -292,6 +315,13 @@ export const Table: React.FC<TableProps> = ({
     const id = window.setTimeout(() => setCenterTransitionEnabled(true), 0);
     return () => window.clearTimeout(id);
   }, [playerViewportWidth, centerTransitionEnabled]);
+
+  // Any actual gameplay change should re-follow the active hand automatically.
+  // (Keeps manual panning from hiding the current action / dealing animation.)
+  const playerCardsKey = useMemo(() => playerHands.map((h) => h.cards.length).join(','), [playerHands]);
+  useLayoutEffect(() => {
+    setManualViewHandIdx(null);
+  }, [activeHandIndex, phase, playerCardsKey, dealerHand.length, isSplitting, splitDealingPhase, playerHands.length]);
 
   // Calculate visible dealer total (only face-up cards)
   const dealerVisible = calculateHandTotal(dealerHand);
@@ -381,6 +411,26 @@ export const Table: React.FC<TableProps> = ({
     return playerHands.map((h) => cardW + Math.max(0, h.cards.length - 1) * playerCardOffset.x);
   }, [playerHands, playerCardOffset.x, cardW]);
 
+  const playerHandCardBounds = useMemo(() => {
+    // Bounds are in the coordinate space of the translated `.player-hands` row.
+    // We use card-stack bounds (not the whole container) for "in frame" checks.
+    const handOuterPad = 16; // 8px left + 8px right in `.player-hand-container`
+    const handInnerPad = 8; // distance from container left edge to card stack
+
+    const out: Array<{ cardLeft: number; cardRight: number }> = [];
+    let x = 0;
+    for (let i = 0; i < playerHands.length; i++) {
+      const w = playerHandStackWidths[i] ?? cardW;
+      const cardLeft = x + handInnerPad;
+      const cardRight = cardLeft + w;
+      out.push({ cardLeft, cardRight });
+
+      x += w + handOuterPad;
+      if (i < playerHands.length - 1) x += playerHandGapPx;
+    }
+    return out;
+  }, [playerHands.length, playerHandStackWidths, cardW, playerHandGapPx]);
+
   const playerRowWidth = useMemo(() => {
     if (playerHands.length === 0) return 0;
     // .player-hand-container has 8px horizontal padding on each side.
@@ -394,6 +444,9 @@ export const Table: React.FC<TableProps> = ({
   }, [playerHands.length, playerHandStackWidths, cardW, playerHandGapPx]);
 
   useLayoutEffect(() => {
+    // Skip auto-centering while user is dragging or has manually scrolled
+    if (isDragging || userHasScrolled) return;
+
     if (!playerViewportWidth || playerHands.length === 0) {
       setPlayerRowTranslateX(0);
       return;
@@ -401,10 +454,16 @@ export const Table: React.FC<TableProps> = ({
 
     const splitLeftHandIdx = splitOriginHandIndex ?? activeHandIndex;
     const splitRightHandIdx = Math.min(splitLeftHandIdx + 1, playerHands.length - 1);
-    const focusIdx =
+    const autoFocusIdx =
       phase === 'player-action' && (isSplitting || splitDealingPhase === 1)
         ? splitRightHandIdx
         : activeHandIndex;
+
+    const safeManualIdx =
+      manualViewHandIdx != null && manualViewHandIdx >= 0 && manualViewHandIdx < playerHands.length
+        ? manualViewHandIdx
+        : null;
+    const focusIdx = safeManualIdx ?? autoFocusIdx;
 
     // .player-hand-container has 8px horizontal padding on each side.
     const handOuterPad = 16;
@@ -490,7 +549,15 @@ export const Table: React.FC<TableProps> = ({
     splitDealingPhase,
     splitOriginHandIndex,
     playerRowTranslateX,
+    manualViewHandIdx,
+    isDragging,
+    userHasScrolled,
   ]);
+
+  // Reset userHasScrolled when new cards are dealt or game state changes significantly
+  useEffect(() => {
+    setUserHasScrolled(false);
+  }, [dealerHand.length, playerCardsKey, phase]);
 
   // Track global card index for sequential visibility
   let globalCardIndex = 0;
@@ -500,6 +567,242 @@ export const Table: React.FC<TableProps> = ({
   const splitRightHandIdx = Math.min(splitLeftHandIdx + 1, playerHands.length - 1);
   const splitSlideX =
     -(((playerHandStackWidths[splitLeftHandIdx] ?? cardW) + 16) + playerHandGapPx);
+
+  const playerNavState = useMemo(() => {
+    if (!playerViewportWidth) {
+      return { canLeft: false, canRight: false, leftMostVisible: 0, rightMostVisible: 0 };
+    }
+    if (playerHands.length <= 1) {
+      return { canLeft: false, canRight: false, leftMostVisible: 0, rightMostVisible: 0 };
+    }
+    if (playerRowWidth <= playerViewportWidth) {
+      return { canLeft: false, canRight: false, leftMostVisible: 0, rightMostVisible: playerHands.length - 1 };
+    }
+
+    const edgeMarginLeft = isMobile ? 20 : 28;
+    const edgeMarginRight = isMobile ? 8 : 10;
+    const leftBound = edgeMarginLeft;
+    const rightBound = playerViewportWidth - edgeMarginRight;
+
+    const isVisible = (i: number) => {
+      const b = playerHandCardBounds[i];
+      if (!b) return false;
+      const leftVis = playerRowTranslateX + b.cardLeft;
+      const rightVis = playerRowTranslateX + b.cardRight;
+      return rightVis > leftBound && leftVis < rightBound;
+    };
+
+    let leftMostVisible = 0;
+    for (let i = 0; i < playerHands.length; i++) {
+      if (isVisible(i)) {
+        leftMostVisible = i;
+        break;
+      }
+    }
+
+    let rightMostVisible = playerHands.length - 1;
+    for (let i = playerHands.length - 1; i >= 0; i--) {
+      if (isVisible(i)) {
+        rightMostVisible = i;
+        break;
+      }
+    }
+
+    return {
+      canLeft: leftMostVisible > 0,
+      canRight: rightMostVisible < playerHands.length - 1,
+      leftMostVisible,
+      rightMostVisible,
+    };
+  }, [
+    playerHands.length,
+    playerRowWidth,
+    playerViewportWidth,
+    playerHandCardBounds,
+    playerRowTranslateX,
+    isMobile,
+  ]);
+
+  const handleNavZoneClick = useCallback((dir: 'left' | 'right') => {
+    if (!playerViewportWidth) return;
+    if (playerHands.length <= 1) return;
+    if (playerRowWidth <= playerViewportWidth) return;
+
+    const edgeMarginLeft = isMobile ? 20 : 28;
+    const edgeMarginRight = isMobile ? 8 : 10;
+    const leftBound = edgeMarginLeft;
+    const rightBound = playerViewportWidth - edgeMarginRight;
+
+    const currentLeftMost = playerNavState.leftMostVisible;
+    const currentRightMost = playerNavState.rightMostVisible;
+    const targetIdx =
+      dir === 'left' ? currentLeftMost - 1 : currentRightMost + 1;
+
+    if (targetIdx < 0 || targetIdx >= playerHands.length) return;
+
+    const targetBounds = playerHandCardBounds[targetIdx];
+    if (!targetBounds) return;
+
+    let desired = playerRowTranslateX;
+    if (dir === 'left') {
+      desired = leftBound - targetBounds.cardLeft;
+    } else {
+      desired = rightBound - targetBounds.cardRight;
+    }
+
+    desired = Math.round(desired);
+
+    // Clamp so we don't slide beyond the row edges.
+    const minT = Math.round((playerViewportWidth - playerRowWidth) - edgeMarginRight);
+    const maxT = Math.round(edgeMarginLeft);
+    if (desired < minT) desired = minT;
+    if (desired > maxT) desired = maxT;
+
+    setManualViewHandIdx(targetIdx);
+    setUserHasScrolled(true);
+    if (desired !== playerRowTranslateX) setPlayerRowTranslateX(desired);
+  }, [
+    playerViewportWidth,
+    playerHands,
+    playerRowWidth,
+    playerHandCardBounds,
+    cardW,
+    playerRowTranslateX,
+    isMobile,
+    activeHandIndex,
+    phase,
+    isSplitting,
+    splitDealingPhase,
+    splitOriginHandIndex,
+    playerNavState.leftMostVisible,
+    playerNavState.rightMostVisible,
+  ]);
+
+  // Calculate drag bounds - simple hard stops at edges
+  const getDragBounds = useCallback(() => {
+    if (!playerViewportWidth || playerRowWidth <= playerViewportWidth) {
+      return { min: 0, max: 0 };
+    }
+    // Hard stops: first hand fully visible on left, last hand fully visible on right
+    // max = 0 means first hand at left edge
+    // min = viewport - row means last hand at right edge
+    const minT = Math.round(playerViewportWidth - playerRowWidth);
+    const maxT = 0;
+    return { min: minT, max: maxT };
+  }, [playerViewportWidth, playerRowWidth]);
+
+  // Keep bounds ref in sync for native event listener
+  useEffect(() => {
+    dragBoundsRef.current = getDragBounds();
+  }, [getDragBounds]);
+
+  // Touch/swipe handlers for continuous drag scrolling
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    if (playerHands.length <= 1) return;
+    if (playerRowWidth <= playerViewportWidth) return;
+
+    const touch = e.touches[0];
+    touchStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      time: Date.now(),
+      startTranslateX: playerRowTranslateX,
+    };
+    lastTouchRef.current = { x: touch.clientX, time: Date.now() };
+    velocityRef.current = 0;
+  }, [playerHands.length, playerRowWidth, playerViewportWidth, playerRowTranslateX]);
+
+  // Native touchmove handler (non-passive to allow preventDefault)
+  useEffect(() => {
+    const viewport = playerViewportRef.current;
+    if (!viewport) return;
+
+    const handleTouchMoveNative = (e: TouchEvent) => {
+      if (!touchStartRef.current) return;
+      if (e.touches.length !== 1) return;
+
+      const touch = e.touches[0];
+      const dy = touch.clientY - touchStartRef.current.y;
+      const dx = touch.clientX - touchStartRef.current.x;
+
+      // If mostly vertical movement and we haven't started dragging, don't hijack the scroll
+      if (!isDraggingRef.current && Math.abs(dy) > Math.abs(dx) && Math.abs(dx) < 10) {
+        return;
+      }
+
+      // Start dragging once we have enough horizontal movement
+      if (!isDraggingRef.current && Math.abs(dx) > 10) {
+        isDraggingRef.current = true;
+        setIsDragging(true);
+        setManualViewHandIdx(-1); // Clear manual view to allow free dragging
+      }
+
+      if (!isDraggingRef.current) return;
+
+      // Prevent vertical scroll while dragging horizontally
+      e.preventDefault();
+
+      // Calculate velocity for momentum
+      if (lastTouchRef.current) {
+        const dt = Date.now() - lastTouchRef.current.time;
+        if (dt > 0) {
+          const vx = (touch.clientX - lastTouchRef.current.x) / dt;
+          velocityRef.current = vx;
+        }
+      }
+      lastTouchRef.current = { x: touch.clientX, time: Date.now() };
+
+      // Calculate new position using ref for fresh bounds - hard stops at edges
+      const bounds = dragBoundsRef.current;
+      let newX = touchStartRef.current.startTranslateX + dx;
+
+      // Hard clamp to bounds - no rubber-band effect
+      newX = Math.max(bounds.min, Math.min(bounds.max, newX));
+
+      setPlayerRowTranslateX(Math.round(newX));
+    };
+
+    viewport.addEventListener('touchmove', handleTouchMoveNative, { passive: false });
+    return () => viewport.removeEventListener('touchmove', handleTouchMoveNative);
+  }, []); // Refs are used for all values, so no deps needed
+
+  const handleTouchEnd = useCallback(() => {
+    if (!touchStartRef.current) {
+      // Reset state even if we didn't have a valid touch start
+      isDraggingRef.current = false;
+      setIsDragging(false);
+      return;
+    }
+
+    const bounds = dragBoundsRef.current;
+    let finalX = translateXRef.current;
+
+    // Apply momentum if there was significant velocity
+    const velocity = velocityRef.current;
+    if (Math.abs(velocity) > 0.3) {
+      // Add momentum (velocity * time factor)
+      const momentum = velocity * 150;
+      finalX = translateXRef.current + momentum;
+    }
+
+    // Hard clamp to bounds
+    finalX = Math.max(bounds.min, Math.min(bounds.max, Math.round(finalX)));
+
+    // Animate to final position
+    if (finalX !== translateXRef.current) {
+      setPlayerRowTranslateX(finalX);
+    }
+
+    // Mark that user has manually scrolled - prevents auto-centering
+    setUserHasScrolled(true);
+
+    touchStartRef.current = null;
+    lastTouchRef.current = null;
+    velocityRef.current = 0;
+    isDraggingRef.current = false;
+    setIsDragging(false);
+  }, []);
 
   // Deck estimation image is a static table aid. Keep it rendered whenever enabled so it
   // doesn't "blink" during initial deal / between rounds. (TrainingPage freezes updates.)
@@ -604,13 +907,39 @@ export const Table: React.FC<TableProps> = ({
         {/* Player area */}
         <div className="player-area">
           {playerHands.length > 0 ? (
-            <div className="player-hands-viewport" ref={playerViewportRef}>
+            <div
+              className={`player-hands-viewport ${isDragging ? 'dragging' : ''}`}
+              ref={playerViewportRef}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              onTouchCancel={handleTouchEnd}
+            >
+              {playerHands.length > 1 && playerRowWidth > playerViewportWidth && (
+                <>
+                  <button
+                    type="button"
+                    className="hand-nav-zone left"
+                    style={{ height: `${cardH}px` }}
+                    disabled={!playerNavState.canLeft}
+                    aria-label="Show previous player hand"
+                    onClick={() => handleNavZoneClick('left')}
+                  />
+                  <button
+                    type="button"
+                    className="hand-nav-zone right"
+                    style={{ height: `${cardH}px` }}
+                    disabled={!playerNavState.canRight}
+                    aria-label="Show next player hand"
+                    onClick={() => handleNavZoneClick('right')}
+                  />
+                </>
+              )}
               <div
                 className={`player-hands ${playerHands.length > 1 ? 'multiple' : ''}`}
                 style={{
                   transform: `translateX(${playerRowTranslateX}px)`,
                   gap: `${playerHandGapPx}px`,
-                  transition: centerTransitionEnabled ? undefined : 'none',
+                  transition: isDragging ? 'none' : centerTransitionEnabled ? undefined : 'none',
                 }}
               >
                 {playerHands.map((hand, handIdx) => {

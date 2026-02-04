@@ -339,7 +339,8 @@ export function checkDeviation(
   trueCount: number,
   surrenderAllowed: boolean = true,
   includeIllustrious18: boolean = true,
-  includeFabFour: boolean = true
+  includeFabFour: boolean = true,
+  includeInsurance: boolean = false
 ): DeviationResult {
   const deviations: Deviation[] = [];
 
@@ -352,6 +353,11 @@ export function checkDeviation(
 
   // Find matching deviation
   for (const dev of deviations) {
+    // Insurance is a separate decision that happens before *any* player actions.
+    // Do not treat it like a per-hand playing deviation, otherwise every action vs an Ace
+    // would look like a "missed insurance" mistake.
+    if (dev.deviationAction === 'insurance' && !includeInsurance) continue;
+
     // Check if this deviation matches the hand
     if (dev.isPair) {
       if (!isPair || pairValue !== dev.pairValue) continue;

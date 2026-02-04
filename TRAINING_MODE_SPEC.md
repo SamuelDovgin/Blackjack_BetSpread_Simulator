@@ -40,6 +40,7 @@
 - Payout badges: blackjack hands show normal WIN/LOSE/PUSH outcome badges, plus a "Blackjack" tag (instead of replacing the result with a special "BLACKJACK" outcome badge).
 - Layout: Training Mode renders full-bleed (no simulator padding/background) to avoid beige margins and prevent page scrollbars.
 - Multi-hand layout: when the player-hand row fits the viewport, the entire group is centered (e.g., 3 hands -> middle hand centered). When it does not fit, the row shifts minimally to keep the active (or split-deal focus) hand visible.
+- Multi-hand manual navigation: when the row overflows, invisible left/right "tap zones" on the player-hands viewport allow stepping the view by one hand at a time (no scrollbars needed). The step only occurs if there is another hand off-screen in that direction. Manual panning is cleared on any new dealing/state change so gameplay always snaps back to the active hand automatically.
 - Multi-hand "right edge slack": to reduce right-edge snapping without offsetting normal layouts, we only reserve 1-hit slack (3 cards total) when **(a)** there are 3+ player hands, **(b)** the active/focus hand is the **rightmost** hand, and **(c)** that extra hit would otherwise press past the right edge. This prevents a micro-slide on hit #1 for the rightmost hand without shifting 1-hand/2-hand layouts.
 - Hand labels/badges: per-hand totals/results/tags are rendered as an absolute overlay on the card stack so they never affect layout (prevents vertical "jumping" between hands with different stack heights).
 - Dealing animation: only the single newest card is marked as "dealing" at any time (initial deal uses the `visibleCardCount` gate; hits/draws only animate the newest card).
@@ -48,6 +49,7 @@
 - Blackjack tag timing: the "Blackjack" tag is gated by `visibleCardCount` during the initial deal, so it doesn't appear until the 2nd card has actually been dealt/seen.
 - Badge hiding scope: while a new card is animating, we only suppress badges on the active/focus hand (to avoid animation conflicts). Completed/non-focus hands keep badges visible, preventing global "badge blinking" during multi-hand play.
 - Badge layering: per-hand badges use a high z-index and player-hand containers avoid creating independent stacking contexts, so badges stay visible even when a dealt card passes over adjacent hands.
+- Insurance decision: insurance is handled as its own prompt before any player actions when the dealer shows an Ace. It is **not** treated as a per-hand playing deviation (so you won't get "missed insurance" banners on every action vs an Ace after the prompt).
 - Notes on the layout experiments that led here: `docs/TRAINING_LAYOUT_EXPERIMENTS.md`.
 
 ---
