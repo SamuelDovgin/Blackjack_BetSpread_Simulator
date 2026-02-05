@@ -50,6 +50,15 @@
   - Seed randomizes each run by default with a toggle to lock a fixed seed.
   - Help tooltips on key trip outcomes and optimal bet controls for quick guidance.
 
+- **Training Mode (Vite/React/TS)**
+  - Animated dealing (one card at a time), splitting, doubles, dealer play, and discard/removal animations.
+  - Deck estimation photo strip anchored next to the dealer cards (GitHub Pages-safe asset paths).
+  - Quick-counts pull-tab under the photo (click to toggle): `Running`, `Divisor`, `True`.
+  - Divisor/TC are based on the deck-estimation depth (discard tray), not live shoe length:
+    - Stable within a hand (cards in play don't change the estimate).
+    - Updates once per round when cards leave the table.
+    - Full-deck estimation uses conservative `ceil(decks_remaining)`; TC is floored for play when in `floor` mode.
+
 - **Configuration**
   - API base configurable via `VITE_API_BASE` (defaults to `http://127.0.0.1:8001/api`).
   - Backend default port recommended: 8001 (avoid conflicts).

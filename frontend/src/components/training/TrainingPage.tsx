@@ -474,7 +474,15 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
   const totalCards = numDecks * 52;
 
   // Calculate derived values
+  // "Exact" = decks remaining in the shoe right now (includes the cards currently
+  // on the table since they've already been dealt from the shoe).
   const exactDivisor = gameState.shoe.length / 52;
+
+  // Training-mode divisor is based on the *deck estimation image* (discard tray depth),
+  // not the live shoe length. This keeps divisor/TC stable within a hand (cards in play
+  // don't change the discard tray), and it updates once per round when cards leave
+  // the table (when we freeze deckEstCards at the discard moment).
+  const deckEstimationDivisorExact = deckEstCards / 52;
 
   // Helper to apply TC estimation method (floor for realistic casino play)
   // Prefer the persisted training setting; fall back to prop for backwards compat
@@ -498,7 +506,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     return rawTc;
   }, [effectiveTcMethod]);
 
-  const divisorEstimate = estimateDivisor(exactDivisor);
+  const divisorEstimate = estimateDivisor(deckEstimationDivisorExact);
   const rawTrueCountExact = calculateTrueCount(gameState.runningCount, exactDivisor);
   const rawTrueCountEstimated = calculateTrueCount(gameState.runningCount, divisorEstimate);
   const trueCount = applyTcEstimation(rawTrueCountEstimated);
@@ -785,7 +793,9 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       canSurrender: canSurrenderNow,
     });
 
-    const divisor = estimateDivisor(state.shoe.length / 52);
+    // Use the same divisor basis as the deck-estimation image (discard tray depth),
+    // not the live shoe length (which changes with cards in play).
+    const divisor = estimateDivisor(deckEstCards / 52);
     const rawTc = calculateTrueCount(state.runningCount, divisor);
     const tc = applyTcEstimation(rawTc);
     const basicAction = strategyResult.action;
@@ -893,7 +903,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     const shouldBlock = !isCorrect && settings.correctionMode === 'modal';
 
     return { decision, shouldBlock };
-  }, [ruleSet, allowSurrender, settings.correctionMode, settings.showDeviations, applyTcEstimation, estimateDivisor]);
+  }, [ruleSet, allowSurrender, settings.correctionMode, settings.showDeviations, applyTcEstimation, estimateDivisor, deckEstCards]);
 
   // Update stats after a decision
   const updateStatsForDecision = useCallback((decision: LastDecision) => {
@@ -1182,7 +1192,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Validate insurance decision against deviations
     if (settings.correctionMode !== 'off') {
-      const divisor = estimateDivisor(gameState.shoe.length / 52);
+      const divisor = estimateDivisor(deckEstCards / 52);
       const rawTc = calculateTrueCount(gameState.runningCount, divisor);
       const tc = applyTcEstimation(rawTc);
       const shouldTake = shouldTakeInsurance(tc);
@@ -1224,7 +1234,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Continue to player action phase
     setGameState(prev => ({ ...prev, phase: 'player-action' as GamePhase }));
-  }, [gameState, stats, settings.correctionMode, updateStatsForDecision, applyTcEstimation, estimateDivisor]);
+  }, [gameState, stats, settings.correctionMode, updateStatsForDecision, applyTcEstimation, estimateDivisor, deckEstCards]);
 
   const handleDeclineInsurance = useCallback(() => {
     // Save pre-decision state/stats so undo returns to the insurance prompt.
@@ -1236,7 +1246,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Validate insurance decision against deviations
     if (settings.correctionMode !== 'off') {
-      const divisor = estimateDivisor(gameState.shoe.length / 52);
+      const divisor = estimateDivisor(deckEstCards / 52);
       const rawTc = calculateTrueCount(gameState.runningCount, divisor);
       const tc = applyTcEstimation(rawTc);
       const shouldTake = shouldTakeInsurance(tc);
@@ -1278,7 +1288,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
     // Continue to player action phase
     setGameState(prev => ({ ...prev, phase: 'player-action' as GamePhase }));
-  }, [gameState, stats, settings.correctionMode, updateStatsForDecision, applyTcEstimation, estimateDivisor]);
+  }, [gameState, stats, settings.correctionMode, updateStatsForDecision, applyTcEstimation, estimateDivisor, deckEstCards]);
 
   // Handle "Continue anyway" from correction modal - execute the incorrect action
   const handleContinueAnyway = useCallback(() => {
@@ -1937,6 +1947,9 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
           cardsDiscarded={totalCards - gameState.shoe.length}
           showDeckEstimation={settings.showDeckEstimation ?? true}
           deckEstimationCards={deckEstCards}
+          runningCount={gameState.runningCount}
+          divisor={divisorEstimate}
+          trueCount={trueCount}
         />
       </main>
 
