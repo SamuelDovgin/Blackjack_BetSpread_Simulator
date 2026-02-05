@@ -9,6 +9,9 @@ interface DeckEstimationImageProps {
   cardsRemaining: number;
   totalCards: number;
   cardScale?: string;
+  runningCount?: number;
+  divisor?: number;
+  trueCount?: number;
 }
 
 // Map cards remaining to image filename
@@ -22,8 +25,12 @@ export const DeckEstimationImage: React.FC<DeckEstimationImageProps> = ({
   cardsRemaining,
   totalCards,
   cardScale = 'medium',
+  runningCount,
+  divisor,
+  trueCount,
 }) => {
   const [imageError, setImageError] = useState(false);
+  const [showQuickCounts, setShowQuickCounts] = useState(false);
 
   const desiredFilename = getImageFilename(cardsRemaining);
   const [displayFilename, setDisplayFilename] = useState(desiredFilename);
@@ -39,8 +46,22 @@ export const DeckEstimationImage: React.FC<DeckEstimationImageProps> = ({
     [baseUrl, displayFilename]
   );
 
-  // Calculate decks remaining for tooltip
-  const decksRemaining = Math.max(0, Math.floor(cardsRemaining / 52));
+  // Calculate decks remaining for tooltip. Prefer the divisor we are actively using
+  // for TC estimation so the label matches the training method (e.g., conservative
+  // whole-deck rounding).
+  const decksRemaining = Number.isFinite(divisor)
+    ? Number(divisor)
+    : Math.max(0, Math.floor(cardsRemaining / 52));
+  const runningText = Number.isFinite(runningCount) ? String(runningCount) : '-';
+
+  const fmt = (value?: number, decimals: number = 1) => {
+    if (!Number.isFinite(value)) return '-';
+    const n = Number(value);
+    return Number.isInteger(n) ? String(n) : n.toFixed(decimals);
+  };
+
+  const divisorText = fmt(divisor, 1);
+  const trueText = fmt(trueCount, 1);
 
   // Keep the image visually stable: preload the next file and only swap the displayed
   // src once it's already loaded. This avoids "blinking" between rounds.
@@ -70,23 +91,46 @@ export const DeckEstimationImage: React.FC<DeckEstimationImageProps> = ({
       className="deck-estimation"
       title={`${decksRemaining} decks remaining (${cardsRemaining} cards)`}
     >
-      <img
-        src={displayPath}
-        alt={`Shoe depth showing ${decksRemaining} decks remaining`}
-        className="deck-estimation-image"
-        onError={() => {
-          setImageError(true);
-          console.error(`Failed to load deck estimation image: ${displayPath}`);
-        }}
-      />
+      <div className="deck-estimation-media">
+        <img
+          src={displayPath}
+          alt={`Shoe depth showing ${decksRemaining} decks remaining`}
+          className="deck-estimation-image"
+          onError={() => {
+            setImageError(true);
+            console.error(`Failed to load deck estimation image: ${displayPath}`);
+          }}
+        />
 
-      {imageError && (
-        <div className="deck-estimation-error">
-          <span className="deck-estimation-error-text">
-            {decksRemaining}D
-          </span>
+        {imageError && (
+          <div className="deck-estimation-error">
+            <span className="deck-estimation-error-text">
+              {decksRemaining}D
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Click anywhere in this panel to expand/collapse for fast count checks. */}
+      <button
+        type="button"
+        className={`deck-quick-panel ${showQuickCounts ? 'open' : ''}`}
+        onClick={() => setShowQuickCounts((v) => !v)}
+        aria-expanded={showQuickCounts}
+        aria-label={showQuickCounts ? 'Hide quick count values' : 'Show quick count values'}
+        title={showQuickCounts ? 'Hide quick count values' : 'Show quick count values'}
+      >
+        <div className="deck-quick-content" aria-hidden={!showQuickCounts}>
+          <div className="deck-quick-row">Running: {runningText}</div>
+          <div className="deck-quick-row">Divisor: {divisorText}</div>
+          <div className="deck-quick-row">True: {trueText}</div>
         </div>
-      )}
+        <div className="deck-quick-handle" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 7h16v2H4V7zm0 4h16v2H4v-2zm0 4h16v2H4v-2z" />
+          </svg>
+        </div>
+      </button>
     </div>
   );
 };

@@ -8,6 +8,15 @@
   top: 0;
   transform: none;
   z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+.deck-estimation-media {
+  position: relative;
+  z-index: 2; /* sits "in front" so the pull-tab can slide behind it */
 }
 
 .deck-estimation-image {
@@ -40,6 +49,119 @@
   font-weight: 600;
 }
 
+/* Quick counts: pull-tab drawer anchored under the deck image. */
+.deck-quick-panel {
+  --deck-quick-w: calc(90px * var(--card-scale, 1.2));
+  --deck-quick-card-h: calc(126px * var(--card-scale, 1.2));
+  --deck-quick-handle-h: calc(var(--deck-quick-card-h) * 0.25);
+  /* Only a tiny overlap so it feels like a tab coming from behind the image,
+     without hiding the control. */
+  --deck-quick-overlap: calc(var(--deck-quick-card-h) * 0.02);
+
+  width: var(--deck-quick-w);
+  position: relative;
+  z-index: 1;
+  margin-top: calc(-1 * var(--deck-quick-overlap));
+  transform: translateY(calc(-1 * var(--deck-quick-card-h) * 0.01));
+  max-height: var(--deck-quick-handle-h);
+  overflow: hidden;
+
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  /* Opaque/dark panel (no transparency) so values are readable at a glance. */
+  background: #043f25; /* darker felt */
+  color: #fff;
+
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    max-height 0.24s ease,
+    transform 0.24s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.deck-quick-panel.open {
+  max-height: calc(var(--deck-quick-handle-h) + 140px);
+  transform: translateY(0);
+  background: #05512e;
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.deck-quick-panel:focus {
+  outline: none;
+}
+
+.deck-quick-panel:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+}
+
+.deck-quick-content {
+  padding-top: calc(var(--deck-quick-overlap) + 2px);
+  padding-bottom: var(--deck-quick-handle-h);
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+.deck-quick-panel.open .deck-quick-content {
+  opacity: 1;
+}
+
+.deck-quick-row {
+  padding: 6px 8px;
+  font-size: 14px;
+  line-height: 1.2;
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  /* Keep typography aligned with the rest of the app (no stylized shadows). */
+  text-shadow: none;
+  white-space: nowrap;
+}
+
+.deck-quick-row:last-child {
+  border-bottom: 0;
+}
+
+/* Handle is always at the bottom; in the collapsed state you only see the handle. */
+.deck-quick-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--deck-quick-handle-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #03361f;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.deck-quick-panel.open .deck-quick-handle {
+  background: #044423;
+  color: rgba(255, 255, 255, 0.98);
+}
+
+.deck-quick-handle svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+  transition: transform 0.2s ease;
+}
+
+.deck-quick-panel.open .deck-quick-handle svg {
+  transform: rotate(180deg);
+}
+
 /* Mobile - match mobile card height */
 @media (max-width: 768px) {
   .deck-estimation-image {
@@ -50,5 +172,17 @@
   .deck-estimation-error {
     width: calc(70px * var(--card-scale, 1.2));
     height: calc(98px * var(--card-scale, 1.2));
+  }
+
+  .deck-quick-panel {
+    --deck-quick-w: calc(70px * var(--card-scale, 1.2));
+    --deck-quick-card-h: calc(98px * var(--card-scale, 1.2));
+    --deck-quick-handle-h: calc(var(--deck-quick-card-h) * 0.25);
+    --deck-quick-overlap: calc(var(--deck-quick-card-h) * 0.02);
+  }
+
+  .deck-quick-row {
+    font-size: 13px;
+    padding: 5px 7px;
   }
 }

@@ -12,6 +12,9 @@ Training Mode uses localStorage:
 - Stats: `blackjack-training-stats`
 - Game state (shoe + current hand + bankroll): `blackjack-training-game-state`
 
+Note: deck-estimation display state (the discard-tray photo + quick RC/divisor/TC drawer)
+is derived from the current shoe depth and does not need to be separately persisted.
+
 ### Game State Persistence Rules
 We only persist game state during safe phases to avoid saving mid-animation states:
 
@@ -45,4 +48,3 @@ In the Settings panel:
 - `frontend/src/components/training/types.ts` (settings fields + defaults)
 - `frontend/src/components/training/TrainingPage.tsx` (load/save settings/stats/game state)
 - `frontend/src/components/training/engine/gameEngine.ts` (bankroll is tracked in units)
-

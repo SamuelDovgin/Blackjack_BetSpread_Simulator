@@ -53,6 +53,10 @@ interface TableProps {
   showDeckEstimation?: boolean;
   /** Frozen cards remaining for deck estimation (doesn't update during dealer/payout) */
   deckEstimationCards?: number;
+  /** Quick count drawer values shown under deck estimation image */
+  runningCount?: number;
+  divisor?: number;
+  trueCount?: number;
 }
 
 // Base card layout constants at scale=1.0 — multiplied by cardScale prop at runtime.
@@ -225,6 +229,9 @@ export const Table: React.FC<TableProps> = ({
   cardScale: cardScaleName = 'medium',
   showDeckEstimation = true,
   deckEstimationCards,
+  runningCount,
+  divisor,
+  trueCount,
 }) => {
   const isMobile =
     typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
@@ -843,6 +850,9 @@ export const Table: React.FC<TableProps> = ({
                     cardsRemaining={deckEstimationCards ?? cardsRemaining}
                     totalCards={totalCards}
                     cardScale={cardScaleName}
+                    runningCount={runningCount}
+                    divisor={divisor}
+                    trueCount={trueCount}
                   />
                 )}
 

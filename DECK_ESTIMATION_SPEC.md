@@ -69,6 +69,10 @@ This prevents the deck image from changing mid-dealer-play or mid-removal, and k
 - The deck image has **no card-like shadow** (it is a photo cue, not a playing card).
 - There is no "card-like" placeholder background while loading; the image simply appears once loaded.
 - When the deck image changes, it swaps only after the next file is preloaded (prevents flicker).
+- A compact drawer toggle sits directly under the deck image (same width, ~1/4 card height). It uses a "pull tab" animation so the button appears to slide out from behind the deck image.
+- Tapping the tab expands/collapses quick count values: **Running**, **Divisor**, **True**.
+- Quick-count text is high-contrast and rendered as `Label: value` with a single space after the colon for readability/consistency.
+- The drawer handle icon ends up **below** the numbers when expanded, and the entire drawer area is clickable to toggle open/closed (fast hide/show during practice).
 
 ## Tooltip / Decks Remaining Display
 The deck estimation tooltip uses whole-deck (full-deck) estimation:
