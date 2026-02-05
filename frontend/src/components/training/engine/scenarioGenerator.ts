@@ -266,6 +266,17 @@ function getCardValue(card: Card): number {
   return parseInt(card.rank, 10);
 }
 
+function isTenValue(rank: string): boolean {
+  return rank === 'T' || rank === 'J' || rank === 'Q' || rank === 'K';
+}
+
+function isSplittablePair(cards: Card[]): boolean {
+  if (cards.length !== 2) return false;
+  const r1 = cards[0].rank;
+  const r2 = cards[1].rank;
+  return r1 === r2 || (isTenValue(r1) && isTenValue(r2));
+}
+
 /**
  * Extract cards for a pair hand
  */
@@ -355,6 +366,36 @@ function extractRandomNonAce(shoe: Card[]): Card | null {
   return shoe.splice(idx, 1)[0];
 }
 
+function extractRandomCard(shoe: Card[]): Card | null {
+  if (shoe.length === 0) return null;
+  const idx = Math.floor(Math.random() * shoe.length);
+  return shoe.splice(idx, 1)[0];
+}
+
+function extractDealerHoleCard(shoe: Card[], dealerUpValue: number): Card | null {
+  // Avoid accidental dealer blackjack which can short-circuit training flow
+  // (especially for insurance practice where we still want the prompt).
+  // - If dealer upcard is Ace, ensure hole is NOT ten-value.
+  // - If dealer upcard is ten-value, ensure hole is NOT Ace.
+  if (dealerUpValue === 11) {
+    // Prefer 2-9. If unavailable (extremely unlikely), fail so caller can retry.
+    const values = [2, 3, 4, 5, 6, 7, 8, 9];
+    for (let i = values.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [values[i], values[j]] = [values[j], values[i]];
+    }
+    for (const v of values) {
+      const c = extractCard(shoe, v);
+      if (c) return c;
+    }
+    return null;
+  }
+
+  // Dealer blackjack vs a ten upcard requires an Ace in the hole.
+  // For all other upcards, a non-Ace is fine and keeps count updates simpler.
+  return extractRandomNonAce(shoe);
+}
+
 /**
  * Generate a shoe for practicing a specific deviation.
  * Sets up the exact hand situation at the deviation's threshold TC.
@@ -362,7 +403,8 @@ function extractRandomNonAce(shoe: Card[]): Card | null {
 export function generateShoeForDeviation(
   deviationIndex: number,
   numDecks: number,
-  tcEstimationMethod: TcEstimationMethod = 'perfect'
+  tcEstimationMethod: TcEstimationMethod = 'perfect',
+  handsToPlay: number = 1
 ): DeviationScenario | null {
   const deviation = ALL_DEVIATIONS[deviationIndex];
   if (!deviation) return null;
@@ -376,49 +418,113 @@ export function generateShoeForDeviation(
   // For positive thresholds, use threshold value directly
   const targetTC = tcThreshold;
 
-  const baseScenario = generateShoeForTargetTC(targetTC, numDecks, 0.5, 300, tcEstimationMethod);
-  if (!baseScenario) return null;
+  const nHands = Math.max(1, Math.min(3, Math.floor(handsToPlay)));
+  const targetSeat = nHands - 1; // training plays hands right-to-left
 
-  const shoe = [...baseScenario.shoe];
+  // We need a very specific deal order that matches TrainingMode's dealInitialCards():
+  //  1) First card to each player hand (L->R)
+  //  2) Dealer hole card (face down)
+  //  3) Second card to each player hand (L->R)
+  //  4) Dealer upcard (face up)
+  // If we don't arrange the shoe in this order (and include filler hands),
+  // the "dealer upcard" can accidentally become the hole card and the
+  // deviation won't appear.
 
-  // Extract player cards
-  let playerCards: Card[] | null = null;
-  if (isPair && pairValue) {
-    playerCards = extractPair(shoe, pairValue);
-  } else if (isSoft) {
-    playerCards = extractSoftHand(shoe, playerTotal);
-  } else {
-    playerCards = extractHardHand(shoe, playerTotal);
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const baseScenario = generateShoeForTargetTC(targetTC, numDecks, 0.5, 300, tcEstimationMethod);
+    if (!baseScenario) continue;
+
+    // Try a few different filler / extraction combinations against this base scenario.
+    for (let fillAttempt = 0; fillAttempt < 40; fillAttempt++) {
+      const shoe = [...baseScenario.shoe];
+
+      // Extract dealer upcard first (this can be a specific value like 10/A).
+      const dealerUp = extractCard(shoe, dealerUpValue);
+      if (!dealerUp) continue;
+
+      // Extract dealer hole card (avoid blackjack short-circuit).
+      const dealerHole = extractDealerHoleCard(shoe, dealerUpValue);
+      if (!dealerHole) continue;
+
+      // Extract player cards for the *target seat*.
+      let playerCards: Card[] | null = null;
+      if (deviation.deviationAction === 'insurance' || playerTotal <= 0) {
+        // Insurance applies to any hand; use a stable, non-pair hard 15 as the
+        // starting hand so we can reliably practice the insurance prompt.
+        playerCards = extractHardHand(shoe, 15);
+      } else if (isPair && pairValue) {
+        playerCards = extractPair(shoe, pairValue);
+      } else if (isSoft) {
+        playerCards = extractSoftHand(shoe, playerTotal);
+      } else {
+        playerCards = extractHardHand(shoe, playerTotal);
+      }
+      if (!playerCards) continue;
+      if (!isPair && !isSoft && playerTotal > 0 && isSplittablePair(playerCards)) {
+        // For non-pair deviations (e.g., "12 vs 3"), avoid generating a pair like 6,6.
+        // The training deviation logic intentionally does not apply hard/soft deviations
+        // to splittable pairs, so this would make the deviation "not occur".
+        shoe.push(...playerCards);
+        continue;
+      }
+
+      // Build initial deal cards for all seats.
+      const firstCards: Card[] = new Array(nHands);
+      const secondCards: Card[] = new Array(nHands);
+
+      for (let seat = 0; seat < nHands; seat++) {
+        if (seat === targetSeat) {
+          firstCards[seat] = playerCards[0];
+          secondCards[seat] = playerCards[1];
+          continue;
+        }
+
+        const c1 = extractRandomCard(shoe);
+        const c2 = extractRandomCard(shoe);
+        if (!c1 || !c2) break;
+        firstCards[seat] = c1;
+        secondCards[seat] = c2;
+      }
+
+      if (firstCards.some((c) => !c) || secondCards.some((c) => !c)) continue;
+
+      // Compute the TC that the app will use when the user makes the first decision
+      // (after all player cards + dealer upcard are face-up, but before dealer hole is revealed).
+      const faceUpCards = [
+        ...firstCards,
+        ...secondCards,
+        dealerUp,
+      ];
+      const deltaRc = faceUpCards.reduce((sum, c) => sum + getCountValue(c), 0);
+      const decisionTc = calculatePracticeTrueCount(
+        baseScenario.runningCount + deltaRc,
+        baseScenario.shoe.length / 52,
+        tcEstimationMethod
+      );
+      const shouldDeviate = tcThreshold >= 0 ? decisionTc >= tcThreshold : decisionTc <= tcThreshold;
+      if (!shouldDeviate) continue;
+
+      const arrangedShoe: Card[] = [
+        ...firstCards.map((c) => ({ ...c, faceUp: true })),
+        { ...dealerHole, faceUp: false },
+        ...secondCards.map((c) => ({ ...c, faceUp: true })),
+        { ...dealerUp, faceUp: true },
+        ...shoe.map((c) => ({ ...c, faceUp: true })),
+      ];
+
+      return {
+        shoe: arrangedShoe,
+        runningCount: baseScenario.runningCount,
+        trueCount: decisionTc,
+        cardsDealt: baseScenario.cardsDealt,
+        playerCards,
+        dealerUpcard: dealerUp,
+        dealerHoleCard: dealerHole,
+      };
+    }
   }
 
-  if (!playerCards) return null;
-
-  // Extract dealer upcard
-  const dealerUp = extractCard(shoe, dealerUpValue);
-  if (!dealerUp) return null;
-
-  // Extract dealer hole card (non-ace to avoid blackjack complications)
-  const dealerHole = extractRandomNonAce(shoe);
-  if (!dealerHole) return null;
-
-  // Arrange shoe: dealer hole, player card 1, dealer up, player card 2, rest
-  const arrangedShoe: Card[] = [
-    { ...dealerHole, faceUp: false }, // Hole card face down
-    { ...playerCards[0], faceUp: true },
-    { ...dealerUp, faceUp: true },
-    { ...playerCards[1], faceUp: true },
-    ...shoe.map(c => ({ ...c, faceUp: true })),
-  ];
-
-  return {
-    shoe: arrangedShoe,
-    runningCount: baseScenario.runningCount,
-    trueCount: baseScenario.trueCount,
-    cardsDealt: baseScenario.cardsDealt,
-    playerCards,
-    dealerUpcard: dealerUp,
-    dealerHoleCard: dealerHole,
-  };
+  return null;
 }
 
 /**

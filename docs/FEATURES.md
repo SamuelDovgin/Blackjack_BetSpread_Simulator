@@ -58,6 +58,10 @@
     - Stable within a hand (cards in play don't change the estimate).
     - Updates once per round when cards leave the table.
     - Full-deck estimation uses conservative `ceil(decks_remaining)`; TC is floored for play when in `floor` mode.
+  - Jump-to-deviation scenarios arrange the shoe to match the real deal order for 1-3 hands:
+    - First cards to all player hands (L->R), dealer hole, second cards (L->R), dealer upcard.
+    - Target deviation hand is placed on the rightmost seat (played first in training).
+    - Generator retries until the *decision-time* estimated TC satisfies the deviation threshold.
 
 - **Configuration**
   - API base configurable via `VITE_API_BASE` (defaults to `http://127.0.0.1:8001/api`).
