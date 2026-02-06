@@ -1133,7 +1133,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       };
 
       const result = mode === 'jump'
-        ? generateShoeForDeviation(deviationIndex, numDecks, effectiveTcMethod)
+        ? generateShoeForDeviation(deviationIndex, numDecks, effectiveTcMethod, settings.handsToPlay ?? 1)
         : generatePlayToDeviationShoe(deviationIndex, numDecks);
 
       if (result) {
@@ -1179,7 +1179,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
 
       setIsGeneratingScenario(false);
     }, 50);
-  }, [numDecks, gameState.bankroll, showToast]);
+  }, [numDecks, gameState.bankroll, showToast, effectiveTcMethod, settings.handsToPlay]);
 
   // Handle insurance decision
   const handleTakeInsurance = useCallback(() => {
