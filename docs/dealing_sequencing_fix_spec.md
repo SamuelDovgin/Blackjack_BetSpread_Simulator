@@ -304,3 +304,25 @@ Implementation note:
   - `targetCards = max(actualCards, 3)` while the hand is not complete
   - then use `focusCardRight = focusCardLeft + targetWidth`
 - Optionally compute a `projectedRowWidth = actualRowWidth + slackAdded` and use it for centering/clamping, so the row doesn't "re-center" during the first two hits.
+
+---
+
+## 11) Initial Deal Baseline Snap (Fix "Curved First Card" After Panning / Seat Count Changes)
+
+When the user has manually panned/dragged the player-hands row (or changed `handsToPlay`),
+the row's `translateX` can be far from the next round's baseline position. If we allow the
+row to transition to its new `translateX` while the *very first* dealt card is animating in,
+the card looks like it follows a weird/curved path (because its landing spot is moving).
+
+Recommended rule:
+- For the first card of a new round (initial deal, seat 0, `visibleCardCount <= 1`), **disable**
+  the row transition so the row "snaps" into place *before* any visible motion of the card.
+
+Practical implementation (already in the codebase):
+- In `Table.tsx`, set the `.player-hands` inline `transition: 'none'` when:
+  - `phase === 'dealing'`
+  - `activeHandIndex === 0`
+  - `visibleCardCount <= 1`
+
+This does not change animation durations; it only prevents an overlapping motion during the
+first card of the deal.

@@ -8,6 +8,7 @@
 - RoR formatting increased to show more precision.
 - Trip Outcomes and Optimal Bet controls now include help tooltips and better spacing.
 - Load Preset modal includes a Delete action for saved presets.
+- Simulator topbar now includes a "Load scenario" dropdown (scenario presets only) so you can switch between saved scenarios without opening the modal; the scenario name input is also styled for better visibility.
 - Custom hands input now supports Enter to apply and uses an "Apply" button.
 - Default wong-out threshold updated to -1 for the built-in Midwest ramp.
 - Added a playing-card favicon for the SPA.
