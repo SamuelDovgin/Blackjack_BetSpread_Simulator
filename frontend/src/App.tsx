@@ -301,6 +301,7 @@ function App() {
   const [useCashBets, setUseCashBets] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [scenarioName, setScenarioName] = useState("New Scenario");
+  const [scenarioPresetId, setScenarioPresetId] = useState<string>("");
   const [lastRunConfig, setLastRunConfig] = useState<string | null>(null);
   const [lastSavedConfig, setLastSavedConfig] = useState<string | null>(null);
   const [showSavePreset, setShowSavePreset] = useState(false);
@@ -588,6 +589,18 @@ function App() {
     }
   };
 
+  const scenarioPresets = useMemo(() => {
+    return presets
+      .filter((p) => p.type === "scenario")
+      .slice()
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  }, [presets]);
+
+  useEffect(() => {
+    if (!scenarioPresetId) return;
+    const exists = scenarioPresets.some((p) => p.id === scenarioPresetId);
+    if (!exists) setScenarioPresetId("");
+  }, [scenarioPresetId, scenarioPresets]);
   const rampPresets = useMemo(() => presets.filter((p) => p.type === "ramp"), [presets]);
   const deviationPresets = useMemo(() => presets.filter((p) => p.type === "deviations"), [presets]);
   const allRampPresets = useMemo(() => [...builtInRampPresets, ...rampPresets], [rampPresets]);
@@ -1037,6 +1050,7 @@ function App() {
     if (presetType === "scenario") {
       setLastSavedConfig(scenarioJson);
       setScenarioName(preset.name);
+      setScenarioPresetId(preset.id);
     }
     setShowSavePreset(false);
   };
@@ -1051,6 +1065,7 @@ function App() {
       setDeviations(preset.payload);
     } else if (preset.type === "scenario") {
       const payload = preset.payload;
+      setScenarioPresetId(preset.id);
       setScenarioName(payload.name ?? "Scenario");
       setRules({ ...defaults.rules, ...payload.rules });
       setBetRamp(payload.bet_ramp ?? defaults.bet_ramp);
@@ -2070,10 +2085,40 @@ function App() {
       {currentPage === "simulator" && (
       <header className="topbar">
         <div className="scenario">
+          <select
+            className="scenario-select"
+            value={scenarioPresetId}
+            onChange={(e) => {
+              const id = e.target.value;
+              setScenarioPresetId(id);
+              const preset = scenarioPresets.find((p) => p.id === id);
+              if (preset) handleLoadPreset(preset);
+            }}
+            disabled={!scenarioPresets.length || status === "running"}
+            title={
+              status === "running"
+                ? "Stop the current run to load a different scenario."
+                : scenarioPresets.length
+                  ? "Load a saved scenario preset."
+                  : "No saved scenarios yet. Use Save preset to create one."
+            }
+            aria-label="Load saved scenario"
+          >
+            <option value="">
+              {scenarioPresets.length ? "Load scenario…" : "No saved scenarios"}
+            </option>
+            {scenarioPresets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
           <input
             className="scenario-input"
             value={scenarioName}
             onChange={(e) => setScenarioName(e.target.value)}
+            placeholder="Scenario name"
+            aria-label="Scenario name"
           />
           {isDirty && <span className="dirty-dot" title="Unsaved changes" />}
         </div>

@@ -118,7 +118,7 @@
   min-width: 130px;
 }
 
-.scenario-input {
+.training-page .scenario-input {
   flex: 1;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -130,17 +130,17 @@
   transition: border-color 0.15s, background 0.15s;
 }
 
-.scenario-input:focus {
+.training-page .scenario-input:focus {
   border-color: rgba(76, 175, 80, 0.6);
   background: rgba(255, 255, 255, 0.1);
 }
 
-.scenario-input-small {
+.training-page .scenario-input-small {
   max-width: 80px;
   text-align: center;
 }
 
-.scenario-select {
+.training-page .scenario-select {
   flex: 1;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -153,12 +153,12 @@
   transition: border-color 0.15s, background 0.15s;
 }
 
-.scenario-select:focus {
+.training-page .scenario-select:focus {
   border-color: rgba(76, 175, 80, 0.6);
   background: rgba(255, 255, 255, 0.1);
 }
 
-.scenario-select option {
+.training-page .scenario-select option {
   background: #1a1a2e;
   color: #fff;
 }

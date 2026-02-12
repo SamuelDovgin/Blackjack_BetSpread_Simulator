@@ -952,14 +952,24 @@ export const Table: React.FC<TableProps> = ({
                   />
                 </>
               )}
-              <div
-                className={`player-hands ${playerHands.length > 1 ? 'multiple' : ''}`}
-                style={{
-                  transform: `translateX(${playerRowTranslateX}px)`,
-                  gap: `${playerHandGapPx}px`,
-                  transition: isDragging ? 'none' : centerTransitionEnabled ? undefined : 'none',
-                }}
-              >
+                <div
+                  className={`player-hands ${playerHands.length > 1 ? 'multiple' : ''}`}
+                  style={{
+                    transform: `translateX(${playerRowTranslateX}px)`,
+                    gap: `${playerHandGapPx}px`,
+                    // When a new round starts (especially after the user has panned/dragged the row
+                    // or changed seat count), the row may need to "snap" to the new baseline position.
+                    // If we let it transition while the very first dealt card is animating in, the card
+                    // appears to take a weird curved path (its landing spot is moving).
+                    // Only suppress the transition for the first card of the initial deal on seat 0.
+                    transition:
+                      isDragging ||
+                      (phase === 'dealing' && activeHandIndex === 0 && visibleCardCount <= 1) ||
+                      !centerTransitionEnabled
+                        ? 'none'
+                        : undefined,
+                  }}
+                >
                 {playerHands.map((hand, handIdx) => {
                   const handTotal = calculateFullHandTotal(hand.cards);
                   const isActive = handIdx === activeHandIndex && phase === 'player-action';

@@ -538,7 +538,8 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     setSplitDealingPhase(0);
     setSplitOriginHandIndex(null);
     setShowBadges(true);
-    setLastDecision(null);
+    // Don't clear incorrect decision feedback - keep it visible until the next decision
+    setLastDecision(prev => (prev && !prev.isCorrect) ? prev : null);
     setShowCorrectionModal(false);
 
     const handsToPlay = settings.handsToPlay ?? 1;
@@ -1957,14 +1958,14 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       <div className="training-actions">
         <div className="training-actions-inner">
           {/* Feedback banner overlay - positioned above buttons */}
-          {/* Show during player-action, dealer-turn, and payout phases (until next hand) */}
+          {/* Show during player-action, dealer-turn, payout, and dealing phases (persists until next decision) */}
           {settings.correctionMode === 'inline' && (
             <FeedbackPanel
               lastDecision={lastDecision}
               visible={
                 !!lastDecision &&
                 !feedbackDismissed &&
-                ['player-action', 'dealer-turn', 'payout'].includes(gameState.phase) &&
+                ['player-action', 'dealer-turn', 'payout', 'dealing'].includes(gameState.phase) &&
                 (!settings.onlyShowMistakes || !lastDecision.isCorrect)
               }
               compact={true}

@@ -68,15 +68,40 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1 1 260px;
+  min-width: 220px;
+}
+
+.scenario-select {
+  border: 1px solid var(--border);
+  background: var(--bg-accent);
+  color: var(--ink);
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 0.95rem;
+  max-width: 240px;
 }
 
 .scenario-input {
-  font-size: 1.1rem;
-  border: none;
-  background: transparent;
-  border-bottom: 2px solid var(--accent-2);
-  padding: 4px 2px;
+  font-size: 1.05rem;
+  border: 1px solid var(--border);
+  background: var(--bg-accent);
+  border-radius: 12px;
+  padding: 8px 10px;
   color: var(--ink);
+  -webkit-text-fill-color: var(--ink);
+  font-weight: 700;
+  min-width: 180px;
+}
+
+.scenario-input::placeholder {
+  color: var(--muted);
+}
+
+.scenario-input:focus,
+.scenario-select:focus {
+  outline: 2px solid rgba(31, 138, 112, 0.35);
+  outline-offset: 2px;
 }
 
 .dirty-dot {
