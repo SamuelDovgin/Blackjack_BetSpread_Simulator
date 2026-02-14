@@ -1014,13 +1014,13 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     setFeedbackDismissed(true);
   }, []);
 
-  // Determine if undo is available for the last action
-  // Allow undo during player-action, dealer-turn, and payout phases (until next hand)
+  // Determine if undo is available for the last action.
+  // Keep undo available until the player takes a new action.
   const canUndoLastAction = (() => {
     if (!lastDecision || lastDecision.isCorrect) return false;
     if (!preActionStateRef.current) return false;
-    // Allow undo until the next hand is dealt (idle means waiting for new deal)
-    const allowedPhases: GamePhase[] = ['player-action', 'dealer-turn', 'payout'];
+    // Include idle/dealing so undo is still available while the next hand starts.
+    const allowedPhases: GamePhase[] = ['idle', 'dealing', 'player-action', 'dealer-turn', 'payout'];
     if (!allowedPhases.includes(gameState.phase)) return false;
     if (lastDecision.userAction === 'split') return false; // Too complex to undo
     return true;
@@ -1958,14 +1958,14 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
       <div className="training-actions">
         <div className="training-actions-inner">
           {/* Feedback banner overlay - positioned above buttons */}
-          {/* Show during player-action, dealer-turn, payout, and dealing phases (persists until next decision) */}
+          {/* Keep visible until the player takes a new action */}
           {settings.correctionMode === 'inline' && (
             <FeedbackPanel
               lastDecision={lastDecision}
               visible={
                 !!lastDecision &&
                 !feedbackDismissed &&
-                ['player-action', 'dealer-turn', 'payout', 'dealing'].includes(gameState.phase) &&
+                ['idle', 'dealing', 'player-action', 'dealer-turn', 'payout'].includes(gameState.phase) &&
                 (!settings.onlyShowMistakes || !lastDecision.isCorrect)
               }
               compact={true}
