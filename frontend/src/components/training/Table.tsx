@@ -85,10 +85,10 @@ export const CARD_SCALE_VALUES: Record<string, number> = {
  * Get the global deal sequence index for a card.
  * Supports 1-3 starting player hands.
  *
- * Deal order (N hands):
- * - Player first card to each hand left-to-right (N cards)
+ * Deal order (N hands, right-to-left to match real casino dealing):
+ * - Player first card to each hand right-to-left (N cards, third base first)
  * - Dealer hole card (face down)
- * - Player second card to each hand left-to-right (N cards)
+ * - Player second card to each hand right-to-left (N cards)
  * - Dealer upcard (face up)
  * Then hits continue sequentially from there (player first, then dealer).
  */
@@ -104,13 +104,14 @@ function getDealSequenceIndex(
   const initialTotalCards = initialPlayerCards + 2; // + dealer hole + dealer upcard
 
   // Initial deal mapping (player cardIndex is global across all player hands).
+  // Deal order is right-to-left: rightmost seat (nHands-1) gets sequence 0.
   if (!isDealer) {
     if (cardIndex < initialPlayerCards) {
       const seat = Math.floor(cardIndex / 2);
       const within = cardIndex % 2; // 0=first card, 1=second card
-      if (within === 0) return seat;
+      if (within === 0) return (nHands - 1) - seat;
       // Dealer hole card happens after all first cards.
-      return nHands + 1 + seat;
+      return (2 * nHands) - seat;
     }
 
     // Player hits: after initial deal, continue sequentially from there.
