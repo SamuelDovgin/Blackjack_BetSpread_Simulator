@@ -168,20 +168,20 @@
 
 /* ============================================
    DEALING ANIMATION - Player cards (with slight vertical arc)
-   Cards come from off-screen right
+   Cards come from the right (shoe area)
    ============================================ */
 
 .card.dealing {
   animation-name: dealFromShoe;
   animation-duration: calc(var(--deal-anim-ms, 350) * 1ms);
-  animation-timing-function: linear;
+  animation-timing-function: ease-out;
   animation-fill-mode: forwards;
 }
 
 @keyframes dealFromShoe {
   0% {
     opacity: 1;
-    /* Desktop: start near the on-table shoe position (not off-screen) */
+    /* Desktop: start near the on-table shoe position */
     transform: translateX(250px) translateY(-20px);
   }
   100% {
@@ -476,11 +476,10 @@
     font-size: calc(14px * var(--card-scale, 1.2));
   }
 
-  /* Mobile dealing animations - straight from off-screen */
+  /* Mobile dealing animations - from off-screen right */
   @keyframes dealFromShoe {
     0% {
       opacity: 1;
-      /* Keep distance consistent with desktop so cards move at the same speed across viewports. */
       transform: translateX(250px) translateY(-15px);
     }
     100% {

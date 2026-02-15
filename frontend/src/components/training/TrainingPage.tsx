@@ -108,12 +108,12 @@ function getInitialDealTotalTimeMs(totalCards: number, timing: ReturnType<typeof
 
 function seatForInitialDealIndex(dealIndex: number, handsToPlay: number): number | null {
   const nHands = Math.max(1, Math.min(3, Math.floor(handsToPlay)));
-  // dealIndex 0..nHands-1: first card to each seat (L->R)
-  if (dealIndex >= 0 && dealIndex <= nHands - 1) return dealIndex;
+  // dealIndex 0..nHands-1: first card to each seat (R->L, third base first)
+  if (dealIndex >= 0 && dealIndex <= nHands - 1) return (nHands - 1) - dealIndex;
   // dealIndex nHands: dealer hole card
   if (dealIndex === nHands) return null;
-  // dealIndex nHands+1..2*nHands: second card to each seat (L->R)
-  if (dealIndex >= (nHands + 1) && dealIndex <= (2 * nHands)) return dealIndex - (nHands + 1);
+  // dealIndex nHands+1..2*nHands: second card to each seat (R->L)
+  if (dealIndex >= (nHands + 1) && dealIndex <= (2 * nHands)) return (nHands - 1) - (dealIndex - (nHands + 1));
   // dealIndex 2*nHands+1: dealer upcard
   return null;
 }
@@ -578,7 +578,7 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
     // The first card is visible immediately; schedule subsequent cards at a fixed interval.
     // Interval > animation duration gives a "dealer pause" between cards.
     let t = DEAL_CARD_INTERVAL_MS;
-    let currentSeat = 0;
+    let currentSeat = Math.max(1, Math.min(3, Math.floor(handsToPlay))) - 1; // Start at rightmost seat (R->L deal)
     let lastShowMs = 0;
 
     const scheduleSetSeat = (seat: number, atMs: number) => {
@@ -664,6 +664,10 @@ export const TrainingPage: React.FC<TrainingPageProps> = ({
         // Then add pause if animation needed (gives time for animation to complete)
         if (needsPauseForThisChange) {
           t += PLAYER_CENTER_SLIDE_MS + PLAYER_CENTER_BUFFER_MS;
+        } else {
+          // For multi-hand deals where the row fits on screen, add inter-hand
+          // spacing to simulate the dealer moving between seats
+          t += Math.round(INITIAL_DEAL_ANIM_MS * 0.5);
         }
         currentSeat = seat;
       }

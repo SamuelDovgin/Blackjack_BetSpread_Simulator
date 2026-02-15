@@ -198,15 +198,15 @@ export function dealInitialCards(
   const nHands = Math.max(1, Math.min(3, Math.floor(handsToPlay)));
   let shoe = [...state.shoe];
 
-  const firstCards: Card[] = [];
-  const secondCards: Card[] = [];
+  const firstCards: Card[] = new Array(nHands);
+  const secondCards: Card[] = new Array(nHands);
 
-  // Deal first card to each player hand (left-to-right)
-  for (let i = 0; i < nHands; i++) {
+  // Deal first card to each player hand (right-to-left, third base first)
+  for (let i = nHands - 1; i >= 0; i--) {
     const draw = drawCard(shoe);
     if (!draw) return state;
     shoe = draw.remainingShoe;
-    firstCards.push(draw.card);
+    firstCards[i] = draw.card;
   }
 
   // Dealer hole card (face down)
@@ -215,12 +215,12 @@ export function dealInitialCards(
   shoe = d1.remainingShoe;
   const dealerHoleCard: Card = { ...d1.card, faceUp: false };
 
-  // Deal second card to each player hand (left-to-right)
-  for (let i = 0; i < nHands; i++) {
+  // Deal second card to each player hand (right-to-left, third base first)
+  for (let i = nHands - 1; i >= 0; i--) {
     const draw = drawCard(shoe);
     if (!draw) return state;
     shoe = draw.remainingShoe;
-    secondCards.push(draw.card);
+    secondCards[i] = draw.card;
   }
 
   // Dealer upcard (face up)
@@ -258,10 +258,10 @@ export function dealInitialCards(
     dealerHand: dealerCards,
     dealerTotal: null,
     playerHands,
-    // During the initial deal, keep the camera on the first seat (leftmost) so each
-    // dealt card lands on a centered hand. TrainingPage will pick the correct active
+    // During the initial deal, start the camera on the rightmost seat (third base)
+    // since dealing goes right-to-left. TrainingPage will pick the correct active
     // hand (rightmost incomplete) once we enter player-action.
-    activeHandIndex: 0,
+    activeHandIndex: nHands - 1,
     currentBet: bet,
     bankroll: state.bankroll - (bet * nHands),
     roundNumber: state.roundNumber + 1,
